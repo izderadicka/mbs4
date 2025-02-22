@@ -1,0 +1,4 @@
+[providers.google]
+issuer_url = "https://accounts.google.com"
+client_id = "ABCDE"
+client_secret = "12345"

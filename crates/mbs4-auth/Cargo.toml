@@ -1,0 +1,17 @@
+[package]
+name = "mbs4-auth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+tokio.workspace = true
+config = "0.15.8"
+url = "2.5.4"
+openidconnect = "4.0.0"
+reqwest = "0.12.12"
+anyhow = "1.0.96"
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-test = "0.2.5"
