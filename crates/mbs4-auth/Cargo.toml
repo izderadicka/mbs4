@@ -6,12 +6,16 @@ edition = "2021"
 [dependencies]
 serde.workspace = true
 tokio.workspace = true
-config = "0.15.8"
+axum.workspace = true
 url = "2.5.4"
 openidconnect = "4.0.0"
 reqwest = "0.12.12"
-anyhow = "1.0.96"
+anyhow.workspace = true
 tracing.workspace = true
+http = "1.2.0"
+mbs4-types = { path = "../mbs4-types" }
+tower-sessions = "0.14.0"
+time = "0.3.37"
 
 [dev-dependencies]
 tracing-test = "0.2.5"

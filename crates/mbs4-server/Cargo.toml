@@ -11,5 +11,12 @@ path = "src/main.rs"
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
+time = "0.3.37"
 tokio.workspace = true
+tower-sessions = "0.14.0"
 tracing-subscriber = "0.3.19"
+mbs4-auth = { path = "../mbs4-auth" }
+clap = { version = "4.5.30", features = ["derive", "env"] }
+anyhow.workspace = true
+mbs4-types = { path = "../mbs4-types" }

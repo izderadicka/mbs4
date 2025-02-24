@@ -1,0 +1,11 @@
+[package]
+name = "mbs4-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+config = "0.15.8"
+clap = { version = "4.5.30", features = ["derive", "env"] }

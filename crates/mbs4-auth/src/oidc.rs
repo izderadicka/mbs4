@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use anyhow::anyhow;
+use mbs4_types::oidc::OIDCProviderConfig;
 use openidconnect::{
     core::{
         CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm,
@@ -15,38 +14,8 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use url::Url;
 
-type BoxError = Box<dyn std::error::Error>;
-type Result<T, E = BoxError> = std::result::Result<T, E>;
-
-#[derive(Debug, Deserialize)]
-pub struct OIDCProviderConfig {
-    pub issuer_url: String,
-    pub client_id: String,
-    pub client_secret: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OIDCConfig {
-    providers: HashMap<String, OIDCProviderConfig>,
-}
-
-impl OIDCConfig {
-    pub fn get_provider(&self, name: &str) -> Option<&OIDCProviderConfig> {
-        self.providers.get(name)
-    }
-
-    pub fn available_providers(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
-    }
-}
-
-pub fn load_config(file_source: &str) -> Result<OIDCConfig> {
-    let config = config::Config::builder()
-        .add_source(config::File::with_name(file_source))
-        .build()?;
-    let config = config.try_deserialize::<OIDCConfig>()?;
-    Ok(config)
-}
+type Error = anyhow::Error; //Box<dyn std::error::Error + Send + Sync + 'static>;
+type Result<T, E = Error> = std::result::Result<T, E>;
 
 type ConfiguredClient = CoreClient<
     EndpointSet,
@@ -190,15 +159,16 @@ pub struct OIDCSecrets {
 
 #[cfg(test)]
 mod tests {
+    use mbs4_types::oidc::OIDCConfig;
     use tracing_test::traced_test;
 
     use super::*;
 
     #[test]
     fn test_load_config() {
-        let config = load_config("test-data/config").unwrap();
-        assert_eq!(config.providers.len(), 1);
-        let discord = config.providers.get("google").unwrap();
+        let config = OIDCConfig::load_config("test-data/config").unwrap();
+        assert_eq!(config.available_providers().len(), 1);
+        let discord = config.get_provider("google").unwrap();
         assert_eq!(discord.client_id, "ABCDE");
         assert_eq!(discord.client_secret, Some("12345".into()))
     }
@@ -206,7 +176,7 @@ mod tests {
     #[tokio::test]
     #[traced_test]
     async fn test_discovery() {
-        let config = load_config("test-data/config").unwrap();
+        let config = OIDCConfig::load_config("test-data/config").unwrap();
         let config = config.get_provider("google").unwrap();
         let client = OIDCClient::discover(&config, "http://localhost:3000")
             .await
