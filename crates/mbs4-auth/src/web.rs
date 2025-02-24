@@ -10,7 +10,7 @@ use axum::{
     routing::get,
     Extension, RequestPartsExt,
 };
-use http::StatusCode;
+use http::{header::SET_COOKIE, HeaderMap, StatusCode};
 use mbs4_types::app::AppState;
 use serde::Deserialize;
 use tower_sessions::Session;
@@ -18,6 +18,7 @@ use tracing::{debug, error, warn};
 
 use crate::oidc::{OIDCClient, OIDCSecrets};
 
+const SESSION_COOKIE_NAME: &str = "mbs4_auth";
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
 
@@ -171,13 +172,26 @@ pub async fn callback(
         .delete()
         .await
         .unwrap_or_else(|e| warn!("Failed to delete session: {e}"));
-    Ok(Redirect::temporary(redirect_url.as_str()))
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        SET_COOKIE,
+        format!(
+            "{}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0",
+            SESSION_COOKIE_NAME
+        )
+        .parse()
+        .unwrap(),
+    );
+
+    Ok((headers, Redirect::temporary(redirect_url.as_str())))
 }
 
 /// Builds authentication router - must be nested on /auth path!
 pub fn auth_router() -> axum::Router<AppState> {
     let session_store = tower_sessions::MemoryStore::default();
     let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
+        .with_name(SESSION_COOKIE_NAME)
         .with_secure(false)
         .with_expiry(tower_sessions::Expiry::OnInactivity(
             time::Duration::seconds(60),
