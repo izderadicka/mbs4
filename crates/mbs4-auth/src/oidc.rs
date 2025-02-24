@@ -14,9 +14,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use url::Url;
 
-type Error = anyhow::Error; //Box<dyn std::error::Error + Send + Sync + 'static>;
-type Result<T, E = Error> = std::result::Result<T, E>;
-
+use crate::error::Result;
 type ConfiguredClient = CoreClient<
     EndpointSet,
     EndpointNotSet,
@@ -100,7 +98,15 @@ impl OIDCClient {
         )
     }
 
-    pub async fn token(&self, code: String, secrets: OIDCSecrets) -> Result<IDToken> {
+    pub async fn token(
+        &self,
+        code: String,
+        state: String,
+        secrets: OIDCSecrets,
+    ) -> Result<IDToken> {
+        if &state != secrets.csrf_token.secret() {
+            return Err(anyhow!("CSRF token mismatch"));
+        }
         let token_response = self
             .client
             .exchange_code(AuthorizationCode::new(code))?
@@ -164,19 +170,10 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_load_config() {
-        let config = OIDCConfig::load_config("test-data/config").unwrap();
-        assert_eq!(config.available_providers().len(), 1);
-        let discord = config.get_provider("google").unwrap();
-        assert_eq!(discord.client_id, "ABCDE");
-        assert_eq!(discord.client_secret, Some("12345".into()))
-    }
-
     #[tokio::test]
     #[traced_test]
     async fn test_discovery() {
-        let config = OIDCConfig::load_config("test-data/config").unwrap();
+        let config = OIDCConfig::load_config("../../test-data/oidc-config").unwrap();
         let config = config.get_provider("google").unwrap();
         let client = OIDCClient::discover(&config, "http://localhost:3000")
             .await

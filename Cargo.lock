@@ -1427,6 +1427,7 @@ dependencies = [
  "config",
  "serde",
  "tokio",
+ "url",
 ]
 
 [[package]]

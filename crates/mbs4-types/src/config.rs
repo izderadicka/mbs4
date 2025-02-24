@@ -1,5 +1,6 @@
 use crate::error::Result;
 use clap::Parser as _;
+use url::Url;
 
 #[derive(Debug, clap::Parser)]
 pub struct ServerConfig {
@@ -33,7 +34,7 @@ pub struct ServerConfig {
         default_value = "http://localhost:3000",
         help = "Base URL of server, as visible to users"
     )]
-    pub base_url: String,
+    pub base_url: Url,
 }
 
 impl ServerConfig {

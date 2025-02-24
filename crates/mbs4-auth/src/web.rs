@@ -5,7 +5,7 @@ use std::{
 };
 
 use axum::{
-    extract::{FromRequestParts, Query},
+    extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, RequestPartsExt,
@@ -14,11 +14,12 @@ use http::StatusCode;
 use mbs4_types::app::AppState;
 use serde::Deserialize;
 use tower_sessions::Session;
-use tracing::error;
+use tracing::{debug, error, warn};
 
 use crate::oidc::{OIDCClient, OIDCSecrets};
 
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
+const SESSION_PROVIDER_KEY: &str = "oidc_provider";
 
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
@@ -33,9 +34,33 @@ impl FromRequestParts<AppState> for OIDCClient {
         state: &AppState,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> {
         async {
-            let Query(params) = Query::<LoginParams>::from_request_parts(parts, state)
-                .await
-                .map_err(|_e| StatusCode::BAD_REQUEST)?;
+            let query = Query::<LoginParams>::from_request_parts(parts, state).await;
+            let session = parts.extract::<Session>().await.map_err(|e| {
+                error!("Missing session for OIDC provider: {}", e.1);
+                e.0
+            })?;
+
+            let provider_id = match query {
+                Ok(params) => {
+                    let params = params.0;
+                    session
+                        .insert(SESSION_PROVIDER_KEY, params.oidc_provider.clone())
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to store provider in session: {e}");
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                    params.oidc_provider
+                }
+                Err(_e) => match session.get(SESSION_PROVIDER_KEY).await {
+                    Ok(Some(provider_id)) => provider_id,
+                    _ => {
+                        error!("Missing OIDC provider in session");
+                        return Err(StatusCode::BAD_REQUEST);
+                    }
+                },
+            };
+
             let Extension(cache) =
                 parts
                     .extract::<Extension<ProvidersCache>>()
@@ -44,24 +69,26 @@ impl FromRequestParts<AppState> for OIDCClient {
                         error!("Failed to get providers cache: {e}");
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
-            if let Some(client) = cache.get_provider(&params.oidc_provider) {
+            if let Some(client) = cache.get_provider(&provider_id) {
                 return Ok(client);
             }
-            let provider_config = state.get_oidc_provider(&params.oidc_provider);
+
+            let provider_config = state.get_oidc_provider(&provider_id);
             if let Some(provider) = provider_config {
-                let client = OIDCClient::discover(&provider, "http://localhost:3000")
+                let redirect_url = state.build_url("auth/callback").map_err(|e| {
+                    error!("Failed to build auth callback URL: {e}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+                let client = OIDCClient::discover(&provider, redirect_url)
                     .await
                     .map_err(|e| {
-                        error!(
-                            "Failed to discover OIDC provider {}: {}",
-                            params.oidc_provider, e
-                        );
+                        error!("Failed to discover OIDC provider {}: {}", provider_id, e);
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
-                cache.set_provider(&params.oidc_provider, client.clone());
+                cache.set_provider(&provider_id, client.clone());
                 Ok(client)
             } else {
-                error!("Unknown OIDC provider: {}", params.oidc_provider);
+                error!("Unknown OIDC provider: {}", provider_id);
                 Err(StatusCode::BAD_REQUEST)
             }
         }
@@ -101,16 +128,21 @@ pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResp
     Ok(Redirect::temporary(url.as_str()))
 }
 
+#[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
     pub code: String,
     pub state: String,
+    pub iss: String,
+    pub session_state: Option<String>,
 }
 
 pub async fn callback(
     client: OIDCClient,
     session: Session,
+    State(state): State<AppState>,
     Query(params): Query<CallbackQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    debug!("Received callback: {:#?}", params);
     let secrets = session
         .get::<OIDCSecrets>(SESSION_SECRETS_KEY)
         .await
@@ -118,11 +150,31 @@ pub async fn callback(
             error!("Failed to get secrets from session: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?
-        .ok_or(StatusCode::BAD_REQUEST)?;
+        .ok_or_else(|| {
+            error!("Cannot retrieve session in callback");
+            StatusCode::BAD_REQUEST
+        })?;
 
-    Ok(Redirect::temporary("url.as_str()"))
+    let token = client
+        .token(params.code, params.state, secrets)
+        .await
+        .map_err(|e| {
+            error!("Failed to get token: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+    debug!("Token: {:#?}", token.claims);
+    let redirect_url = state.build_url("/").map_err(|e| {
+        error!("Failed to build redirect URL: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    session
+        .delete()
+        .await
+        .unwrap_or_else(|e| warn!("Failed to delete session: {e}"));
+    Ok(Redirect::temporary(redirect_url.as_str()))
 }
 
+/// Builds authentication router - must be nested on /auth path!
 pub fn auth_router() -> axum::Router<AppState> {
     let session_store = tower_sessions::MemoryStore::default();
     let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
@@ -132,6 +184,7 @@ pub fn auth_router() -> axum::Router<AppState> {
         ));
     axum::Router::new()
         .route("/login", get(login))
+        .route("/callback", get(callback))
         .layer(session_layer)
         .layer(Extension(ProvidersCache::new()))
 }

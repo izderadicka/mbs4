@@ -40,6 +40,7 @@ async fn main() -> Result<()> {
         ));
 
     let app = Router::new()
+        .route("/", get(root))
         .route("/test", get(test))
         .layer(session_layer)
         .nest("/auth", auth_router())
@@ -62,4 +63,13 @@ async fn test(session: Session, _request: axum::extract::Request) -> impl IntoRe
     let text = format!("test count {} at {}", &counter.count, counter.timestamp);
     session.insert(COUNTER_KEY, counter).await.unwrap();
     text
+}
+
+async fn root(request: axum::extract::Request) -> impl IntoResponse {
+    let headers = request.headers();
+    let mut headers_print = "Request headers:\n".to_string();
+    for (name, value) in headers.iter() {
+        headers_print.push_str(&format!("{}: {}\n", name.as_str(), value.to_str().unwrap()));
+    }
+    headers_print
 }

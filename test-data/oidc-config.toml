@@ -1,0 +1,9 @@
+[providers.google]
+issuer_url = "https://accounts.google.com"
+client_id = "ABCDE"
+client_secret = "12345"
+
+[providers.keycloak]
+issuer_url = "http://localhost:8080/realms/mbs4"
+client_id = "mbs4"
+client_secret = "Xc3mvt4a4TJ6IUzwqII6wseseF03QhVu"

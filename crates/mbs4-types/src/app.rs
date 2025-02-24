@@ -4,6 +4,7 @@ use crate::config::ServerConfig;
 use crate::error::Result;
 use crate::oidc::OIDCConfig;
 use tokio::task::spawn_blocking;
+use url::Url;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -35,6 +36,12 @@ impl AppState {
             }),
         })
     }
+
+    pub fn build_url(&self, relative_url: &str) -> Result<Url> {
+        let base = &self.get_app_config().base_url;
+        let url = base.join(relative_url)?;
+        Ok(url)
+    }
 }
 
 pub struct AppStateInner {
@@ -45,7 +52,7 @@ pub struct AppStateInner {
 }
 
 pub struct AppConfig {
-    pub base_url: String,
+    pub base_url: Url,
 }
 
 pub struct AppStateVolatile {}
