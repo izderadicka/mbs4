@@ -1397,20 +1397,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
-name = "mbs4-auth"
+name = "mbs4-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "http",
+ "mbs4-auth",
+ "mbs4-types",
+ "serde",
+ "time",
+ "tokio",
+ "tower-sessions",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "mbs4-auth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
  "jsonwebtoken",
  "mbs4-types",
  "openidconnect",
  "reqwest",
  "serde",
- "time",
  "tokio",
- "tower-sessions",
  "tracing",
  "tracing-test",
  "url",
@@ -1423,6 +1437,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "mbs4-app",
  "mbs4-auth",
  "mbs4-types",
  "serde",
@@ -1432,6 +1447,7 @@ dependencies = [
  "tower-sessions",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

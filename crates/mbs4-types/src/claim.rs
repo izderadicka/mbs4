@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::HashSet, hash::Hash};
+use std::{borrow::Borrow, collections::HashSet, hash::Hash, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +34,11 @@ impl From<&str> for Role {
     }
 }
 
+pub trait TimeLimited {
+    fn set_validity(&mut self, until: SystemTime);
+    fn check_validity(&self) -> bool;
+}
+
 pub trait Authorization {
     fn has_role<Q>(&self, role: &Q) -> bool
     where
@@ -67,12 +72,17 @@ pub struct UserClaim {
     pub roles: HashSet<Role>,
 }
 
-// impl Authorization for UserClaim {
-//     fn has_role(&self, role: impl AsRef<Role>) -> bool {
-//         self.roles.contains(role.as_ref())
-//     }
-// }
+impl Authorization for UserClaim {
+    fn has_role<Q>(&self, role: &Q) -> bool
+    where
+        Role: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        self.roles.contains(role)
+    }
+}
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ApiClaim {
     pub sub: String,
     pub exp: u64,
@@ -86,6 +96,23 @@ impl Authorization for ApiClaim {
         Q: Hash + Eq + ?Sized,
     {
         self.roles.contains(role)
+    }
+}
+
+impl TimeLimited for ApiClaim {
+    fn set_validity(&mut self, until: SystemTime) {
+        self.exp = until
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+    }
+
+    fn check_validity(&self) -> bool {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.exp > now
     }
 }
 

@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::state::AppState;
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
@@ -11,12 +12,11 @@ use axum::{
     Extension, RequestPartsExt,
 };
 use http::{header::SET_COOKIE, HeaderMap, StatusCode};
-use mbs4_types::app::AppState;
 use serde::Deserialize;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
 
-use crate::oidc::{OIDCClient, OIDCSecrets};
+use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
 
 const SESSION_COOKIE_NAME: &str = "mbs4_auth";
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";

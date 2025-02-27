@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mbs4-auth", "crates/mbs4-server", "crates/mbs4-types"]
+members = [ "crates/*"]
 resolver = "2"
 
 

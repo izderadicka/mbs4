@@ -12,10 +12,7 @@ openidconnect = "4.0.0"
 reqwest = "0.12.12"
 anyhow.workspace = true
 tracing.workspace = true
-http = "1.2.0"
 mbs4-types = { path = "../mbs4-types" }
-tower-sessions = "0.14.0"
-time = "0.3.37"
 jsonwebtoken = "9.3.1"
 
 [dev-dependencies]
