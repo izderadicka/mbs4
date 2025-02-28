@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use mbs4_app::auth::auth_router;
+use mbs4_app::{auth::auth_router, user::users_router};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 
@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
         .route("/test", get(test))
         .layer(session_layer)
         .nest("/auth", auth_router())
+        .nest("/users", users_router())
         .with_state(state);
     let ip: std::net::IpAddr = args.listen_address.parse()?;
     let addr = std::net::SocketAddr::from((ip, args.port));

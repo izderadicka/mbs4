@@ -18,9 +18,10 @@ use tracing::{debug, error, warn};
 
 use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
 
-const SESSION_COOKIE_NAME: &str = "mbs4_auth";
+const SESSION_COOKIE_NAME: &str = "mbs4";
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
+const SESSION_EXPIRY_SECS: i64 = 3600;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
@@ -168,6 +169,18 @@ pub async fn callback(
         error!("Failed to build redirect URL: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    Ok(Redirect::temporary(redirect_url.as_str()))
+}
+
+pub async fn logout(
+    session: Session,
+    state: State<AppState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let redirect_url = state.build_url("/").map_err(|e| {
+        error!("Failed to build redirect URL: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     session
         .delete()
         .await
@@ -194,11 +207,12 @@ pub fn auth_router() -> axum::Router<AppState> {
         .with_name(SESSION_COOKIE_NAME)
         .with_secure(false)
         .with_expiry(tower_sessions::Expiry::OnInactivity(
-            time::Duration::seconds(60),
+            time::Duration::seconds(SESSION_EXPIRY_SECS),
         ));
     axum::Router::new()
         .route("/login", get(login))
         .route("/callback", get(callback))
+        .route("/logout", get(logout))
         .layer(session_layer)
         .layer(Extension(ProvidersCache::new()))
 }

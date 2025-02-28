@@ -35,6 +35,14 @@ pub struct ServerConfig {
         help = "Base URL of server, as visible to users"
     )]
     pub base_url: Url,
+
+    #[arg(
+        long,
+        default_value = "sqlite://test-data/mbs4.db",
+        env = "MBS4_DATABASE_URL",
+        help = "Database URL e.g. sqlite://file.db or similar"
+    )]
+    pub database_url: String,
 }
 
 impl ServerConfig {

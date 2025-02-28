@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::error::Result;
 use mbs4_types::oidc::OIDCConfig;
+use sqlx::Pool;
 use url::Url;
 
 #[derive(Clone)]
@@ -10,13 +11,14 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(oidc_config: OIDCConfig, app_config: AppConfig) -> Self {
+    pub fn new(oidc_config: OIDCConfig, app_config: AppConfig, pool: Pool<sqlx::Sqlite>) -> Self {
         let state = RwLock::new(AppStateVolatile {});
         AppState {
             state: Arc::new(AppStateInner {
                 oidc_providers_config: oidc_config,
                 state,
                 app_config,
+                pool,
             }),
         }
     }
@@ -33,9 +35,14 @@ impl AppState {
         let url = base.join(relative_url)?;
         Ok(url)
     }
+
+    pub fn pool(&self) -> &Pool<sqlx::Sqlite> {
+        &self.state.pool
+    }
 }
 
 struct AppStateInner {
+    pool: Pool<sqlx::Sqlite>,
     oidc_providers_config: OIDCConfig,
     app_config: AppConfig,
     #[allow(dead_code)]
