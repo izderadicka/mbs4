@@ -61,6 +61,10 @@ impl TokenManager {
         let data = decode::<T>(token, &self.keys.decoding, &self.validation)?;
         Ok(data.claims)
     }
+
+    pub fn default_validity(&self) -> std::time::Duration {
+        self.default_validity
+    }
 }
 
 #[cfg(test)]

@@ -2,26 +2,36 @@ use std::{
     collections::HashMap,
     future::Future,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
-use crate::state::AppState;
+use crate::{
+    dal::user::{User, UserRepository},
+    state::AppState,
+};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, RequestPartsExt,
 };
-use http::{header::SET_COOKIE, HeaderMap, StatusCode};
+use cookie::{Cookie, Expiration, SameSite};
+use http::StatusCode;
+use mbs4_types::claim::{ApiClaim, UserClaim};
 use serde::Deserialize;
+use time::OffsetDateTime;
+use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
 
 use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
 
 const SESSION_COOKIE_NAME: &str = "mbs4";
+const TOKEN_COOKIE_NAME: &str = "mbs4_token";
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
-const SESSION_EXPIRY_SECS: i64 = 3600;
+const SESSION_USER_KEY: &str = "user";
+const SESSION_EXPIRY_SECS: u64 = 3600;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
@@ -142,6 +152,7 @@ pub async fn callback(
     client: OIDCClient,
     session: Session,
     State(state): State<AppState>,
+    user_registry: UserRepository,
     Query(params): Query<CallbackQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
     debug!("Received callback: {:#?}", params);
@@ -165,17 +176,78 @@ pub async fn callback(
             StatusCode::BAD_REQUEST
         })?;
     debug!("Token: {:#?}", token.claims);
-    let redirect_url = state.build_url("/").map_err(|e| {
-        error!("Failed to build redirect URL: {e}");
+    let user_info = UserClaim::try_from(&token).map_err(|e| {
+        error!("Failed to get user info: {e}");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    match user_registry.find_by_email(&user_info.email).await.ok() {
+        Some(known_user) => {
+            session
+                .insert(SESSION_USER_KEY, known_user)
+                .await
+                .map_err(|e| {
+                    error!("Failed to store user in session: {e}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            let redirect_url = state.build_url("/").map_err(|e| {
+                error!("Failed to build redirect URL: {e}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+            Ok(Redirect::temporary(redirect_url.as_str()))
+        }
+        None => {
+            //TODO: consider allowing authenticated users with no roles
+            warn!("Unknown user: {}", user_info.email);
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+    }
+}
+
+pub async fn token(
+    session: Session,
+    cookies: Cookies,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let user = session.get::<User>(SESSION_USER_KEY).await.map_err(|e| {
+        error!("Failed to get user from session: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    Ok(Redirect::temporary(redirect_url.as_str()))
+    if let Some(known_user) = user {
+        let token = ApiClaim::new_expired(
+            known_user.id.to_string(),
+            known_user.roles.iter().map(|v| v.into_iter()).flatten(),
+        );
+
+        let signed_token = state.tokens().issue(token).map_err(|e| {
+            error!("Failed to issue token: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let cookie = Cookie::build((TOKEN_COOKIE_NAME, signed_token.clone()))
+            .http_only(true)
+            .secure(true)
+            .path("/")
+            .same_site(SameSite::Lax)
+            .expires(Expiration::DateTime(
+                OffsetDateTime::now_utc() + state.tokens().default_validity(),
+            ));
+
+        cookies.add(cookie.into());
+
+        Ok(signed_token)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
 }
 
 pub async fn logout(
     session: Session,
     state: State<AppState>,
+    cookies: Cookies,
 ) -> Result<impl IntoResponse, StatusCode> {
     let redirect_url = state.build_url("/").map_err(|e| {
         error!("Failed to build redirect URL: {e}");
@@ -186,18 +258,9 @@ pub async fn logout(
         .await
         .unwrap_or_else(|e| warn!("Failed to delete session: {e}"));
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        SET_COOKIE,
-        format!(
-            "{}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0",
-            SESSION_COOKIE_NAME
-        )
-        .parse()
-        .unwrap(),
-    );
+    cookies.remove(tower_cookies::Cookie::new(SESSION_COOKIE_NAME, ""));
 
-    Ok((headers, Redirect::temporary(redirect_url.as_str())))
+    Ok(Redirect::temporary(redirect_url.as_str()))
 }
 
 /// Builds authentication router - must be nested on /auth path!
@@ -205,14 +268,15 @@ pub fn auth_router() -> axum::Router<AppState> {
     let session_store = tower_sessions::MemoryStore::default();
     let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
         .with_name(SESSION_COOKIE_NAME)
-        .with_secure(false)
-        .with_expiry(tower_sessions::Expiry::OnInactivity(
-            time::Duration::seconds(SESSION_EXPIRY_SECS),
+        .with_secure(true)
+        .with_expiry(tower_sessions::Expiry::AtDateTime(
+            OffsetDateTime::now_utc() + Duration::from_secs(SESSION_EXPIRY_SECS),
         ));
     axum::Router::new()
         .route("/login", get(login))
         .route("/callback", get(callback))
         .route("/logout", get(logout))
+        .route("/token", get(token))
         .layer(session_layer)
         .layer(Extension(ProvidersCache::new()))
 }

@@ -28,6 +28,12 @@ impl From<String> for Role {
     }
 }
 
+impl From<&String> for Role {
+    fn from(value: &String) -> Self {
+        Self(value.clone())
+    }
+}
+
 impl From<&str> for Role {
     fn from(value: &str) -> Self {
         Self(value.to_string())
@@ -87,6 +93,19 @@ pub struct ApiClaim {
     pub sub: String,
     pub exp: u64,
     pub roles: HashSet<Role>,
+}
+
+impl ApiClaim {
+    pub fn new_expired(
+        sub: impl Into<String>,
+        roles: impl IntoIterator<Item = impl Into<Role>>,
+    ) -> Self {
+        Self {
+            sub: sub.into(),
+            exp: 0,
+            roles: roles.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 impl Authorization for ApiClaim {

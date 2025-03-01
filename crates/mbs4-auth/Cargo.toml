@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 serde.workspace = true
 tokio.workspace = true
-axum.workspace = true
 url = "2.5.4"
 openidconnect = "4.0.0"
 reqwest = "0.12.12"

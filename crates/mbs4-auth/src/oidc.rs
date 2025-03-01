@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use anyhow::anyhow;
-use mbs4_types::oidc::OIDCProviderConfig;
+use mbs4_types::{claim::UserClaim, oidc::OIDCProviderConfig};
 use openidconnect::{
     core::{
         CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm,
@@ -14,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use url::Url;
 
-use crate::error::Result;
+use crate::{error::Result, Error};
 type ConfiguredClient = CoreClient<
     EndpointSet,
     EndpointNotSet,
@@ -154,6 +156,39 @@ pub struct IDToken {
     >,
     pub access_token: Option<AccessToken>,
     pub refresh_token: Option<RefreshToken>,
+}
+
+impl TryFrom<&IDToken> for UserClaim {
+    type Error = Error;
+
+    fn try_from(value: &IDToken) -> std::result::Result<Self, Self::Error> {
+        let email = value
+            .claims
+            .email()
+            .as_ref()
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::msg("Missing email"))?;
+        let username = value
+            .claims
+            .name()
+            .as_ref()
+            .and_then(|s| s.get(None))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                email
+                    .split("@")
+                    .next()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| email.clone())
+            });
+        let sub = value.claims.subject().to_string();
+        Ok(UserClaim {
+            email,
+            username,
+            sub,
+            roles: HashSet::new(),
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

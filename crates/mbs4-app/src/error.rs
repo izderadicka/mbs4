@@ -19,6 +19,8 @@ pub enum ApiError {
     ResourceAlreadyExists(String),
     #[error("Application error: {0}")]
     ApplicationError(#[from] anyhow::Error),
+    #[error("User password error: {0}")]
+    UserPasswordError(#[from] argon2::password_hash::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -47,6 +49,13 @@ impl IntoResponse for ApiError {
             ),
             ApiError::ApplicationError(error) => {
                 tracing::error!("Application error: {error}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Application error".into(),
+                )
+            }
+            ApiError::UserPasswordError(error) => {
+                tracing::error!("User password error: {error}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Application error".into(),

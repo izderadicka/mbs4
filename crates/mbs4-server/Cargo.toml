@@ -23,3 +23,6 @@ mbs4-types = { path = "../mbs4-types" }
 mbs4-app = { path = "../mbs4-app" }
 url = "2.5.4"
 sqlx.workspace=true
+dirs = "6.0.0"
+rand = "0.9.0"
+humantime = "2.1.0"

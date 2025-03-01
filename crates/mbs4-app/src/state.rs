@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::error::Result;
+use mbs4_auth::token::TokenManager;
 use mbs4_types::oidc::OIDCConfig;
 use sqlx::Pool;
 use url::Url;
@@ -11,7 +12,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(oidc_config: OIDCConfig, app_config: AppConfig, pool: Pool<sqlx::Sqlite>) -> Self {
+    pub fn new(
+        oidc_config: OIDCConfig,
+        app_config: AppConfig,
+        pool: Pool<crate::ChosenDB>,
+        tokens: TokenManager,
+    ) -> Self {
         let state = RwLock::new(AppStateVolatile {});
         AppState {
             state: Arc::new(AppStateInner {
@@ -19,6 +25,7 @@ impl AppState {
                 state,
                 app_config,
                 pool,
+                tokens,
             }),
         }
     }
@@ -36,15 +43,20 @@ impl AppState {
         Ok(url)
     }
 
-    pub fn pool(&self) -> &Pool<sqlx::Sqlite> {
+    pub fn pool(&self) -> &Pool<crate::ChosenDB> {
         &self.state.pool
+    }
+
+    pub fn tokens(&self) -> &TokenManager {
+        &self.state.tokens
     }
 }
 
 struct AppStateInner {
-    pool: Pool<sqlx::Sqlite>,
+    pool: Pool<crate::ChosenDB>,
     oidc_providers_config: OIDCConfig,
     app_config: AppConfig,
+    tokens: TokenManager,
     #[allow(dead_code)]
     state: RwLock<AppStateVolatile>,
 }

@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf, time::Duration};
+
 use crate::error::Result;
 use clap::Parser as _;
 use url::Url;
@@ -43,10 +45,40 @@ pub struct ServerConfig {
         help = "Database URL e.g. sqlite://file.db or similar"
     )]
     pub database_url: String,
+
+    #[arg(long, env = "MBS4_DATA_DIR", help = "Data directory")]
+    pub data_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
+        env = "MBS4_TOKEN_VALIDITY",
+        default_value = "1 day",
+        help = "Default token validity in human friendtly format (e.g. 1d, 1h, 1m, 1s - or combined)",
+        value_parser = humantime::parse_duration
+    )]
+    pub token_validity: Duration,
 }
 
 impl ServerConfig {
     pub fn load() -> Result<Self> {
         ServerConfig::try_parse().map_err(|e| e.into())
+    }
+
+    pub fn data_dir(&self) -> Result<PathBuf, std::io::Error> {
+        let dir = dirs::data_dir()
+            .map(|p| p.join("mbs4"))
+            .unwrap_or_else(|| PathBuf::from("mbs4"));
+
+        if !fs::exists(&dir)? {
+            fs::create_dir_all(&dir)?;
+            Ok(dir)
+        } else if dir.is_dir() {
+            Ok(dir)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Data directory is not a directory",
+            ))
+        }
     }
 }

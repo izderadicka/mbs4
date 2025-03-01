@@ -7,3 +7,8 @@ client_secret = "12345"
 issuer_url = "http://localhost:8080/realms/mbs4"
 client_id = "mbs4"
 client_secret = "Xc3mvt4a4TJ6IUzwqII6wseseF03QhVu"
+
+[providers.keycloak2]
+issuer_url = "http://localhost:8080/realms/test"
+client_id = "mbs4"
+client_secret = "sEZGjjfOlXeM7Z2RcrZIAKNeAIY284yy"
