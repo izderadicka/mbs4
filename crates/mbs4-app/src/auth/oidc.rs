@@ -5,19 +5,15 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    dal::user::{User, UserRepository},
-    state::AppState,
-};
+use crate::{dal::user::UserRepository, state::AppState};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, RequestPartsExt,
 };
-use cookie::{Cookie, Expiration, SameSite};
-use http::StatusCode;
-use mbs4_types::claim::{ApiClaim, UserClaim};
+use http::{request::Parts, StatusCode};
+use mbs4_types::claim::UserClaim;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
@@ -26,12 +22,10 @@ use tracing::{debug, error, warn};
 
 use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
 
-const SESSION_COOKIE_NAME: &str = "mbs4";
-const TOKEN_COOKIE_NAME: &str = "mbs4_token";
+use super::SESSION_USER_KEY;
+
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
-const SESSION_USER_KEY: &str = "user";
-const SESSION_EXPIRY_SECS: u64 = 3600;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
@@ -42,7 +36,7 @@ impl FromRequestParts<AppState> for OIDCClient {
     type Rejection = StatusCode;
 
     fn from_request_parts(
-        parts: &mut http::request::Parts,
+        parts: &mut Parts,
         state: &AppState,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> {
         async {
@@ -204,79 +198,4 @@ pub async fn callback(
             return Err(StatusCode::UNAUTHORIZED);
         }
     }
-}
-
-pub async fn token(
-    session: Session,
-    cookies: Cookies,
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let user = session.get::<User>(SESSION_USER_KEY).await.map_err(|e| {
-        error!("Failed to get user from session: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    if let Some(known_user) = user {
-        let token = ApiClaim::new_expired(
-            known_user.id.to_string(),
-            known_user.roles.iter().map(|v| v.into_iter()).flatten(),
-        );
-
-        let signed_token = state.tokens().issue(token).map_err(|e| {
-            error!("Failed to issue token: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        let cookie = Cookie::build((TOKEN_COOKIE_NAME, signed_token.clone()))
-            .http_only(true)
-            .secure(true)
-            .path("/")
-            .same_site(SameSite::Lax)
-            .expires(Expiration::DateTime(
-                OffsetDateTime::now_utc() + state.tokens().default_validity(),
-            ));
-
-        cookies.add(cookie.into());
-
-        Ok(signed_token)
-    } else {
-        Err(StatusCode::UNAUTHORIZED)
-    }
-}
-
-pub async fn logout(
-    session: Session,
-    state: State<AppState>,
-    cookies: Cookies,
-) -> Result<impl IntoResponse, StatusCode> {
-    let redirect_url = state.build_url("/").map_err(|e| {
-        error!("Failed to build redirect URL: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    session
-        .delete()
-        .await
-        .unwrap_or_else(|e| warn!("Failed to delete session: {e}"));
-
-    cookies.remove(tower_cookies::Cookie::new(SESSION_COOKIE_NAME, ""));
-
-    Ok(Redirect::temporary(redirect_url.as_str()))
-}
-
-/// Builds authentication router - must be nested on /auth path!
-pub fn auth_router() -> axum::Router<AppState> {
-    let session_store = tower_sessions::MemoryStore::default();
-    let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
-        .with_name(SESSION_COOKIE_NAME)
-        .with_secure(true)
-        .with_expiry(tower_sessions::Expiry::AtDateTime(
-            OffsetDateTime::now_utc() + Duration::from_secs(SESSION_EXPIRY_SECS),
-        ));
-    axum::Router::new()
-        .route("/login", get(login))
-        .route("/callback", get(callback))
-        .route("/logout", get(logout))
-        .route("/token", get(token))
-        .layer(session_layer)
-        .layer(Extension(ProvidersCache::new()))
 }
