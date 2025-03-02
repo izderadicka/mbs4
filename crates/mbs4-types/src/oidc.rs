@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn test_load_config() {
         let config = OIDCConfig::load_config("../../test-data/oidc-config").unwrap();
-        assert_eq!(config.available_providers().len(), 2);
+        assert_eq!(config.available_providers().len(), 3);
         let discord = config.get_provider("google").unwrap();
         assert_eq!(discord.client_id, "ABCDE");
         assert_eq!(discord.client_secret, Some("12345".into()))

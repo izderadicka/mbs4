@@ -61,14 +61,13 @@ impl FromRequestParts<AppState> for OIDCClient {
             },
         };
 
-        let Extension(cache) =
-            parts
-                .extract::<Extension<ProvidersCache>>()
-                .await
-                .map_err(|e| {
-                    error!("Failed to get providers cache: {e}");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let Extension(cache) = parts
+            .extract::<Extension<ProvidersCache>>()
+            .await
+            .map_err(|e| {
+                error!("Failed to get providers cache: {e}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
         if let Some(client) = cache.get_provider(&provider_id) {
             return Ok(client);
         }
