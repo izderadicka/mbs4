@@ -2,21 +2,17 @@ use std::{
     collections::HashMap,
     future::Future,
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 use crate::{dal::user::UserRepository, state::AppState};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
-    routing::get,
     Extension, RequestPartsExt,
 };
 use http::{request::Parts, StatusCode};
 use mbs4_types::claim::UserClaim;
 use serde::Deserialize;
-use time::OffsetDateTime;
-use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
 

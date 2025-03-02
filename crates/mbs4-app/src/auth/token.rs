@@ -2,21 +2,19 @@ use std::future::Future;
 
 use crate::{dal::user::User, state::AppState};
 use axum::{
-    extract::{FromRequestParts, Query, State},
-    response::{IntoResponse, Redirect},
-    routing::get,
-    Extension, RequestPartsExt,
+    extract::{FromRequestParts, State},
+    response::IntoResponse,
+    RequestPartsExt,
 };
 use axum_extra::TypedHeader;
 use cookie::{Cookie, Expiration, SameSite};
 use headers::{authorization::Bearer, Authorization};
 use http::{request::Parts, StatusCode};
-use mbs4_types::claim::{ApiClaim, UserClaim};
-use serde::Deserialize;
+use mbs4_types::claim::ApiClaim;
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
 
