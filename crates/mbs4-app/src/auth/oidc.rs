@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    future::Future,
     sync::{Arc, RwLock},
 };
 
@@ -31,68 +30,66 @@ pub struct LoginParams {
 impl FromRequestParts<AppState> for OIDCClient {
     type Rejection = StatusCode;
 
-    fn from_request_parts(
+    async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> {
-        async {
-            let query = Query::<LoginParams>::from_request_parts(parts, state).await;
-            let session = parts.extract::<Session>().await.map_err(|e| {
-                error!("Missing session for OIDC provider: {}", e.1);
-                e.0
-            })?;
+    ) -> Result<Self, Self::Rejection> {
+        let query = Query::<LoginParams>::from_request_parts(parts, state).await;
+        let session = parts.extract::<Session>().await.map_err(|e| {
+            error!("Missing session for OIDC provider: {}", e.1);
+            e.0
+        })?;
 
-            let provider_id = match query {
-                Ok(params) => {
-                    let params = params.0;
-                    session
-                        .insert(SESSION_PROVIDER_KEY, params.oidc_provider.clone())
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to store provider in session: {e}");
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-                    params.oidc_provider
-                }
-                Err(_e) => match session.get(SESSION_PROVIDER_KEY).await {
-                    Ok(Some(provider_id)) => provider_id,
-                    _ => {
-                        error!("Missing OIDC provider in session");
-                        return Err(StatusCode::BAD_REQUEST);
-                    }
-                },
-            };
-
-            let Extension(cache) =
-                parts
-                    .extract::<Extension<ProvidersCache>>()
+        let provider_id = match query {
+            Ok(params) => {
+                let params = params.0;
+                session
+                    .insert(SESSION_PROVIDER_KEY, params.oidc_provider.clone())
                     .await
                     .map_err(|e| {
-                        error!("Failed to get providers cache: {e}");
+                        error!("Failed to store provider in session: {e}");
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
-            if let Some(client) = cache.get_provider(&provider_id) {
-                return Ok(client);
+                params.oidc_provider
             }
+            Err(_e) => match session.get(SESSION_PROVIDER_KEY).await {
+                Ok(Some(provider_id)) => provider_id,
+                _ => {
+                    error!("Missing OIDC provider in session");
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            },
+        };
 
-            let provider_config = state.get_oidc_provider(&provider_id);
-            if let Some(provider) = provider_config {
-                let redirect_url = state.build_url("auth/callback").map_err(|e| {
-                    error!("Failed to build auth callback URL: {e}");
+        let Extension(cache) =
+            parts
+                .extract::<Extension<ProvidersCache>>()
+                .await
+                .map_err(|e| {
+                    error!("Failed to get providers cache: {e}");
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
-                let client = OIDCClient::discover(&provider, redirect_url)
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to discover OIDC provider {}: {}", provider_id, e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?;
-                cache.set_provider(&provider_id, client.clone());
-                Ok(client)
-            } else {
-                error!("Unknown OIDC provider: {}", provider_id);
-                Err(StatusCode::BAD_REQUEST)
-            }
+        if let Some(client) = cache.get_provider(&provider_id) {
+            return Ok(client);
+        }
+
+        let provider_config = state.get_oidc_provider(&provider_id);
+        if let Some(provider) = provider_config {
+            let redirect_url = state.build_url("auth/callback").map_err(|e| {
+                error!("Failed to build auth callback URL: {e}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            let client = OIDCClient::discover(&provider, redirect_url)
+                .await
+                .map_err(|e| {
+                    error!("Failed to discover OIDC provider {}: {}", provider_id, e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            cache.set_provider(&provider_id, client.clone());
+            Ok(client)
+        } else {
+            error!("Unknown OIDC provider: {}", provider_id);
+            Err(StatusCode::BAD_REQUEST)
         }
     }
 }
@@ -100,6 +97,12 @@ impl FromRequestParts<AppState> for OIDCClient {
 #[derive(Clone)]
 pub struct ProvidersCache {
     providers: Arc<RwLock<HashMap<String, OIDCClient>>>,
+}
+
+impl Default for ProvidersCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProvidersCache {
@@ -191,7 +194,7 @@ pub async fn callback(
         None => {
             //TODO: consider allowing authenticated users with no roles
             warn!("Unknown user: {}", user_info.email);
-            return Err(StatusCode::UNAUTHORIZED);
+            Err(StatusCode::UNAUTHORIZED)
         }
     }
 }

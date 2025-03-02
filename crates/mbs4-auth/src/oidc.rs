@@ -133,7 +133,7 @@ impl OIDCClient {
                 id_token.signing_key(&id_token_verifier)?,
             )?;
             if actual_access_token_hash != *expected_access_token_hash {
-                return Err(anyhow!("Invalid access token").into());
+                return Err(anyhow!("Invalid access token"));
             }
             return Ok(IDToken {
                 claims: claims.clone(),
@@ -142,7 +142,7 @@ impl OIDCClient {
                 refresh_token: token_response.refresh_token().cloned(),
             });
         }
-        Err(anyhow!("Access token hash is missing").into())
+        Err(anyhow!("Access token hash is missing"))
     }
 }
 
@@ -210,7 +210,7 @@ mod tests {
     async fn test_discovery() {
         let config = OIDCConfig::load_config("../../test-data/oidc-config").unwrap();
         let config = config.get_provider("google").unwrap();
-        let client = OIDCClient::discover(&config, "http://localhost:3000")
+        let client = OIDCClient::discover(config, "http://localhost:3000")
             .await
             .unwrap();
         assert_eq!(client.client.client_id().as_str(), "ABCDE");

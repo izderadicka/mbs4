@@ -24,7 +24,7 @@ fn hash_password(password: &str) -> HashResult<String> {
 
 #[allow(dead_code)]
 fn verify_password(password: &str) -> HashResult<bool> {
-    let parsed_hash = PasswordHash::new(&password)?;
+    let parsed_hash = PasswordHash::new(password)?;
     let res = Argon2::default().verify_password(password.as_bytes(), &parsed_hash);
     if let Err(e) = res {
         debug!("Invalid password, error {e}");

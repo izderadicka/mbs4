@@ -1,4 +1,3 @@
-use std::future::Future;
 
 use crate::{dal::user::User, state::AppState};
 use axum::{
@@ -21,37 +20,35 @@ use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
 impl FromRequestParts<AppState> for ApiClaim {
     type Rejection = StatusCode;
 
-    fn from_request_parts(
+    async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        async {
-            let mut header_token = parts
-                .extract::<TypedHeader<Authorization<Bearer>>>()
-                .await
-                .ok()
-                .map(|h| h.0.token().to_string());
+    ) -> Result<Self, Self::Rejection> {
+        let mut header_token = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .ok()
+            .map(|h| h.0.token().to_string());
 
-            if header_token.is_none() {
-                let cookies = parts.extract::<Cookies>().await.map_err(|e| {
-                    error!("Cannot get cookies: {}", e.1);
-                    e.0
+        if header_token.is_none() {
+            let cookies = parts.extract::<Cookies>().await.map_err(|e| {
+                error!("Cannot get cookies: {}", e.1);
+                e.0
+            })?;
+            header_token = cookies.get(TOKEN_COOKIE_NAME).map(|t| t.to_string());
+        }
+
+        match header_token {
+            Some(token) => {
+                let claim = state.tokens().validate::<ApiClaim>(&token).map_err(|e| {
+                    error!("Failed to validate token: {}", e);
+                    StatusCode::UNAUTHORIZED
                 })?;
-                header_token = cookies.get(TOKEN_COOKIE_NAME).map(|t| t.to_string());
+                Ok(claim)
             }
-
-            match header_token {
-                Some(token) => {
-                    let claim = state.tokens().validate::<ApiClaim>(&token).map_err(|e| {
-                        error!("Failed to validate token: {}", e);
-                        StatusCode::UNAUTHORIZED
-                    })?;
-                    Ok(claim)
-                }
-                None => {
-                    debug!("No token found");
-                    Err(StatusCode::UNAUTHORIZED)
-                }
+            None => {
+                debug!("No token found");
+                Err(StatusCode::UNAUTHORIZED)
             }
         }
     }
@@ -70,7 +67,7 @@ pub async fn token(
     if let Some(known_user) = user {
         let token = ApiClaim::new_expired(
             known_user.id.to_string(),
-            known_user.roles.iter().map(|v| v.into_iter()).flatten(),
+            known_user.roles.iter().flat_map(|v| v.iter()),
         );
 
         let signed_token = state.tokens().issue(token).map_err(|e| {
