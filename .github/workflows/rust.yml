@@ -21,6 +21,12 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         save-if: ${{ github.ref == 'refs/heads/master' }}
+    - name: Install sqlx-cli
+      run: cargo install sqlx-cli
+    - name: create database
+      run: |-
+        sqlx database create
+        sqlx migrate run
     - name: Check formating
       run: cargo fmt --all --check
     - name: Check compilation
