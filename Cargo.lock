@@ -1722,6 +1722,7 @@ dependencies = [
  "sqlx",
  "time",
  "tokio",
+ "tower-cookies",
  "tower-sessions",
  "tracing",
  "tracing-subscriber",

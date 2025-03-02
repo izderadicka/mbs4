@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::HashSet, hash::Hash, time::SystemTime};
+use std::{borrow::Borrow, clone, collections::HashSet, hash::Hash, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -88,7 +88,7 @@ impl Authorization for UserClaim {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, clone::Clone)]
 pub struct ApiClaim {
     pub sub: String,
     pub exp: u64,

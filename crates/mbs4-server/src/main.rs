@@ -1,5 +1,6 @@
-use axum::{response::IntoResponse, routing::get, Router};
+use axum::{middleware, response::IntoResponse, routing::get, Router};
 use mbs4_app::{auth::auth_router, user::users_router};
+use mbs4_types::claim::{self, ApiClaim};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 
@@ -44,6 +45,8 @@ async fn main() -> Result<()> {
         .layer(session_layer)
         .nest("/auth", auth_router())
         .nest("/users", users_router())
+        .route("/protected", get(protected))
+        .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state);
     let ip: std::net::IpAddr = args.listen_address.parse()?;
     let addr = std::net::SocketAddr::from((ip, args.port));
@@ -51,6 +54,10 @@ async fn main() -> Result<()> {
     debug!("Listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn protected(claim: ApiClaim) -> impl IntoResponse {
+    format!("This is a protected route, welcome {claim:?}")
 }
 
 async fn test(session: Session, _request: axum::extract::Request) -> impl IntoResponse {

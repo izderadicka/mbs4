@@ -2,7 +2,7 @@ use crate::{dal::user::User, state::AppState};
 use axum::{
     extract::{FromRequestParts, State},
     response::IntoResponse,
-    RequestPartsExt,
+    Extension, RequestPartsExt,
 };
 use axum_extra::TypedHeader;
 use cookie::{Cookie, Expiration, SameSite};
@@ -12,7 +12,7 @@ use mbs4_types::claim::ApiClaim;
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
-use tracing::{debug, error};
+use tracing::{debug, error, field::debug};
 
 use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
 
@@ -23,6 +23,10 @@ impl FromRequestParts<AppState> for ApiClaim {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        // check if we already have a token in extensions
+        if let Some(existing_claim) = parts.extract::<Extension<ApiClaim>>().await.ok() {
+            return Ok(existing_claim.0);
+        }
         let mut header_token = parts
             .extract::<TypedHeader<Authorization<Bearer>>>()
             .await
@@ -30,6 +34,7 @@ impl FromRequestParts<AppState> for ApiClaim {
             .map(|h| h.0.token().to_string());
 
         if header_token.is_none() {
+            debug!("No token found in headers");
             let cookies = parts.extract::<Cookies>().await.map_err(|e| {
                 error!("Cannot get cookies: {}", e.1);
                 e.0
@@ -39,10 +44,13 @@ impl FromRequestParts<AppState> for ApiClaim {
 
         match header_token {
             Some(token) => {
+                debug("Token found, validating");
                 let claim = state.tokens().validate::<ApiClaim>(&token).map_err(|e| {
                     error!("Failed to validate token: {}", e);
                     StatusCode::UNAUTHORIZED
                 })?;
+                // store as extension for later use
+                parts.extensions.insert(claim.clone());
                 Ok(claim)
             }
             None => {

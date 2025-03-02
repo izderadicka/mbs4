@@ -26,3 +26,4 @@ sqlx.workspace=true
 dirs = "6.0.0"
 rand = "0.9.0"
 humantime = "2.1.0"
+tower-cookies = "0.11.0"
