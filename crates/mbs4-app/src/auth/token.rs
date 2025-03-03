@@ -1,69 +1,184 @@
-use std::{future::Future, pin::Pin};
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use crate::{dal::user::User, state::AppState};
 use axum::{
     extract::{FromRequestParts, Request, State},
-    middleware::{FromFnLayer, Next},
     response::{IntoResponse, Response},
     Extension, RequestPartsExt,
 };
 use axum_extra::TypedHeader;
 use cookie::{Cookie, Expiration, SameSite};
-use headers::{authorization::Bearer, Authorization};
+use futures::future::BoxFuture;
+use headers::{authorization::Bearer, Authorization, HeaderMapExt};
 use http::{request::Parts, StatusCode};
 use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 use time::OffsetDateTime;
+use tower::{Layer, Service};
 use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, field::debug};
 
 use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
 
-// pub fn required_roles<T>(
-//     roles: Vec<String>,
-// ) -> FromFnLayer<impl AsyncFn(ApiClaim, Request, Next) -> Response, (), T>
-// where
-// {
-//     let inner_fn = async move |claim: ApiClaim, req: Request, next: Next| {
-//         if !claim.has_any_role(&roles) {
-//             return StatusCode::FORBIDDEN.into_response();
-//         }
-//         next.run(req).await
-//     };
-//     let midleware = axum::middleware::from_fn(inner_fn);
-//     midleware
-// }
-
-pub fn required_role<T, S>(
-    role: impl Into<Role>,
-    state: S,
-) -> FromFnLayer<
-    impl Fn(ApiClaim, Request, Next) -> Pin<Box<dyn Future<Output = Response>>> + Clone + Send + 'static,
-    S,
-    T,
-> {
-    let role: Role = role.into();
-    let inner_fn = move |claim: ApiClaim,
-                         req: Request,
-                         next: Next|
-          -> Pin<Box<dyn Future<Output = Response>>> {
-        let role: Role = role.clone();
-        Box::pin(async move {
-            if !claim.has_role(&role) {
-                return StatusCode::FORBIDDEN.into_response();
-            }
-            next.run(req).await
-        })
-    };
-    let midleware = axum::middleware::from_fn_with_state(state, inner_fn);
-    midleware
+#[derive(Clone)]
+pub struct RequiredRolesLayer {
+    roles: Arc<Vec<Role>>,
 }
 
-pub async fn check_admin(claim: ApiClaim, req: Request, next: Next) -> Response {
-    if !claim.has_role("admin") {
-        return StatusCode::FORBIDDEN.into_response();
+impl RequiredRolesLayer {
+    pub fn new(roles: impl IntoIterator<Item = impl Into<Role>>) -> Self {
+        Self {
+            roles: Arc::new(roles.into_iter().map(Into::into).collect()),
+        }
     }
-    next.run(req).await
+}
+
+impl<S> Layer<S> for RequiredRolesLayer {
+    type Service = RequiredRoles<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        RequiredRoles {
+            inner: service,
+            roles: self.roles.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RequiredRoles<S> {
+    inner: S,
+    roles: Arc<Vec<Role>>,
+}
+
+impl<S, B> Service<Request<B>> for RequiredRoles<S>
+where
+    S: Service<Request<B>, Response = Response> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<B>) -> Self::Future {
+        let roles = self.roles.clone();
+        // Make clone of inner service, which is ready
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
+        Box::pin(async move {
+            if let Some(claim) = req.extensions().get::<ApiClaim>() {
+                if !claim.has_any_role(&*roles) {
+                    debug!("User token does not have required roles");
+                    return Ok(StatusCode::FORBIDDEN.into_response());
+                }
+                inner.call(req).await
+            } else {
+                error!("User claim not found in request, probably Token Layer not applied");
+                return Ok(StatusCode::UNAUTHORIZED.into_response());
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct TokenLayer {
+    state: AppState,
+}
+
+impl TokenLayer {
+    pub fn new(state: AppState) -> Self {
+        Self { state }
+    }
+}
+
+impl<S> Layer<S> for TokenLayer {
+    type Service = TokenExtractor<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        TokenExtractor {
+            inner: service,
+            state: self.state.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TokenExtractor<S> {
+    inner: S,
+    state: AppState,
+}
+
+impl<S, B> Service<Request<B>> for TokenExtractor<S>
+where
+    S: Service<Request<B>, Response = Response> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut request: Request<B>) -> Self::Future {
+        // Make clone of inner service, which is ready
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
+        let state = self.state.clone();
+
+        Box::pin(async move {
+            // Extract the token from the Authorization header
+            let mut token = request
+                .headers()
+                .typed_get::<Authorization<Bearer>>()
+                .map(|header| header.0.token().to_string());
+
+            if token.is_none() {
+                debug!("No token found in headers");
+                let Some(cookies) = request.extensions().get::<Cookies>().cloned() else {
+                    tracing::error!(
+                        "missing cookies request extension, is cookie middleware enabled?"
+                    );
+                    return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                };
+                token = cookies
+                    .get(TOKEN_COOKIE_NAME)
+                    .map(|t| t.value().to_string());
+            }
+
+            match token {
+                Some(token) => {
+                    debug("Token found, validating");
+                    match state.tokens().validate::<ApiClaim>(&token) {
+                        Ok(claim) => {
+                            request.extensions_mut().insert(claim);
+                        }
+                        Err(e) => {
+                            error!("Failed to validate token: {}", e);
+                            return Ok(StatusCode::UNAUTHORIZED.into_response());
+                        }
+                    }
+                    // store as extension for later use
+                }
+                None => {
+                    debug!("No token found");
+                    return Ok(StatusCode::UNAUTHORIZED.into_response());
+                }
+            }
+
+            // Continue with the request
+            inner.call(request).await
+        })
+    }
 }
 
 impl FromRequestParts<AppState> for ApiClaim {

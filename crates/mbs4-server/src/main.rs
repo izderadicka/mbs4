@@ -1,8 +1,10 @@
-use axum::{middleware, response::IntoResponse, routing::get, Router};
+use std::convert::Infallible;
+
+use axum::{response::IntoResponse, routing::get, Router};
 use mbs4_app::{
     auth::{
         auth_router,
-        token::{check_admin, required_role},
+        token::{RequiredRolesLayer, TokenLayer},
     },
     user::users_router,
 };
@@ -53,7 +55,9 @@ async fn main() -> Result<()> {
         .nest("/users", users_router())
         .route(
             "/protected",
-            get(protected).layer(middleware::from_fn_with_state(state.clone(), check_admin)), //.layer(required_role("admin", state.clone())),
+            get(protected)
+                .layer::<_, Infallible>(RequiredRolesLayer::new(["admin"]))
+                .layer(TokenLayer::new(state.clone())), //.layer(required_role("admin", state.clone())),
         )
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state);
