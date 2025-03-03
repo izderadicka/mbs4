@@ -22,6 +22,7 @@ impl Borrow<String> for Role {
         &self.0
     }
 }
+
 impl From<String> for Role {
     fn from(value: String) -> Self {
         Self(value)

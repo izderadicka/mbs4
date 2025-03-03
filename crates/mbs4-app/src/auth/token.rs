@@ -1,20 +1,70 @@
+use std::{future::Future, pin::Pin};
+
 use crate::{dal::user::User, state::AppState};
 use axum::{
-    extract::{FromRequestParts, State},
-    response::IntoResponse,
+    extract::{FromRequestParts, Request, State},
+    middleware::{FromFnLayer, Next},
+    response::{IntoResponse, Response},
     Extension, RequestPartsExt,
 };
 use axum_extra::TypedHeader;
 use cookie::{Cookie, Expiration, SameSite};
 use headers::{authorization::Bearer, Authorization};
 use http::{request::Parts, StatusCode};
-use mbs4_types::claim::ApiClaim;
+use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, field::debug};
 
 use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
+
+// pub fn required_roles<T>(
+//     roles: Vec<String>,
+// ) -> FromFnLayer<impl AsyncFn(ApiClaim, Request, Next) -> Response, (), T>
+// where
+// {
+//     let inner_fn = async move |claim: ApiClaim, req: Request, next: Next| {
+//         if !claim.has_any_role(&roles) {
+//             return StatusCode::FORBIDDEN.into_response();
+//         }
+//         next.run(req).await
+//     };
+//     let midleware = axum::middleware::from_fn(inner_fn);
+//     midleware
+// }
+
+pub fn required_role<T, S>(
+    role: impl Into<Role>,
+    state: S,
+) -> FromFnLayer<
+    impl Fn(ApiClaim, Request, Next) -> Pin<Box<dyn Future<Output = Response>>> + Clone + Send + 'static,
+    S,
+    T,
+> {
+    let role: Role = role.into();
+    let inner_fn = move |claim: ApiClaim,
+                         req: Request,
+                         next: Next|
+          -> Pin<Box<dyn Future<Output = Response>>> {
+        let role: Role = role.clone();
+        Box::pin(async move {
+            if !claim.has_role(&role) {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            next.run(req).await
+        })
+    };
+    let midleware = axum::middleware::from_fn_with_state(state, inner_fn);
+    midleware
+}
+
+pub async fn check_admin(claim: ApiClaim, req: Request, next: Next) -> Response {
+    if !claim.has_role("admin") {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(req).await
+}
 
 impl FromRequestParts<AppState> for ApiClaim {
     type Rejection = StatusCode;

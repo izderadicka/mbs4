@@ -1,6 +1,12 @@
 use axum::{middleware, response::IntoResponse, routing::get, Router};
-use mbs4_app::{auth::auth_router, user::users_router};
-use mbs4_types::claim::{self, ApiClaim};
+use mbs4_app::{
+    auth::{
+        auth_router,
+        token::{check_admin, required_role},
+    },
+    user::users_router,
+};
+use mbs4_types::claim::ApiClaim;
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 
@@ -45,7 +51,10 @@ async fn main() -> Result<()> {
         .layer(session_layer)
         .nest("/auth", auth_router())
         .nest("/users", users_router())
-        .route("/protected", get(protected))
+        .route(
+            "/protected",
+            get(protected).layer(middleware::from_fn_with_state(state.clone(), check_admin)), //.layer(required_role("admin", state.clone())),
+        )
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state);
     let ip: std::net::IpAddr = args.listen_address.parse()?;
