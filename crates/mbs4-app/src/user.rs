@@ -1,28 +1,31 @@
-use std::future::Future;
-
-use crate::error::ApiResult;
+use crate::{error::ApiResult, repository_from_request};
 use mbs4_dal::user::{CreateUser, UserRepository};
 
 use axum::{
-    extract::{FromRequestParts, Path},
+    extract::Path,
     response::IntoResponse,
     routing::{delete, post},
     Json,
 };
-use http::{request::Parts, StatusCode};
+use http::StatusCode;
 
 use crate::state::AppState;
 
-impl FromRequestParts<AppState> for UserRepository {
-    type Rejection = StatusCode;
+repository_from_request!(UserRepository);
 
-    fn from_request_parts(
-        _parts: &mut Parts,
-        state: &AppState,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        futures::future::ready(Ok(UserRepository::new(state.pool().clone())))
-    }
-}
+// impl axum::extract::FromRequestParts<crate::state::AppState> for UserRepository {
+//     type Rejection = http::StatusCode;
+
+//     fn from_request_parts(
+//         _parts: &mut http::request::Parts,
+//         state: &crate::state::AppState,
+//     ) -> impl std::future::Future<Output = std::result::Result<Self, Self::Rejection>> + core::marker::Send
+//     {
+//         futures::future::ready(std::result::Result::Ok(UserRepository::new(
+//             state.pool().clone(),
+//         )))
+//     }
+// }
 
 pub async fn create_user(
     user_registry: UserRepository,
