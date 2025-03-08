@@ -11,7 +11,7 @@ pub type ApiResult<T, E = ApiError> = std::result::Result<T, E>;
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
     #[error("Database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    DatabaseError(#[from] mbs4_dal::Error),
 
     #[error("Resource not found: {0}")]
     ResourceNotFound(String),
@@ -19,26 +19,37 @@ pub enum ApiError {
     ResourceAlreadyExists(String),
     #[error("Application error: {0}")]
     ApplicationError(#[from] anyhow::Error),
-    #[error("User password error: {0}")]
-    UserPasswordError(#[from] argon2::password_hash::Error),
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, error_message): (StatusCode, Cow<str>) = match self {
-            ApiError::DatabaseError(error) => {
-                if let sqlx::Error::Database(db_error) = error {
-                    if db_error.is_unique_violation() {
-                        (StatusCode::CONFLICT, "Resource already exists".into())
+            ApiError::DatabaseError(error) => match error {
+                mbs4_dal::Error::DatabaseError(error) => {
+                    if let mbs4_dal::SqlxError::Database(db_error) = error {
+                        if db_error.is_unique_violation() {
+                            (StatusCode::CONFLICT, "Resource already exists".into())
+                        } else {
+                            tracing::error!("Database error: {db_error}");
+                            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
+                        }
                     } else {
-                        tracing::error!("Database error: {db_error}");
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
+                        tracing::error!("sqlx error: {error}");
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
                     }
-                } else {
-                    tracing::error!("sqlx error: {error}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
                 }
-            }
+                mbs4_dal::Error::UserPasswordError(error) => {
+                    tracing::error!("User password error: {error}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Application error".into(),
+                    )
+                }
+                mbs4_dal::Error::RecordNotFound(_) => {
+                    tracing::debug!("Record not found: {error}");
+                    (StatusCode::NOT_FOUND, "Resource not found".into())
+                }
+            },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,
                 format!("Resource {r} not found").into(),
@@ -49,13 +60,6 @@ impl IntoResponse for ApiError {
             ),
             ApiError::ApplicationError(error) => {
                 tracing::error!("Application error: {error}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Application error".into(),
-                )
-            }
-            ApiError::UserPasswordError(error) => {
-                tracing::error!("User password error: {error}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Application error".into(),

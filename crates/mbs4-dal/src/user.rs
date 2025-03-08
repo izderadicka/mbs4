@@ -1,17 +1,14 @@
-use std::future::Future;
-
 use argon2::{
-    password_hash::{rand_core::OsRng, Result as HashResult, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{Result as HashResult, SaltString, rand_core::OsRng},
 };
-use axum::extract::FromRequestParts;
-use futures::StreamExt;
-use http::{request::Parts, StatusCode};
+
+use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
 use tracing::debug;
 
-use crate::{error::ApiResult, state::AppState};
+use crate::error::Result;
 
 fn hash_password(password: &str) -> HashResult<String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -86,7 +83,7 @@ where
         Self { executor }
     }
 
-    pub async fn create(&self, payload: CreateUser) -> ApiResult<User> {
+    pub async fn create(&self, payload: CreateUser) -> Result<User> {
         let password = payload.password.map(|p| hash_password(&p)).transpose()?;
         let roles = payload.roles.map(|roles| roles.join(","));
         let result = sqlx::query!(
@@ -109,7 +106,7 @@ where
         Ok(user)
     }
 
-    pub async fn list(&self, limit: usize) -> ApiResult<Vec<User>> {
+    pub async fn list(&self, limit: usize) -> Result<Vec<User>> {
         let users = sqlx::query_as::<_, UserInt>("SELECT id, name, email, roles FROM users")
             .fetch(&self.executor)
             .take(limit)
@@ -119,7 +116,7 @@ where
         Ok(users)
     }
 
-    pub async fn delete(&self, id: i64) -> ApiResult<()> {
+    pub async fn delete(&self, id: i64) -> Result<()> {
         // First check if the user exists
         match sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE id = ?")
             .bind(id)
@@ -135,11 +132,11 @@ where
 
                 Ok(())
             }
-            None => Err(crate::error::ApiError::ResourceNotFound("User".to_string())),
+            None => Err(crate::error::Error::RecordNotFound("User".to_string())),
         }
     }
 
-    pub async fn get(&self, id: i64) -> ApiResult<User> {
+    pub async fn get(&self, id: i64) -> Result<User> {
         let user: User = sqlx::query_as!(
             UserInt,
             "SELECT id, name, email, roles FROM users WHERE id = ?",
@@ -151,23 +148,12 @@ where
         Ok(user)
     }
 
-    pub async fn find_by_email(&self, email: &str) -> ApiResult<User> {
+    pub async fn find_by_email(&self, email: &str) -> Result<User> {
         let user: User = sqlx::query_as::<_, UserInt>("SELECT * FROM users WHERE email = ?")
             .bind(email)
             .fetch_one(&self.executor)
             .await?
             .into();
         Ok(user)
-    }
-}
-
-impl FromRequestParts<AppState> for UserRepositoryImpl<Pool<crate::ChosenDB>> {
-    type Rejection = StatusCode;
-
-    fn from_request_parts(
-        _parts: &mut Parts,
-        state: &AppState,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        futures::future::ready(Ok(UserRepositoryImpl::new(state.pool().clone())))
     }
 }

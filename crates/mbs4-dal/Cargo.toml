@@ -1,0 +1,16 @@
+[package]
+name = "mbs4-dal"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+argon2 = { version = "0.5.3", features = ["std"] }
+futures = "0.3.31"
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror = "2.0.11"
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

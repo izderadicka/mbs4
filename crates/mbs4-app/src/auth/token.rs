@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::{dal::user::User, state::AppState};
+use crate::state::AppState;
 use axum::{
     extract::{FromRequestParts, Request, State},
     response::{IntoResponse, Response},
@@ -14,6 +14,7 @@ use cookie::{Cookie, Expiration, SameSite};
 use futures::future::BoxFuture;
 use headers::{authorization::Bearer, Authorization, HeaderMapExt};
 use http::{request::Parts, StatusCode};
+use mbs4_dal::user::User;
 use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 use time::OffsetDateTime;
 use tower::{Layer, Service};

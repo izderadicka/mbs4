@@ -2,8 +2,8 @@ use std::sync::{Arc, RwLock};
 
 use crate::error::Result;
 use mbs4_auth::token::TokenManager;
+use mbs4_dal::Pool;
 use mbs4_types::oidc::OIDCConfig;
-use sqlx::Pool;
 use url::Url;
 
 #[derive(Clone)]
@@ -15,7 +15,7 @@ impl AppState {
     pub fn new(
         oidc_config: OIDCConfig,
         app_config: AppConfig,
-        pool: Pool<crate::ChosenDB>,
+        pool: Pool,
         tokens: TokenManager,
     ) -> Self {
         let state = RwLock::new(AppStateVolatile {});
@@ -43,7 +43,7 @@ impl AppState {
         Ok(url)
     }
 
-    pub fn pool(&self) -> &Pool<crate::ChosenDB> {
+    pub fn pool(&self) -> &Pool {
         &self.state.pool
     }
 
@@ -53,7 +53,7 @@ impl AppState {
 }
 
 struct AppStateInner {
-    pool: Pool<crate::ChosenDB>,
+    pool: Pool,
     oidc_providers_config: OIDCConfig,
     app_config: AppConfig,
     tokens: TokenManager,

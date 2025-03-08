@@ -3,13 +3,14 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{dal::user::UserRepository, state::AppState};
+use crate::state::AppState;
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
     Extension, RequestPartsExt,
 };
 use http::{request::Parts, StatusCode};
+use mbs4_dal::user::UserRepository;
 use mbs4_types::claim::UserClaim;
 use serde::Deserialize;
 use tower_sessions::Session;

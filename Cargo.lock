@@ -1667,7 +1667,6 @@ name = "mbs4-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "argon2",
  "axum",
  "axum-extra",
  "cookie",
@@ -1675,10 +1674,10 @@ dependencies = [
  "headers",
  "http",
  "mbs4-auth",
+ "mbs4-dal",
  "mbs4-types",
  "serde",
  "serde_json",
- "sqlx",
  "thiserror 2.0.11",
  "time",
  "tokio",
@@ -1706,6 +1705,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbs4-dal"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "futures",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.11",
+ "tracing",
+]
+
+[[package]]
 name = "mbs4-server"
 version = "0.1.0"
 dependencies = [
@@ -1716,11 +1728,11 @@ dependencies = [
  "humantime",
  "mbs4-app",
  "mbs4-auth",
+ "mbs4-dal",
  "mbs4-types",
  "rand 0.9.0",
  "serde",
  "serde_json",
- "sqlx",
  "time",
  "tokio",
  "tower-cookies",
