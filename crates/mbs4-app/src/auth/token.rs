@@ -82,7 +82,7 @@ where
                 inner.call(req).await
             } else {
                 error!("User claim not found in request, probably Token Layer not applied");
-                return Ok(StatusCode::UNAUTHORIZED.into_response());
+                Ok(StatusCode::UNAUTHORIZED.into_response())
             }
         })
     }
@@ -190,7 +190,7 @@ impl FromRequestParts<AppState> for ApiClaim {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         // check if we already have a token in extensions
-        if let Some(existing_claim) = parts.extract::<Extension<ApiClaim>>().await.ok() {
+        if let Ok(existing_claim) = parts.extract::<Extension<ApiClaim>>().await {
             return Ok(existing_claim.0);
         }
         let mut header_token = parts

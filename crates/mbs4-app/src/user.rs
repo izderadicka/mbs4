@@ -13,20 +13,6 @@ use crate::state::AppState;
 
 repository_from_request!(UserRepository);
 
-// impl axum::extract::FromRequestParts<crate::state::AppState> for UserRepository {
-//     type Rejection = http::StatusCode;
-
-//     fn from_request_parts(
-//         _parts: &mut http::request::Parts,
-//         state: &crate::state::AppState,
-//     ) -> impl std::future::Future<Output = std::result::Result<Self, Self::Rejection>> + core::marker::Send
-//     {
-//         futures::future::ready(std::result::Result::Ok(UserRepository::new(
-//             state.pool().clone(),
-//         )))
-//     }
-// }
-
 pub async fn create_user(
     user_registry: UserRepository,
     Json(payload): Json<CreateUser>,
