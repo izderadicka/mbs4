@@ -49,6 +49,9 @@ impl IntoResponse for ApiError {
                     tracing::debug!("Record not found: {error}");
                     (StatusCode::NOT_FOUND, "Resource not found".into())
                 }
+                mbs4_dal::Error::InvalidCredentials => {
+                    (StatusCode::UNAUTHORIZED, "Invalid credentials".into())
+                }
             },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,

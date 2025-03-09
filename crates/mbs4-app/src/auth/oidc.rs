@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::state::AppState;
+use crate::{auth::after_ok_login, state::AppState};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
@@ -17,8 +17,6 @@ use tower_sessions::Session;
 use tracing::{debug, error, warn};
 
 use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
-
-use super::SESSION_USER_KEY;
 
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
@@ -174,24 +172,9 @@ pub async fn callback(
         StatusCode::BAD_REQUEST
     })?;
 
-    match user_registry.find_by_email(&user_info.email).await.ok() {
-        Some(known_user) => {
-            session
-                .insert(SESSION_USER_KEY, known_user)
-                .await
-                .map_err(|e| {
-                    error!("Failed to store user in session: {e}");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-
-            let redirect_url = state.build_url("/").map_err(|e| {
-                error!("Failed to build redirect URL: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-            Ok(Redirect::temporary(redirect_url.as_str()))
-        }
-        None => {
+    match user_registry.find_by_email(&user_info.email).await {
+        Ok(known_user) => after_ok_login(&state, &session, known_user).await,
+        Err(_) => {
             //TODO: consider allowing authenticated users with no roles
             warn!("Unknown user: {}", user_info.email);
             Err(StatusCode::UNAUTHORIZED)

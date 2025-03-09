@@ -10,4 +10,7 @@ pub enum Error {
 
     #[error("Record not found: {0}")]
     RecordNotFound(String),
+
+    #[error("Invalid credentials")]
+    InvalidCredentials,
 }

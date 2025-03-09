@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Pool;
 use tracing::debug;
 
-use crate::error::Result;
+use crate::{Error, error::Result};
 
 fn hash_password(password: &str) -> HashResult<String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -20,8 +20,8 @@ fn hash_password(password: &str) -> HashResult<String> {
 }
 
 #[allow(dead_code)]
-fn verify_password(password: &str) -> HashResult<bool> {
-    let parsed_hash = PasswordHash::new(password)?;
+fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
+    let parsed_hash = PasswordHash::new(password_hash)?;
     let res = Argon2::default().verify_password(password.as_bytes(), &parsed_hash);
     if let Err(e) = res {
         debug!("Invalid password, error {e}");
@@ -155,5 +155,23 @@ where
             .await?
             .into();
         Ok(user)
+    }
+
+    pub async fn check_password(&self, email: &str, password: &str) -> Result<User> {
+        let (id, hashed_password): (i64, Option<String>) =
+            sqlx::query_as("SELECT id, password FROM users WHERE email = ?")
+                .bind(email)
+                .fetch_one(&self.executor)
+                .await
+                .map_err(|e| {
+                    debug!("User check error: {e}");
+                    Error::InvalidCredentials
+                })?;
+        if let Some(hashed_password) = hashed_password {
+            if verify_password(password, &hashed_password).unwrap_or(false) {
+                return self.get(id).await;
+            }
+        }
+        Err(Error::InvalidCredentials)
     }
 }
