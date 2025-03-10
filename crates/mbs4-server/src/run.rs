@@ -13,8 +13,8 @@ use mbs4_app::{
 };
 use mbs4_types::claim::ApiClaim;
 use mbs4_types::oidc::OIDCConfig;
-use std::convert::Infallible;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
+use tower::ServiceBuilder;
 use tracing::debug;
 
 pub async fn run(args: ServerConfig) -> Result<()> {
@@ -46,9 +46,11 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/users", users_router())
         .route(
             "/protected",
-            get(protected)
-                .layer::<_, Infallible>(RequiredRolesLayer::new(["admin"]))
-                .layer(TokenLayer::new(state.clone())), //.layer(required_role("admin", state.clone())),
+            get(protected).layer(
+                ServiceBuilder::new()
+                    .layer(TokenLayer::new(state.clone()))
+                    .layer(RequiredRolesLayer::new(["admin"])),
+            ),
         )
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state)

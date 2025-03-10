@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf, time::Duration};
 
 use crate::error::Result;
-use clap::Parser as _;
+pub use clap::Parser;
 use url::Url;
 
 #[derive(Debug, clap::Parser)]
@@ -46,7 +46,11 @@ pub struct ServerConfig {
     )]
     pub database_url: String,
 
-    #[arg(long, env = "MBS4_DATA_DIR", help = "Data directory")]
+    #[arg(
+        long,
+        env = "MBS4_DATA_DIR",
+        help = "Data directory, default is system default like ~/.local/share/mbs4"
+    )]
     pub data_dir: Option<PathBuf>,
 
     #[arg(

@@ -138,6 +138,10 @@ where
 
         Box::pin(async move {
             // Extract the token from the Authorization header
+            if request.extensions().get::<ApiClaim>().is_some() {
+                debug("Token already extracted");
+                return inner.call(request).await;
+            }
             let mut token = request
                 .headers()
                 .typed_get::<Authorization<Bearer>>()

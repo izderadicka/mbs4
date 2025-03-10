@@ -1,0 +1,17 @@
+[package]
+name = "mbs4-e2e-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+mbs4-server = { path = "../mbs4-server" }
+tempfile = "3.18.0"
+rand = "0.9.0"
+tracing.workspace = true
+reqwest = "0.12.12"
+
+[dev-dependencies]
+tracing-test = "0.2.5"
