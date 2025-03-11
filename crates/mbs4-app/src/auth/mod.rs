@@ -82,7 +82,7 @@ pub async fn after_ok_login(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    Ok(Redirect::temporary(redirect_url.as_str()))
+    Ok(Redirect::to(redirect_url.as_str()))
 }
 
 pub async fn db_login(

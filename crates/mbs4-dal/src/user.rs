@@ -29,7 +29,7 @@ fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
     Ok(res.is_ok())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateUser {
     pub email: String,
     pub name: Option<String>,
