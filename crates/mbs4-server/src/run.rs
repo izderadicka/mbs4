@@ -2,7 +2,9 @@ use std::path::Path;
 
 use crate::config::ServerConfig;
 use crate::error::Result;
+use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
+use futures::FutureExt;
 use mbs4_app::state::{AppConfig, AppState};
 use mbs4_app::{
     auth::{
@@ -18,6 +20,14 @@ use tower::ServiceBuilder;
 use tracing::debug;
 
 pub async fn run(args: ServerConfig) -> Result<()> {
+    let shutdown = tokio::signal::ctrl_c().map(|_| ());
+    run_graceful(args, shutdown).await
+}
+
+pub async fn run_graceful<S>(args: ServerConfig, shutdown_signal: S) -> Result<()>
+where
+    S: std::future::Future<Output = ()> + Send + 'static,
+{
     let state = build_state(&args).await?;
 
     let app = main_router(state);
@@ -26,7 +36,11 @@ pub async fn run(args: ServerConfig) -> Result<()> {
     let addr = std::net::SocketAddr::from((ip, args.port));
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     debug!("Listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await?;
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+
     Ok(())
 }
 
@@ -40,7 +54,8 @@ fn main_router(state: AppState) -> Router<()> {
     //     ));
 
     Router::new()
-        .route("/", get(root))
+        .route("/", get(root)) // TODO - change
+        .route("/health", get(health))
         // .layer(session_layer)
         .nest("/auth", auth_router())
         .nest("/users", users_router())
@@ -67,6 +82,10 @@ async fn root(request: axum::extract::Request) -> impl IntoResponse {
         headers_print.push_str(&format!("{}: {}\n", name.as_str(), value.to_str().unwrap()));
     }
     headers_print
+}
+
+async fn health() -> impl IntoResponse {
+    (StatusCode::OK, "OK")
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {

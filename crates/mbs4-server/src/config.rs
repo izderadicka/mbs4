@@ -4,7 +4,7 @@ use crate::error::Result;
 pub use clap::Parser;
 use url::Url;
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser)]
 pub struct ServerConfig {
     #[arg(
         short,
