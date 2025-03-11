@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use mbs4_dal::user;
 use mbs4_e2e_tests::{prepare_env, spawn_server};
-use reqwest::cookie::Jar;
 use serde_json::json;
 use tracing::info;
 use tracing_test::traced_test;
@@ -22,7 +19,7 @@ async fn test_auth() {
         password: Some(user_password.to_string()),
         roles: Some(vec!["admin".to_string()]),
     };
-    let user = user_registry.create(new_user).await.unwrap();
+    let _user = user_registry.create(new_user).await.unwrap();
     let base_url = args.base_url.clone();
 
     spawn_server(args).await.unwrap();
