@@ -6,9 +6,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _};
+use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use sha2::{Digest, Sha256};
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
+use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
 use super::{
@@ -47,6 +48,8 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 const MAX_SAME_FILES: usize = 10;
+/// This is legacy algorithm to match exitinng files
+/// There is also notable problem with it, that there is  possibility of race condition
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     let (base_path, ext) = rsplit_file_at_dot(path.as_os_str());
     let new_path = if ext.is_some() && base_path.is_some() {
@@ -95,7 +98,7 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
 }
 
 async fn unique_path(root: &Path, path: &str) -> StoreResult<(PathBuf, PathBuf)> {
-    validate_path(path)?;
+    validate_path(path).inspect_err(|_| debug!("Invalid path: {path}"))?;
     let path = root.join(path);
     spawn_blocking(|| unique_path_sync(path)).await?
 }
@@ -220,6 +223,30 @@ impl Store for FileStore {
             hash: hex(&digest),
         })
     }
+
+    async fn load_data(
+        &self,
+        path: &str,
+    ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError> {
+        validate_path(path).inspect_err(|_| debug!("Invalid path: {path}"))?;
+        let final_path = self.inner.root.join(path);
+        let file = fs::File::open(&final_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                StoreError::NotFound
+            } else {
+                e.into()
+            }
+        })?;
+        let stream = ReaderStream::new(file).map_err(StoreError::from);
+        Ok(stream)
+    }
+
+    async fn size(&self, path: &str) -> StoreResult<u64> {
+        validate_path(path).inspect_err(|_| debug!("Invalid path: {path}"))?;
+        let final_path = self.inner.root.join(path);
+        let meta = fs::metadata(&final_path).await?;
+        Ok(meta.len())
+    }
 }
 
 #[cfg(test)]
@@ -261,12 +288,10 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-    async fn test_stream() {
-        let tmp_dir = tempfile::tempdir().unwrap();
-        let chunks = try_unfold(10u8, |mut count| async move {
+    fn data_generator(size_kb: u8) -> impl Stream<Item = StoreResult<Bytes>> {
+        try_unfold(size_kb, |mut count| async move {
             if count == 0 {
-                Ok::<_, std::io::Error>(None)
+                Ok::<_, StoreError>(None)
             } else {
                 let data = rand::random::<[u8; 1024]>();
                 let data = data.to_vec();
@@ -274,7 +299,13 @@ mod tests {
 
                 Ok(Some((Bytes::from(data), count)))
             }
-        });
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn test_stream() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let chunks = data_generator(10);
 
         let store = FileStore::new(tmp_dir.path());
         let res = store.store_stream("binarni/data", chunks).await.unwrap();
@@ -284,5 +315,26 @@ mod tests {
         assert!(file_path.exists());
         let meta = file_path.metadata().unwrap();
         assert_eq!(meta.len(), 10240);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn test_load() {
+        let size_kb: u8 = 100;
+        let size = size_kb as usize * 1024;
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let chunks = data_generator(size_kb);
+
+        let store = FileStore::new(tmp_dir.path());
+        let _res = store.store_stream("binarni/data", chunks).await.unwrap();
+
+        let mut stream = store.load_data("binarni/data").await.unwrap();
+        let mut data = Vec::with_capacity(size); // 5MB
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            data.extend_from_slice(&chunk);
+        }
+        assert_eq!(data.len(), size);
+        let original = fs::read(tmp_dir.path().join("binarni/data")).await.unwrap();
+        assert_eq!(data, original);
     }
 }

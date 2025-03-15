@@ -12,4 +12,8 @@ pub enum StoreError {
     TaskJoinError(#[from] tokio::task::JoinError),
     #[error("Multipart error: {0}")]
     MultipartError(#[from] axum::extract::multipart::MultipartError),
+    #[error("Axum error: {0}")]
+    AxumError(#[from] axum::Error),
+    #[error("Not found")]
+    NotFound,
 }

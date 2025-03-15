@@ -26,4 +26,9 @@ pub trait Store {
     where
         S: Stream<Item = Result<Bytes, E>>,
         E: Into<StoreError>;
+    async fn load_data(
+        &self,
+        path: &str,
+    ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError>;
+    async fn size(&self, path: &str) -> StoreResult<u64>;
 }
