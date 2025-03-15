@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
     routing::post,
-    Router,
+    Json, Router,
 };
 
 use crate::{error::ApiError, state::AppState};
@@ -21,9 +21,9 @@ pub async fn upload(
             .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?;
         let dest_path = path + "/" + file_name;
 
-        state.store().store_stream(&dest_path, field).await?;
+        let info = state.store().store_stream(&dest_path, field).await?;
 
-        Ok(StatusCode::CREATED)
+        Ok((StatusCode::CREATED, Json(info)))
     } else {
         Err(ApiError::InvalidRequest("Missing file field".into()))
     }
