@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
 use crate::error::Result;
 use mbs4_auth::token::TokenManager;
@@ -33,12 +36,12 @@ impl AppState {
         self.state.oidc_providers_config.get_provider(name).cloned()
     }
 
-    pub fn get_app_config(&self) -> &AppConfig {
+    pub fn config(&self) -> &AppConfig {
         &self.state.app_config
     }
 
     pub fn build_url(&self, relative_url: &str) -> Result<Url> {
-        let base = &self.get_app_config().base_url;
+        let base = &self.config().base_url;
         let url = base.join(relative_url)?;
         Ok(url)
     }
@@ -63,6 +66,7 @@ struct AppStateInner {
 
 pub struct AppConfig {
     pub base_url: Url,
+    pub file_store_path: PathBuf,
 }
 
 pub struct AppStateVolatile {}

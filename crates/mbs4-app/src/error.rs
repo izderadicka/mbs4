@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use axum::{response::IntoResponse, Json};
+use axum::{extract::multipart::MultipartError, response::IntoResponse, Json};
 use http::StatusCode;
 
 pub type Error = anyhow::Error; //Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -19,6 +19,12 @@ pub enum ApiError {
     ResourceAlreadyExists(String),
     #[error("Application error: {0}")]
     ApplicationError(#[from] anyhow::Error),
+    #[error("Multipart form error: {0}")]
+    MultipartError(#[from] MultipartError),
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 impl IntoResponse for ApiError {
@@ -67,6 +73,19 @@ impl IntoResponse for ApiError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Application error".into(),
                 )
+            }
+
+            ApiError::MultipartError(error) => {
+                tracing::debug!("Multipart form error: {error}");
+                (StatusCode::BAD_REQUEST, "Multipart form error".into())
+            }
+            ApiError::InvalidRequest(msg) => {
+                tracing::debug!("Invalid request: {msg}");
+                (StatusCode::BAD_REQUEST, msg.into())
+            }
+            ApiError::InternalError(msg) => {
+                tracing::error!("Internal error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
             }
         };
         let body = serde_json::json!({"error": error_message});

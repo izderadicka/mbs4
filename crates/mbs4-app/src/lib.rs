@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod error;
 pub mod state;
+pub mod store;
 pub mod user;
 
 #[macro_export]

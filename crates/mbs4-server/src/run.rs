@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
 use futures::FutureExt;
 use mbs4_app::state::{AppConfig, AppState};
+use mbs4_app::store::store_router;
 use mbs4_app::{
     auth::{
         auth_router,
@@ -17,7 +18,7 @@ use mbs4_types::claim::ApiClaim;
 use mbs4_types::oidc::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tower::ServiceBuilder;
-use tracing::debug;
+use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
     let shutdown = tokio::signal::ctrl_c().map(|_| ());
@@ -59,6 +60,7 @@ fn main_router(state: AppState) -> Router<()> {
         // .layer(session_layer)
         .nest("/auth", auth_router())
         .nest("/users", users_router())
+        .nest("/store", store_router())
         .route(
             "/protected",
             get(protected).layer(
@@ -89,16 +91,31 @@ async fn health() -> impl IntoResponse {
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
-    let oidc_config_file = config.oidc_config.clone();
+    let data_dir = config.data_dir()?;
+    let oidc_config_file = config.oidc_config.clone().unwrap_or_else(|| {
+        let path = data_dir.join("oidc-config.toml");
+        path.to_string_lossy().to_string()
+    });
     let oidc_config = spawn_blocking(move || OIDCConfig::load_config(&oidc_config_file)).await??;
+
+    let files_path = config
+        .files_dir
+        .clone()
+        .unwrap_or_else(|| data_dir.join("ebooks"));
+
+    if !files_path.is_dir() {
+        tokio::fs::create_dir_all(&files_path).await?;
+        info!("Created directory for ebook files");
+    }
 
     let app_config = AppConfig {
         base_url: config.base_url.clone(),
+        file_store_path: files_path,
     };
 
     let pool = mbs4_dal::new_pool(&config.database_url).await?;
     // Its OK here to block, as it's short and called only on init;
-    let data_dir = config.data_dir()?;
+
     let secret = read_secret(&data_dir).await?;
     let tokens = mbs4_auth::token::TokenManager::new(&secret, config.token_validity);
     Ok(AppState::new(oidc_config, app_config, pool, tokens))

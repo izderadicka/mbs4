@@ -26,9 +26,9 @@ pub struct ServerConfig {
     #[arg(
         long,
         env = "MBS4_OIDC_CONFIG",
-        help = "Path to OIDC configuration file"
+        help = "Path to OIDC configuration file, default is oidc-config.toml in data directory"
     )]
-    pub oidc_config: String,
+    pub oidc_config: Option<String>,
 
     #[arg(
         long,
@@ -55,6 +55,13 @@ pub struct ServerConfig {
 
     #[arg(
         long,
+        env = "MBS4_FILES_DIR",
+        help = "Directory for book files, default data_dir/ebooks"
+    )]
+    pub files_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
         env = "MBS4_TOKEN_VALIDITY",
         default_value = "1 day",
         help = "Default token validity in human friendtly format (e.g. 1d, 1h, 1m, 1s - or combined)",
@@ -69,20 +76,24 @@ impl ServerConfig {
     }
 
     pub fn data_dir(&self) -> Result<PathBuf, std::io::Error> {
-        let dir = dirs::data_dir()
-            .map(|p| p.join("mbs4"))
-            .unwrap_or_else(|| PathBuf::from("mbs4"));
-
-        if !fs::exists(&dir)? {
-            fs::create_dir_all(&dir)?;
-            Ok(dir)
-        } else if dir.is_dir() {
-            Ok(dir)
+        if let Some(data_dir) = &self.data_dir {
+            return Ok(data_dir.clone());
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Data directory is not a directory",
-            ))
+            let dir = dirs::data_dir()
+                .map(|p| p.join("mbs4"))
+                .unwrap_or_else(|| PathBuf::from("mbs4"));
+
+            if !fs::exists(&dir)? {
+                fs::create_dir_all(&dir)?;
+                Ok(dir)
+            } else if dir.is_dir() {
+                Ok(dir)
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Data directory is not a directory",
+                ))
+            }
         }
     }
 }
