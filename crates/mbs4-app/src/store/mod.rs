@@ -1,41 +1,29 @@
-use axum::{
-    extract::{Multipart, Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Router,
-};
+#![allow(async_fn_in_trait)]
+use std::path::PathBuf;
 
-use futures::{
-    pin_mut,
-    stream::{self, try_unfold},
-    StreamExt,
-};
-use tracing::debug;
-
-use crate::{error::ApiError, state::AppState};
+use bytes::Bytes;
+use error::{StoreError, StoreResult};
+use futures::Stream;
+use serde::Serialize;
 
 pub mod error;
 pub mod file_store;
+pub mod rest_api;
+pub use rest_api::store_router;
 
-pub async fn upload(
-    State(state): State<AppState>,
-    Path(path): Path<String>,
-    mut multipart: Multipart,
-) -> Result<impl IntoResponse, ApiError> {
-    if let Some(mut field) = multipart.next_field().await? {
-        let file_name = field
-            .file_name()
-            .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?;
-        let dest_path = path + "/" + file_name;
-
-        Ok(StatusCode::CREATED)
-    } else {
-        Err(ApiError::InvalidRequest("Missing file field".into()))
-    }
+#[derive(Debug, Serialize)]
+pub struct StoreInfo {
+    /// final path were the file is stored, can be different from the requested path
+    pub final_path: PathBuf,
+    pub size: u64,
+    /// SHA256 hash
+    pub hash: String,
 }
 
-pub fn store_router() -> Router<AppState> {
-    let app = Router::new().route("/upload/form/{*path}", post(upload));
-    app
+pub trait Store {
+    async fn store_data(&self, path: &str, data: &[u8]) -> StoreResult<StoreInfo>;
+    async fn store_stream<S, E>(&self, path: &str, stream: S) -> StoreResult<StoreInfo>
+    where
+        S: Stream<Item = Result<Bytes, E>>,
+        E: Into<StoreError>;
 }

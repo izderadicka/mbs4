@@ -1,5 +1,3 @@
-#![allow(async_fn_in_trait)]
-use core::error;
 use std::{
     ffi::OsStr,
     fmt::Display,
@@ -9,10 +7,14 @@ use std::{
 
 use bytes::Bytes;
 use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _};
+use sha2::{Digest, Sha256};
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tracing::error;
 
-use super::error::{StoreError, StoreResult};
+use super::{
+    error::{StoreError, StoreResult},
+    Store, StoreInfo,
+};
 
 //from std
 fn rsplit_file_at_dot(file: &OsStr) -> (Option<&OsStr>, Option<&OsStr>) {
@@ -37,6 +39,11 @@ fn rsplit_file_at_dot(file: &OsStr) -> (Option<&OsStr>, Option<&OsStr>) {
             )
         }
     }
+}
+
+#[inline]
+fn hex(bytes: &[u8]) -> String {
+    base16ct::lower::encode_string(bytes)
 }
 
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
@@ -133,19 +140,6 @@ fn validate_path(path: &str) -> StoreResult<()> {
     }
 }
 
-pub struct StoreInfo {
-    pub final_path: PathBuf,
-    pub size: u64,
-}
-
-pub trait Store {
-    async fn store_data(&self, path: &str, data: &[u8]) -> StoreResult<StoreInfo>;
-    async fn store_stream<S, E>(&self, path: &str, stream: S) -> StoreResult<StoreInfo>
-    where
-        S: Stream<Item = Result<Bytes, E>>,
-        E: Into<StoreError>;
-}
-
 struct FileStoreInner {
     root: PathBuf,
 }
@@ -178,9 +172,14 @@ impl Store for FileStore {
             .or_else(|e| cleanup(&tmp_path, e))
             .await?;
         fs::rename(&tmp_path, &final_path).await?;
+        let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
         let size = data.len() as u64;
-        Ok(StoreInfo { final_path, size })
+        Ok(StoreInfo {
+            final_path,
+            size,
+            hash: hex(&digest),
+        })
     }
 
     async fn store_stream<S, E>(&self, path: &str, stream: S) -> StoreResult<StoreInfo>
@@ -192,6 +191,7 @@ impl Store for FileStore {
         let mut file = fs::File::create(&tmp_path).await?;
         let mut size = 0;
         pin_mut!(stream);
+        let mut digester = Sha256::new();
         while let Some(chunk) = stream.next().await {
             match chunk.map_err(|e| e.into()) {
                 Ok(chunk) => {
@@ -199,6 +199,7 @@ impl Store for FileStore {
                         .or_else(|e| cleanup(&tmp_path, e))
                         .await?;
                     size = size + chunk.len() as u64;
+                    digester.update(&chunk);
                 }
                 Err(e) => {
                     cleanup(&tmp_path, e).await?;
@@ -208,9 +209,14 @@ impl Store for FileStore {
         }
         file.flush().await?;
         fs::rename(&tmp_path, &final_path).await?;
+        let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();
 
-        Ok(StoreInfo { final_path, size })
+        Ok(StoreInfo {
+            final_path,
+            size,
+            hash: hex(&digest),
+        })
     }
 }
 

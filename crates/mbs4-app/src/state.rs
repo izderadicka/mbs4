@@ -1,9 +1,10 @@
 use std::{
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, RwLock},
 };
 
-use crate::error::Result;
+use crate::{error::Result, store::Store};
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
 use mbs4_types::oidc::OIDCConfig;
@@ -60,6 +61,7 @@ struct AppStateInner {
     oidc_providers_config: OIDCConfig,
     app_config: AppConfig,
     tokens: TokenManager,
+    // store: Pin<Box<dyn Store>>,
     #[allow(dead_code)]
     state: RwLock<AppStateVolatile>,
 }
