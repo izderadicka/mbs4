@@ -68,6 +68,14 @@ pub struct ServerConfig {
         value_parser = humantime::parse_duration
     )]
     pub token_validity: Duration,
+
+    #[arg(
+        long,
+        env = "MBS4_UPLOAD_LIMIT_MB",
+        default_value = "100",
+        help = "Maximum upload size in MB"
+    )]
+    pub upload_limit_mb: usize,
 }
 
 impl ServerConfig {

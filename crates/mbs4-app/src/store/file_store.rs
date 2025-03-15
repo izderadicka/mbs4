@@ -9,7 +9,7 @@ use bytes::Bytes;
 use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _};
 use sha2::{Digest, Sha256};
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
-use tracing::error;
+use tracing::{debug, error};
 
 use super::{
     error::{StoreError, StoreResult},
@@ -46,6 +46,7 @@ fn hex(bytes: &[u8]) -> String {
     base16ct::lower::encode_string(bytes)
 }
 
+const MAX_SAME_FILES: usize = 10;
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     let (base_path, ext) = rsplit_file_at_dot(path.as_os_str());
     let new_path = if ext.is_some() && base_path.is_some() {
@@ -54,7 +55,7 @@ fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
         path.as_os_str()
     };
 
-    for i in 1..=10 {
+    for i in 1..=MAX_SAME_FILES {
         let mod_suffix = format!("({}).", i);
         // Safe as we deal only with ASCII
         let s = unsafe { OsStr::from_encoded_bytes_unchecked(mod_suffix.as_bytes()) };
@@ -208,6 +209,7 @@ impl Store for FileStore {
             }
         }
         file.flush().await?;
+        debug!("Stored {size} bytes to {tmp_path:?} and will move to {final_path:?}");
         fs::rename(&tmp_path, &final_path).await?;
         let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();

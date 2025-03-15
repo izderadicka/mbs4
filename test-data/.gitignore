@@ -1,3 +1,4 @@
 keycloak
 *.db*
 secret
+ebooks

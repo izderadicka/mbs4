@@ -10,4 +10,6 @@ pub enum StoreError {
     IoError(#[from] std::io::Error),
     #[error("Task join error: {0}")]
     TaskJoinError(#[from] tokio::task::JoinError),
+    #[error("Multipart error: {0}")]
+    MultipartError(#[from] axum::extract::multipart::MultipartError),
 }

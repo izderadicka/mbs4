@@ -25,6 +25,8 @@ pub enum ApiError {
     InvalidRequest(String),
     #[error("Internal error: {0}")]
     InternalError(String),
+    #[error("Store error: {0}")]
+    StoreError(#[from] crate::store::error::StoreError),
 }
 
 impl IntoResponse for ApiError {
@@ -85,6 +87,10 @@ impl IntoResponse for ApiError {
             }
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
+            }
+            ApiError::StoreError(error) => {
+                tracing::error!("Store error: {error}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
             }
         };
