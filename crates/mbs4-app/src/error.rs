@@ -90,8 +90,21 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
             }
             ApiError::StoreError(error) => {
-                tracing::error!("Store error: {error}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
+                use crate::store::error::StoreError;
+                match error {
+                    StoreError::InvalidPath => {
+                        tracing::debug!("Invalid path: {error}");
+                        (StatusCode::BAD_REQUEST, "Invalid path".into())
+                    }
+                    StoreError::NotFound(path) => {
+                        tracing::debug!("File not found: {path}");
+                        (StatusCode::NOT_FOUND, "File not found".into())
+                    }
+                    _ => {
+                        tracing::error!("Store error: {error}");
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
+                    }
+                }
             }
         };
         let body = serde_json::json!({"error": error_message});

@@ -5,8 +5,9 @@ use mbs4_server::{
     config::{Parser, ServerConfig},
     run::run,
 };
-use rand::Rng as _;
+use rand::{Rng as _, distr::Alphanumeric};
 use tempfile::TempDir;
+use tokio::io::AsyncWriteExt as _;
 use tracing::debug;
 
 pub async fn test_port(port: u16) -> Result<()> {
@@ -45,9 +46,42 @@ fn random_port() -> Result<u16> {
     Err(anyhow!("Could not find a free port"))
 }
 
+pub async fn random_text_file(file_path: &Path, size: u64) -> Result<()> {
+    let mut file = tokio::fs::File::create(file_path).await?;
+
+    const CHUNK_SIZE: u64 = 16 * 1024;
+    let chunks = size / CHUNK_SIZE;
+    let remainder = size % CHUNK_SIZE;
+
+    let mut write_chunk = async |sz: usize| -> Result<()> {
+        let random_text: String = rand::rng()
+            .sample_iter(&Alphanumeric)
+            .take(sz)
+            .map(char::from)
+            .collect();
+        // Write to file
+        file.write_all(random_text.as_bytes()).await?;
+        Ok(())
+    };
+
+    for _ in 0..chunks {
+        write_chunk(CHUNK_SIZE as usize).await?;
+    }
+    if remainder > 0 {
+        write_chunk(remainder as usize).await?;
+    }
+    file.flush().await?;
+    Ok(())
+}
+
 pub struct ConfigGuard {
-    #[allow(dead_code)]
     data_dir: TempDir,
+}
+
+impl ConfigGuard {
+    pub fn path(&self) -> &Path {
+        self.data_dir.path()
+    }
 }
 
 pub async fn prepare_env(test_name: &str) -> Result<(ServerConfig, ConfigGuard)> {

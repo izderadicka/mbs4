@@ -98,7 +98,7 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
 }
 
 async fn unique_path(root: &Path, path: &str) -> StoreResult<(PathBuf, PathBuf)> {
-    validate_path(path).inspect_err(|_| debug!("Invalid path: {path}"))?;
+    validate_path(path).inspect_err(|_| error!("Invalid path: {path}"))?;
     let path = root.join(path);
     spawn_blocking(|| unique_path_sync(path)).await?
 }
@@ -232,7 +232,7 @@ impl Store for FileStore {
         let final_path = self.inner.root.join(path);
         let file = fs::File::open(&final_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                StoreError::NotFound
+                StoreError::NotFound(path.to_string())
             } else {
                 e.into()
             }

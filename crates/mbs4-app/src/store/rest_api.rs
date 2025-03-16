@@ -9,7 +9,7 @@ use axum::{
 
 use crate::{error::ApiError, state::AppState};
 
-use super::{error::StoreError, Store as _};
+use super::Store as _;
 
 pub async fn upload(
     State(state): State<AppState>,
@@ -20,7 +20,11 @@ pub async fn upload(
         let file_name = field
             .file_name()
             .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?;
-        let dest_path = path + "/" + file_name;
+        let dest_path = if path.ends_with('/') {
+            path + file_name
+        } else {
+            path + "/" + file_name
+        };
 
         let info = state.store().store_stream(&dest_path, field).await?;
 
@@ -48,11 +52,7 @@ pub async fn download(
     Path(path): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     let store = state.store();
-    let data = match store.load_data(&path).await {
-        Ok(data) => data,
-        Err(StoreError::NotFound) => return Err(ApiError::ResourceNotFound(path)),
-        Err(e) => return Err(ApiError::from(e)),
-    };
+    let data = store.load_data(&path).await?;
     let size = store.size(&path).await?;
     let body = Body::from_stream(data);
     let mut headers = axum::http::HeaderMap::new();

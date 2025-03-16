@@ -14,6 +14,6 @@ pub enum StoreError {
     MultipartError(#[from] axum::extract::multipart::MultipartError),
     #[error("Axum error: {0}")]
     AxumError(#[from] axum::Error),
-    #[error("Not found")]
-    NotFound,
+    #[error("Not found: {0:?}")]
+    NotFound(String),
 }

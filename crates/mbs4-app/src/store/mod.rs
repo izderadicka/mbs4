@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use error::{StoreError, StoreResult};
 use futures::Stream;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub mod error;
 pub mod file_store;
 pub mod rest_api;
 pub use rest_api::store_router;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StoreInfo {
     /// final path were the file is stored, can be different from the requested path
     pub final_path: PathBuf,
