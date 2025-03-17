@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 
-use axum::{extract::multipart::MultipartError, response::IntoResponse, Json};
+use axum::{
+    extract::{multipart::MultipartError, rejection::PathRejection},
+    response::IntoResponse,
+    Json,
+};
 use http::StatusCode;
 
 pub type Error = anyhow::Error; //Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -27,6 +31,8 @@ pub enum ApiError {
     InternalError(String),
     #[error("Store error: {0}")]
     StoreError(#[from] crate::store::error::StoreError),
+    #[error("Invalid path: {0}")]
+    InvalidPath(#[from] PathRejection),
 }
 
 impl IntoResponse for ApiError {
@@ -105,6 +111,10 @@ impl IntoResponse for ApiError {
                         (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
                     }
                 }
+            }
+            ApiError::InvalidPath(error) => {
+                tracing::debug!("Invalid path: {error}");
+                (StatusCode::BAD_REQUEST, "Invalid path".into())
             }
         };
         let body = serde_json::json!({"error": error_message});

@@ -9,7 +9,7 @@ use axum::{
 
 use crate::{error::ApiError, state::AppState};
 
-use super::Store as _;
+use super::{Store as _, ValidatedPath};
 
 pub async fn upload(
     State(state): State<AppState>,
@@ -25,7 +25,7 @@ pub async fn upload(
         } else {
             path + "/" + file_name
         };
-
+        let dest_path = ValidatedPath::new(dest_path)?;
         let info = state.store().store_stream(&dest_path, field).await?;
 
         Ok((StatusCode::CREATED, Json(info)))
@@ -37,7 +37,7 @@ pub async fn upload(
 #[axum::debug_handler]
 pub async fn upload_direct(
     State(state): State<AppState>,
-    Path(path): Path<String>,
+    path: ValidatedPath,
     response: Request,
 ) -> Result<impl IntoResponse, ApiError> {
     let (_parts, body) = response.into_parts();
@@ -49,14 +49,14 @@ pub async fn upload_direct(
 
 pub async fn download(
     State(state): State<AppState>,
-    Path(path): Path<String>,
+    path: ValidatedPath,
 ) -> Result<impl IntoResponse, ApiError> {
     let store = state.store();
     let data = store.load_data(&path).await?;
     let size = store.size(&path).await?;
     let body = Body::from_stream(data);
     let mut headers = axum::http::HeaderMap::new();
-    let content_type = new_mime_guess::from_path(&path).first_or_octet_stream();
+    let content_type = new_mime_guess::from_path(path.as_ref()).first_or_octet_stream();
 
     headers.insert(
         http::header::CONTENT_TYPE,
@@ -67,6 +67,7 @@ pub async fn download(
         size.to_string().parse().unwrap(), // safe - number is ASCII
     );
     if let Some(file_name) = path
+        .as_ref()
         .split('/')
         .last()
         .filter(|s| s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()))
