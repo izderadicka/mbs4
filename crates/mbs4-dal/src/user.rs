@@ -4,6 +4,7 @@ use argon2::{
 };
 
 use futures::StreamExt as _;
+use mbs4_types::general::ValidEmail;
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
 use tracing::debug;
@@ -31,7 +32,7 @@ fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateUser {
-    pub email: String,
+    pub email: ValidEmail,
     pub name: Option<String>,
     pub password: Option<String>,
     pub roles: Option<Vec<String>>,
@@ -85,11 +86,12 @@ where
 
     pub async fn create(&self, payload: CreateUser) -> Result<User> {
         let password = payload.password.map(|p| hash_password(&p)).transpose()?;
+        let email = payload.email.as_ref();
         let roles = payload.roles.map(|roles| roles.join(","));
         let result = sqlx::query!(
             "INSERT INTO users (name, email, password, roles) VALUES (?, ?, ?, ?)",
             payload.name,
-            payload.email,
+            email,
             password,
             roles
         )
