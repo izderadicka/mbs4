@@ -3,7 +3,7 @@ use axum_valid::Garde;
 use mbs4_dal::user::{CreateUser, UserRepository};
 
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     response::IntoResponse,
     routing::{delete, post},
     Json,
@@ -14,10 +14,12 @@ use crate::state::AppState;
 
 repository_from_request!(UserRepository);
 
+#[axum::debug_handler]
 pub async fn create_user(
-    user_registry: UserRepository,
+    State(state): State<AppState>,
     Garde(Json(payload)): Garde<Json<CreateUser>>,
 ) -> ApiResult<impl IntoResponse> {
+    let user_registry = UserRepository::new(state.pool().clone());
     let user = user_registry.create(payload).await?;
 
     Ok((StatusCode::CREATED, Json(user)))

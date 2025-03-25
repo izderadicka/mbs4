@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{error::Result, store::file_store::FileStore};
+use axum::extract::FromRef;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
 use mbs4_types::oidc::OIDCConfig;
@@ -78,3 +79,9 @@ pub struct AppConfig {
 }
 
 pub struct AppStateVolatile {}
+
+impl FromRef<AppState> for () {
+    fn from_ref(_input: &AppState) -> Self {
+        ()
+    }
+}

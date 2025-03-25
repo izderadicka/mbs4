@@ -31,6 +31,8 @@ async fn test_invalid_user_email() {
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};
     let response = client.post(url).json(&new_user).send().await.unwrap();
-    info! {"Login Response: {:#?}", response};
-    assert!(!response.status().is_success()); 
+    info!("Response: {:#?}", response);
+    assert!(!response.status().is_success());
+    assert_eq!(422, response.status().as_u16());
+    info!("Response body: {:#?}", response.text().await.unwrap());
 }
