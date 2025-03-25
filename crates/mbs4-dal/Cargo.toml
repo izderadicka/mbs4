@@ -12,6 +12,7 @@ serde_json.workspace = true
 tracing.workspace = true
 thiserror = "2.0.11"
 mbs4-types = { path = "../mbs4-types" }
+garde = { version = "0.22.0", features = ["full"] }
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3

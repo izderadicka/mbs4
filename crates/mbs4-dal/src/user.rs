@@ -4,6 +4,7 @@ use argon2::{
 };
 
 use futures::StreamExt as _;
+use garde::Validate;
 use mbs4_types::general::ValidEmail;
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
@@ -30,8 +31,10 @@ fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
     Ok(res.is_ok())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Validate)]
+#[garde(allow_unvalidated)]
 pub struct CreateUser {
+    #[garde(dive)]
     pub email: ValidEmail,
     pub name: Option<String>,
     pub password: Option<String>,
