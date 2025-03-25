@@ -1,4 +1,4 @@
-use crate::{error::ApiResult, repository_from_request, validate::Garde};
+use crate::{error::ApiResult, repository_from_request, validate::Valid};
 use mbs4_dal::user::{CreateUser, UserRepository};
 
 use axum::{
@@ -16,7 +16,7 @@ repository_from_request!(UserRepository);
 // #[axum::debug_handler]
 pub async fn create_user(
     user_registry: UserRepository,
-    Garde(Json(payload)): Garde<Json<CreateUser>>,
+    Valid(Json(payload)): Valid<Json<CreateUser>>,
 ) -> ApiResult<impl IntoResponse> {
     let user = user_registry.create(payload).await?;
 

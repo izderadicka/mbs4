@@ -1,6 +1,7 @@
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::response::{IntoResponse, Response};
 use garde::{Report, Validate};
+use http::request::Parts;
 use http::StatusCode;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -9,9 +10,9 @@ use std::ops::{Deref, DerefMut};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Garde<E>(pub E);
+pub struct Valid<E>(pub E);
 
-impl<E> Deref for Garde<E> {
+impl<E> Deref for Valid<E> {
     type Target = E;
 
     fn deref(&self) -> &Self::Target {
@@ -19,19 +20,19 @@ impl<E> Deref for Garde<E> {
     }
 }
 
-impl<E> DerefMut for Garde<E> {
+impl<E> DerefMut for Valid<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<E: Display> Display for Garde<E> {
+impl<E: Display> Display for Valid<E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl<E> Garde<E> {
+impl<E> Valid<E> {
     /// Consumes the `Garde` and returns the validated data within.
     ///
     /// This returns the `E` type which represents the data that has been
@@ -88,7 +89,7 @@ impl<E> From<Report> for GardeRejection<E> {
     }
 }
 
-impl<Extractor, T> FromRequest<AppState> for Garde<Extractor>
+impl<Extractor, T> FromRequest<AppState> for Valid<Extractor>
 where
     T: Validate<Context = ()>,
     Extractor: Deref<Target = T> + FromRequest<AppState>,
@@ -101,28 +102,28 @@ where
             .map_err(GardeRejection::Inner)?;
 
         inner.deref().validate()?;
-        Ok(Garde(inner))
+        Ok(Valid(inner))
     }
 }
 
-// impl<State, Extractor, Context> FromRequestParts<State> for Garde<Extractor>
-// where
-//     State: Send + Sync,
-//     Context: Send + Sync + FromRef<State>,
-//     Extractor: HasValidate + FromRequestParts<State>,
-//     <Extractor as HasValidate>::Validate: garde::Validate<Context = Context>,
-// {
-//     type Rejection = GardeRejection<<Extractor as FromRequestParts<State>>::Rejection>;
+impl<Extractor, T> FromRequestParts<AppState> for Valid<Extractor>
+where
+    T: Validate<Context = ()>,
+    Extractor: Deref<Target = T> + FromRequestParts<AppState>,
+{
+    type Rejection = GardeRejection<<Extractor as FromRequestParts<AppState>>::Rejection>;
 
-//     async fn from_request_parts(parts: &mut Parts, state: &State) -> Result<Self, Self::Rejection> {
-//         let context: Context = FromRef::from_ref(state);
-//         let inner = Extractor::from_request_parts(parts, state)
-//             .await
-//             .map_err(GardeRejection::Inner)?;
-//         inner.get_validate().validate_with(&context)?;
-//         Ok(Garde(inner))
-//     }
-// }
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let inner = Extractor::from_request_parts(parts, state)
+            .await
+            .map_err(GardeRejection::Inner)?;
+        inner.deref().validate()?;
+        Ok(Valid(inner))
+    }
+}
 
 // #[cfg(test)]
 // mod tests {
