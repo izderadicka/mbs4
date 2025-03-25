@@ -3,6 +3,7 @@ pub mod error;
 pub mod state;
 pub mod store;
 pub mod user;
+pub mod validate;
 
 #[macro_export]
 macro_rules! repository_from_request {

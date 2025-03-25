@@ -1,5 +1,4 @@
-use crate::{error::ApiResult, repository_from_request};
-use axum_valid::Garde;
+use crate::{error::ApiResult, repository_from_request, validate::Garde};
 use mbs4_dal::user::{CreateUser, UserRepository};
 
 use axum::{
@@ -14,6 +13,7 @@ use crate::state::AppState;
 
 repository_from_request!(UserRepository);
 
+// #[axum::debug_handler]
 pub async fn create_user(
     user_registry: UserRepository,
     Garde(Json(payload)): Garde<Json<CreateUser>>,
