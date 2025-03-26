@@ -9,7 +9,7 @@ use axum::{
 
 use crate::{error::ApiError, state::AppState};
 
-use super::{Store as _, ValidatedPath};
+use super::{Store as _, ValidPath};
 
 pub async fn upload(
     State(state): State<AppState>,
@@ -25,7 +25,7 @@ pub async fn upload(
         } else {
             path + "/" + file_name
         };
-        let dest_path = ValidatedPath::new(dest_path)?;
+        let dest_path = ValidPath::new(dest_path)?;
         let info = state.store().store_stream(&dest_path, field).await?;
 
         Ok((StatusCode::CREATED, Json(info)))
@@ -37,7 +37,7 @@ pub async fn upload(
 #[axum::debug_handler]
 pub async fn upload_direct(
     State(state): State<AppState>,
-    path: ValidatedPath,
+    path: ValidPath,
     response: Request,
 ) -> Result<impl IntoResponse, ApiError> {
     let (_parts, body) = response.into_parts();
@@ -49,7 +49,7 @@ pub async fn upload_direct(
 
 pub async fn download(
     State(state): State<AppState>,
-    path: ValidatedPath,
+    path: ValidPath,
 ) -> Result<impl IntoResponse, ApiError> {
     let store = state.store();
     let data = store.load_data(&path).await?;

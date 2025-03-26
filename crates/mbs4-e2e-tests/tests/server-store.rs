@@ -38,7 +38,7 @@ async fn test_store() {
     assert_eq!(response.status().as_u16(), 201);
     let info: StoreInfo = response.json().await.unwrap();
     assert_eq!(info.size, FILE_SIZE);
-    assert_eq!(info.final_path.to_str().unwrap(), "tmp/my_test.txt");
+    assert_eq!(info.final_path, "tmp/my_test.txt");
 
     let url = base_url
         .join("store/upload/direct/tmp/my_test.txt")
@@ -54,7 +54,7 @@ async fn test_store() {
     assert_eq!(response.status().as_u16(), 201);
     let info: StoreInfo = response.json().await.unwrap();
     assert_eq!(info.size, FILE_SIZE);
-    assert_eq!(info.final_path.to_str().unwrap(), "tmp/my_test(1).txt");
+    assert_eq!(info.final_path, "tmp/my_test(1).txt");
 
     let original = tokio::fs::read(test_file_path).await.unwrap();
 

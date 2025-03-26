@@ -6,7 +6,7 @@ pub type StoreResult<T> = std::result::Result<T, StoreError>;
 pub enum StoreError {
     #[error("Invalid path")]
     InvalidPath,
-    #[error("Cannot create on provoded path")]
+    #[error("Cannot create on provided path")]
     PathConflict,
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

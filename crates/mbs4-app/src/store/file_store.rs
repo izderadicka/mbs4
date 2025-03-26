@@ -14,7 +14,7 @@ use tracing::{debug, error};
 
 use super::{
     error::{StoreError, StoreResult},
-    Store, StoreInfo, ValidatedPath,
+    Store, StoreInfo, ValidPath,
 };
 
 //from std
@@ -135,7 +135,7 @@ impl FileStore {
 }
 
 impl Store for FileStore {
-    async fn store_data(&self, path: &ValidatedPath, data: &[u8]) -> StoreResult<StoreInfo> {
+    async fn store_data(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo> {
         let (final_path, tmp_path) = unique_path(&self.inner.root, path.as_ref()).await?;
         fs::File::create(&tmp_path)
             .await?
@@ -145,6 +145,7 @@ impl Store for FileStore {
         fs::rename(&tmp_path, &final_path).await?;
         let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
+        let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs
         let size = data.len() as u64;
         Ok(StoreInfo {
             final_path,
@@ -153,7 +154,7 @@ impl Store for FileStore {
         })
     }
 
-    async fn store_stream<S, E>(&self, path: &ValidatedPath, stream: S) -> StoreResult<StoreInfo>
+    async fn store_stream<S, E>(&self, path: &ValidPath, stream: S) -> StoreResult<StoreInfo>
     where
         S: Stream<Item = Result<Bytes, E>>,
         E: Into<StoreError>,
@@ -183,7 +184,7 @@ impl Store for FileStore {
         fs::rename(&tmp_path, &final_path).await?;
         let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();
-
+        let final_path = final_path.to_str().unwrap().to_string();
         Ok(StoreInfo {
             final_path,
             size,
@@ -193,7 +194,7 @@ impl Store for FileStore {
 
     async fn load_data(
         &self,
-        path: &ValidatedPath,
+        path: &ValidPath,
     ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError> {
         let final_path = self.inner.root.join(path.as_ref());
         let file = fs::File::open(&final_path).await.map_err(|e| {
@@ -207,7 +208,7 @@ impl Store for FileStore {
         Ok(stream)
     }
 
-    async fn size(&self, path: &ValidatedPath) -> StoreResult<u64> {
+    async fn size(&self, path: &ValidPath) -> StoreResult<u64> {
         let final_path = self.inner.root.join(path.as_ref());
         let meta = fs::metadata(&final_path).await?;
         Ok(meta.len())
@@ -227,13 +228,13 @@ mod tests {
         let store = FileStore::new(tmp_dir.path());
         let store2 = store.clone();
         // test to move store to other thread
-        let validated_path = ValidatedPath::new("usarna/kulisatna.txt").unwrap();
+        let validated_path = ValidPath::new("usarna/kulisatna.txt").unwrap();
         let validated_path2 = validated_path.clone();
         let handle =
             tokio::spawn(async move { store2.store_data(&validated_path2, content).await });
         let res = handle.await.unwrap().unwrap();
         assert_eq!(res.size, 12);
-        assert_eq!(res.final_path, Path::new("usarna/kulisatna.txt"));
+        assert_eq!(res.final_path, "usarna/kulisatna.txt");
         assert!(store.inner.root.join("usarna/kulisatna.txt").exists());
         assert_eq!(
             fs::read(store.inner.root.join("usarna/kulisatna.txt"))
@@ -242,7 +243,7 @@ mod tests {
             content
         );
         let res2 = store.store_data(&validated_path, content).await.unwrap();
-        assert_eq!(res2.final_path, Path::new("usarna/kulisatna(1).txt"));
+        assert_eq!(res2.final_path, "usarna/kulisatna(1).txt");
         assert!(store.inner.root.join("usarna/kulisatna(1).txt").exists());
         assert_eq!(
             fs::read(store.inner.root.join("usarna/kulisatna(1).txt"))
@@ -272,9 +273,9 @@ mod tests {
         let chunks = data_generator(10);
 
         let store = FileStore::new(tmp_dir.path());
-        let validated_path = ValidatedPath::new("binarni/data").unwrap();
+        let validated_path = ValidPath::new("binarni/data").unwrap();
         let res = store.store_stream(&validated_path, chunks).await.unwrap();
-        assert_eq!(res.final_path, Path::new("binarni/data"));
+        assert_eq!(res.final_path, "binarni/data");
         assert_eq!(res.size, 10240);
         let file_path = store.inner.root.join("binarni/data");
         assert!(file_path.exists());
@@ -288,10 +289,10 @@ mod tests {
         let size = size_kb as usize * 1024;
         let tmp_dir = tempfile::tempdir().unwrap();
         let chunks = data_generator(size_kb);
-        let validated_path = ValidatedPath::new("binarni/data").unwrap();
+        let validated_path = ValidPath::new("binarni/data").unwrap();
         let store = FileStore::new(tmp_dir.path());
         let _res = store.store_stream(&validated_path, chunks).await.unwrap();
-        let validated_path = ValidatedPath::new("binarni/data").unwrap();
+        let validated_path = ValidPath::new("binarni/data").unwrap();
         let mut stream = store.load_data(&validated_path).await.unwrap();
         let mut data = Vec::with_capacity(size); // 5MB
         while let Some(chunk) = stream.next().await {
