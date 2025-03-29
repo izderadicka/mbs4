@@ -66,6 +66,14 @@ impl IntoResponse for ApiError {
                 mbs4_dal::Error::InvalidCredentials => {
                     (StatusCode::UNAUTHORIZED, "Invalid credentials".into())
                 }
+                mbs4_dal::Error::MissingVersion => {
+                    tracing::debug!("Missing version");
+                    (StatusCode::BAD_REQUEST, "Missing version".into())
+                }
+                mbs4_dal::Error::FailedUpdate { id, version } => {
+                    tracing::debug!("Failed update: {id} {version}");
+                    (StatusCode::CONFLICT, "Failed update".into())
+                }
             },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,

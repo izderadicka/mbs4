@@ -13,4 +13,10 @@ pub enum Error {
 
     #[error("Invalid credentials")]
     InvalidCredentials,
+
+    #[error("Missing version")]
+    MissingVersion,
+
+    #[error("Failed update")]
+    FailedUpdate { id: i64, version: i64 },
 }

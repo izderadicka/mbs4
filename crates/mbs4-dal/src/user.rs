@@ -102,13 +102,7 @@ where
         .await?;
 
         let id = result.last_insert_rowid();
-        let user: User = sqlx::query_as::<_, UserInt>("SELECT * FROM users WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.executor)
-            .await?
-            .into();
-
-        Ok(user)
+        self.get(id).await
     }
 
     pub async fn list(&self, limit: usize) -> Result<Vec<User>> {

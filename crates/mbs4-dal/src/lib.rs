@@ -1,4 +1,5 @@
 pub mod error;
+pub mod language;
 pub mod user;
 
 pub use error::Error;
