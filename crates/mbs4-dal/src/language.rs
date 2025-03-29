@@ -2,7 +2,7 @@ use crate::{Error, error::Result};
 use futures::{StreamExt as _, TryStreamExt as _};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
-use sqlx::Pool;
+use sqlx::{Acquire, Executor, Pool};
 use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Validate)]
@@ -38,7 +38,8 @@ pub struct LanguageRepositoryImpl<E> {
 
 impl<'c, E> LanguageRepositoryImpl<E>
 where
-    for<'a> &'a E: sqlx::Executor<'c, Database = crate::ChosenDB>,
+    for<'a> &'a E:
+        Executor<'c, Database = crate::ChosenDB> + Acquire<'c, Database = crate::ChosenDB>,
 {
     pub fn new(executor: E) -> Self {
         Self { executor }
@@ -60,6 +61,8 @@ where
             debug!("No version provided");
             Error::MissingVersion
         })?;
+        let mut conn = self.executor.acquire().await?;
+        let mut transaction = conn.begin().await?;
         let result = sqlx::query(
             "UPDATE language SET name = ?, code = ?, version = ? WHERE id = ? and version = ?",
         )
@@ -68,13 +71,15 @@ where
         .bind(version + 1)
         .bind(id)
         .bind(version)
-        .execute(&self.executor)
+        .execute(&mut *transaction)
         .await?;
 
         if result.rows_affected() == 0 {
             Err(Error::FailedUpdate { id, version })
         } else {
-            self.get(id).await
+            let record = get(id, &mut *transaction).await?;
+            transaction.commit().await?;
+            Ok(record)
         }
     }
 
@@ -101,10 +106,17 @@ where
     }
 
     pub async fn get(&self, id: i64) -> Result<Language> {
-        let record: Language = sqlx::query_as!(Language, "SELECT * FROM language WHERE id = ?", id)
-            .fetch_one(&self.executor)
-            .await?
-            .into();
-        Ok(record)
+        get(id, &self.executor).await
     }
+}
+
+async fn get<'c, E>(id: i64, executor: E) -> Result<Language>
+where
+    E: Executor<'c, Database = crate::ChosenDB>,
+{
+    let record: Language = sqlx::query_as!(Language, "SELECT * FROM language WHERE id = ?", id)
+        .fetch_one(executor)
+        .await?
+        .into();
+    Ok(record)
 }
