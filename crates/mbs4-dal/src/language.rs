@@ -45,7 +45,7 @@ where
     }
 
     pub async fn create(&self, payload: CreateLanguage) -> Result<Language> {
-        let result = sqlx::query("INSERT INTO language (name, code, version) VALUES (?, ?, 0)")
+        let result = sqlx::query("INSERT INTO language (name, code, version) VALUES (?, ?, 1)")
             .bind(&payload.name)
             .bind(&payload.code)
             .execute(&self.executor)
@@ -79,7 +79,7 @@ where
     }
 
     pub async fn list(&self, limit: usize) -> Result<Vec<LanguageShort>> {
-        let records = sqlx::query_as::<_, LanguageShort>("SELECT * FROM language")
+        let records = sqlx::query_as::<_, LanguageShort>("SELECT id, name, code FROM language")
             .fetch(&self.executor)
             .take(limit)
             .try_collect::<Vec<_>>()
@@ -88,21 +88,15 @@ where
     }
 
     pub async fn delete(&self, id: i64) -> Result<()> {
-        match sqlx::query_scalar::<_, i64>("SELECT id FROM language WHERE id = ?")
+        let res = sqlx::query("DELETE FROM language WHERE id = ?")
             .bind(id)
-            .fetch_optional(&self.executor)
-            .await?
-        {
-            Some(_id) => {
-                // Language exists, proceed with deletion
-                sqlx::query("DELETE FROM language WHERE id = ?")
-                    .bind(id)
-                    .execute(&self.executor)
-                    .await?;
+            .execute(&self.executor)
+            .await?;
 
-                Ok(())
-            }
-            None => Err(crate::error::Error::RecordNotFound("Language".to_string())),
+        if res.rows_affected() == 0 {
+            Err(crate::error::Error::RecordNotFound("Language".to_string()))
+        } else {
+            Ok(())
         }
     }
 

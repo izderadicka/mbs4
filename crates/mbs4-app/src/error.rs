@@ -40,17 +40,11 @@ impl IntoResponse for ApiError {
         let (status, error_message): (StatusCode, Cow<str>) = match self {
             ApiError::DatabaseError(error) => match error {
                 mbs4_dal::Error::DatabaseError(error) => {
-                    if let mbs4_dal::SqlxError::Database(db_error) = error {
-                        if db_error.is_unique_violation() {
-                            (StatusCode::CONFLICT, "Resource already exists".into())
-                        } else {
-                            tracing::error!("Database error: {db_error}");
-                            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
-                        }
-                    } else {
-                        tracing::error!("sqlx error: {error}");
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
-                    }
+                    tracing::error!("sqlx error: {error}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
+                }
+                mbs4_dal::Error::UniqueViolation => {
+                    (StatusCode::CONFLICT, "Resource already exists".into())
                 }
                 mbs4_dal::Error::UserPasswordError(error) => {
                     tracing::error!("User password error: {error}");

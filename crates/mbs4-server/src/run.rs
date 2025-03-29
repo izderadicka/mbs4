@@ -61,6 +61,7 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/auth", auth_router())
         .nest("/users", users_router())
         .nest("/store", store_router(state.config().upload_limit_mb))
+        .nest("/api/language", mbs4_app::rest_api::language::router())
         .route(
             "/protected",
             get(protected).layer(

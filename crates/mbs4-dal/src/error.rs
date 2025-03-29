@@ -3,7 +3,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    DatabaseError(sqlx::Error),
 
     #[error("User password error: {0}")]
     UserPasswordError(#[from] argon2::password_hash::Error),
@@ -19,4 +19,20 @@ pub enum Error {
 
     #[error("Failed update")]
     FailedUpdate { id: i64, version: i64 },
+
+    #[error("Unique violation, conflicting record already exists")]
+    UniqueViolation,
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
+        match error {
+            sqlx::Error::RowNotFound => Error::RecordNotFound("".to_string()),
+            sqlx::Error::Database(db_error) if db_error.is_unique_violation() => {
+                Error::UniqueViolation
+            }
+
+            _ => Error::DatabaseError(error),
+        }
+    }
 }
