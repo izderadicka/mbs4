@@ -1,4 +1,4 @@
-use crate::{Error, error::Result};
+use crate::{Error, ListingParams, MAX_LIMIT, error::Result};
 use futures::{StreamExt as _, TryStreamExt as _};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
@@ -83,12 +83,28 @@ where
         }
     }
 
-    pub async fn list(&self, limit: usize) -> Result<Vec<LanguageShort>> {
-        let records = sqlx::query_as::<_, LanguageShort>("SELECT id, name, code FROM language")
-            .fetch(&self.executor)
-            .take(limit)
-            .try_collect::<Vec<_>>()
+    pub async fn count(&self) -> Result<u64> {
+        let count: u64 = sqlx::query_scalar("SELECT count(*) FROM language")
+            .fetch_one(&self.executor)
             .await?;
+        Ok(count)
+    }
+
+    pub async fn list_all(&self) -> Result<Vec<LanguageShort>> {
+        self.list(ListingParams::default()).await
+    }
+
+    pub async fn list(&self, params: ListingParams) -> Result<Vec<LanguageShort>> {
+        let order = ""; // This is safety limit
+        let records = sqlx::query_as::<_, LanguageShort>(&format!(
+            "SELECT id, name, code FROM language {order} LIMIT ? OFFSET ?"
+        ))
+        .bind(params.limit)
+        .bind(params.offset)
+        .fetch(&self.executor)
+        .take(MAX_LIMIT)
+        .try_collect::<Vec<_>>()
+        .await?;
         Ok(records)
     }
 

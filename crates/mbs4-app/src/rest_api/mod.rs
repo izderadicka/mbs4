@@ -20,7 +20,7 @@ macro_rules! crud_api {
             }
 
             pub async fn list(repository: $repository) -> ApiResult<impl IntoResponse> {
-                let users = repository.list(100).await?;
+                let users = repository.list_all().await?;
                 Ok((StatusCode::OK, Json(users)))
             }
 
