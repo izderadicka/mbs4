@@ -22,6 +22,9 @@ pub enum Error {
 
     #[error("Unique violation, conflicting record already exists")]
     UniqueViolation,
+
+    #[error("Invalid order by field: {0}")]
+    InvalidOrderByField(String),
 }
 
 impl From<sqlx::Error> for Error {

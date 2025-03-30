@@ -33,6 +33,8 @@ pub enum ApiError {
     StoreError(#[from] crate::store::error::StoreError),
     #[error("Invalid path: {0}")]
     InvalidPath(#[from] PathRejection),
+    #[error("Invalid query: {0}")]
+    InvalidQuery(String),
 }
 
 impl IntoResponse for ApiError {
@@ -67,6 +69,10 @@ impl IntoResponse for ApiError {
                 mbs4_dal::Error::FailedUpdate { id, version } => {
                     tracing::debug!("Failed update: {id} {version}");
                     (StatusCode::CONFLICT, "Failed update".into())
+                }
+                mbs4_dal::Error::InvalidOrderByField(field) => {
+                    tracing::debug!("Invalid order by field: {field}");
+                    (StatusCode::BAD_REQUEST, "Invalid order by field".into())
                 }
             },
             ApiError::ResourceNotFound(r) => (
@@ -117,6 +123,10 @@ impl IntoResponse for ApiError {
             ApiError::InvalidPath(error) => {
                 tracing::debug!("Invalid path: {error}");
                 (StatusCode::BAD_REQUEST, "Invalid path".into())
+            }
+            ApiError::InvalidQuery(msg) => {
+                tracing::debug!("Invalid query: {msg}");
+                (StatusCode::BAD_REQUEST, msg.into())
             }
         };
         let body = serde_json::json!({"error": error_message});

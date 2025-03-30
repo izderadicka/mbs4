@@ -15,6 +15,8 @@ pub fn router() -> axum::Router<AppState> {
                 .get(crud_api::list)
                 .put(crud_api::update),
         )
+        .route("/count", get(crud_api::count))
+        .route("/all", get(crud_api::list_all))
         .route(
             "/{id}",
             get(crud_api::get)

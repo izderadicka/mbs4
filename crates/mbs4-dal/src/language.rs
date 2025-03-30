@@ -23,6 +23,8 @@ pub struct Language {
     pub version: i64,
 }
 
+const VALID_ORDER_FIELDS: &[&str] = &["id", "name", "code"];
+
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct LanguageShort {
     pub id: i64,
@@ -95,7 +97,7 @@ where
     }
 
     pub async fn list(&self, params: ListingParams) -> Result<Vec<LanguageShort>> {
-        let order = ""; // This is safety limit
+        let order = params.ordering(VALID_ORDER_FIELDS)?;
         let records = sqlx::query_as::<_, LanguageShort>(&format!(
             "SELECT id, name, code FROM language {order} LIMIT ? OFFSET ?"
         ))
