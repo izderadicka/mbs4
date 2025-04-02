@@ -12,4 +12,19 @@ pub struct CreateLanguage {
     version: Option<i64>,
 }
 
-fn main() {}
+#[test]
+fn test_repository() {
+    let language = CreateLanguage {
+        name: "English".to_string(),
+        code: "en".to_string(),
+        version: None,
+    };
+    assert!(language.validate().is_ok());
+
+    let language_full = Language {
+        id: 1,
+        name: "English".to_string(),
+        code: "en".to_string(),
+        version: 1,
+    };
+}

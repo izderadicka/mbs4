@@ -1,4 +1,3 @@
-use axum::http::response;
 use mbs4_dal::language::{Language, LanguageShort};
 use mbs4_e2e_tests::{prepare_env, spawn_server};
 use reqwest::Url;
@@ -128,7 +127,7 @@ async fn test_languages() {
     let id = stored_langs[3].id;
     info!("ID: {}", id);
 
-    let mut record_url = extend_url(&api_url, id);
+    let record_url = extend_url(&api_url, id);
 
     let response = client.get(record_url.clone()).send().await.unwrap();
     info!("Response: {:#?}", response);
