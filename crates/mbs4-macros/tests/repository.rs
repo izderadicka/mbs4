@@ -21,10 +21,18 @@ fn test_repository() {
     };
     assert!(language.validate().is_ok());
 
-    let language_full = Language {
+    let _language_full = Language {
         id: 1,
         name: "English".to_string(),
         code: "en".to_string(),
         version: 1,
     };
+
+    let _language_short = LanguageShort {
+        id: 1,
+        name: "English".to_string(),
+        code: "en".to_string(),
+    };
+
+    assert_eq!(3, VALID_ORDER_FIELDS.len());
 }
