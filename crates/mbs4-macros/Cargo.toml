@@ -11,6 +11,9 @@ garde = { version = "0.22.0", features = ["derive", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 trybuild = { version = "1.0.49", features = ["diff"] }
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+mbs4-dal = { path = "../mbs4-dal" }
+tracing.workspace = true
+futures = "0.3.31"
 
 [dependencies]
 proc-macro2 = "1.0.94"

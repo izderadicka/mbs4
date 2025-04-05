@@ -2,6 +2,13 @@ use garde::Validate;
 use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
+//these are required for macro to work
+
+pub use mbs4_dal::{ChosenDB, ListingParams, MAX_LIMIT};
+pub mod error {
+    pub use mbs4_dal::error::{Error, Result};
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, Repository)]
 pub struct CreateLanguage {
     #[garde(length(min = 1, max = 255))]

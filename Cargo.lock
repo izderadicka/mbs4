@@ -2133,12 +2133,15 @@ dependencies = [
 name = "mbs4-macros"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "garde",
+ "mbs4-dal",
  "proc-macro2",
  "quote",
  "serde",
  "sqlx",
  "syn 2.0.100",
+ "tracing",
  "trybuild",
 ]
 

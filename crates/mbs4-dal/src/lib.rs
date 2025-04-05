@@ -13,7 +13,7 @@ use crate::error::Result;
 pub type ChosenDB = sqlx::Sqlite;
 pub type Pool = sqlx::Pool<ChosenDB>;
 
-const MAX_LIMIT: usize = 10_000;
+pub const MAX_LIMIT: usize = 10_000;
 
 pub async fn new_pool(database_url: &str) -> Result<Pool, Error> {
     let pool = SqlitePoolOptions::new()
