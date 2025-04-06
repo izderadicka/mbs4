@@ -1,11 +1,15 @@
 use std::{env, path::Path};
 
 use anyhow::{Result, anyhow};
+use axum::http::HeaderMap;
+use mbs4_app::state::AppState;
 use mbs4_server::{
     config::{Parser, ServerConfig},
-    run::run,
+    run::{build_state, run, run_with_state},
 };
+use mbs4_types::claim::ApiClaim;
 use rand::{Rng as _, distr::Alphanumeric};
+use reqwest::Client;
 use tempfile::TempDir;
 use tokio::io::AsyncWriteExt as _;
 use tracing::debug;
@@ -105,6 +109,16 @@ pub async fn spawn_server(args: ServerConfig) -> Result<()> {
     test_port(port).await
 }
 
+pub async fn spawn_server_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+    let port = args.port;
+    tokio::spawn(async move {
+        println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
+        run_with_state(args, state).await.unwrap();
+    });
+
+    test_port(port).await
+}
+
 pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, ConfigGuard)> {
     let tmp_data_dir = TempDir::with_prefix_in(format!("{}_", test_name), base_dir)?;
     let data_dir = tmp_data_dir.path().to_string_lossy().to_string();
@@ -135,4 +149,66 @@ pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, Co
             data_dir: tmp_data_dir,
         },
     ))
+}
+
+pub fn issue_token(state: &AppState, claim: ApiClaim) -> Result<String> {
+    let token = state.tokens().issue(claim)?;
+    Ok(token)
+}
+
+pub fn admin_token(state: &AppState) -> Result<String> {
+    let claim = ApiClaim::new_expired("admin@localhost", ["admin", "power"]);
+    issue_token(state, claim).map_err(|e| e.into())
+}
+
+pub fn user_token(state: &AppState) -> Result<String> {
+    let claim = ApiClaim::new_expired::<String>("user@localhost", []);
+    issue_token(state, claim).map_err(|e| e.into())
+}
+
+pub fn auth_headers(token: String) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    headers.insert("Authorization", format!("Bearer {}", token).parse()?);
+    Ok(headers)
+}
+
+pub enum TestUser {
+    Admin,
+    User,
+    None,
+}
+
+impl TestUser {
+    pub fn auth_header(&self, state: &AppState) -> Result<HeaderMap> {
+        let mut headers = HeaderMap::new();
+        match self {
+            TestUser::Admin => {
+                headers.insert(
+                    "Authorization",
+                    format!("Bearer {}", admin_token(state)?).parse()?,
+                );
+            }
+            TestUser::User => {
+                headers.insert(
+                    "Authorization",
+                    format!("Bearer {}", user_token(state)?).parse()?,
+                );
+            }
+            TestUser::None => {}
+        }
+        Ok(headers)
+    }
+}
+
+pub async fn launch_env(args: ServerConfig, user: TestUser) -> Result<(Client, AppState)> {
+    let state = build_state(&args).await?;
+    let auth_headers = user.auth_header(&state)?;
+    spawn_server_with_state(args, state.clone()).await?;
+
+    let client = reqwest::Client::builder()
+        .cookie_store(true)
+        .default_headers(auth_headers)
+        .build()?;
+
+    Ok((client, state))
 }

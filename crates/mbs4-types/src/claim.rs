@@ -97,10 +97,10 @@ pub struct ApiClaim {
 }
 
 impl ApiClaim {
-    pub fn new_expired(
-        sub: impl Into<String>,
-        roles: impl IntoIterator<Item = impl Into<Role>>,
-    ) -> Self {
+    pub fn new_expired<R>(sub: impl Into<String>, roles: impl IntoIterator<Item = R>) -> Self
+    where
+        R: Into<Role>,
+    {
         Self {
             sub: sub.into(),
             exp: 0,

@@ -1,5 +1,5 @@
 use mbs4_app::store::StoreInfo;
-use mbs4_e2e_tests::{prepare_env, random_text_file, spawn_server};
+use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, random_text_file};
 use reqwest::{
     Body,
     header::CONTENT_TYPE,
@@ -20,9 +20,7 @@ async fn test_store() {
     const FILE_SIZE: u64 = 50 * 1024;
     random_text_file(&test_file_path, FILE_SIZE).await.unwrap();
 
-    spawn_server(args).await.unwrap();
-
-    let client = reqwest::Client::new();
+    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
 
     let url = base_url.join("store/download/tmp/test.txt").unwrap();
     let response = client.get(url).send().await.unwrap();

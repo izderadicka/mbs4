@@ -21,16 +21,23 @@ use tower::ServiceBuilder;
 use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
-    let shutdown = tokio::signal::ctrl_c().map(|_| ());
-    run_graceful(args, shutdown).await
+    let state = build_state(&args).await?;
+    run_with_state(args, state).await
 }
 
-pub async fn run_graceful<S>(args: ServerConfig, shutdown_signal: S) -> Result<()>
+pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+    let shutdown = tokio::signal::ctrl_c().map(|_| ());
+    run_graceful_with_state(args, state, shutdown).await
+}
+
+pub async fn run_graceful_with_state<S>(
+    args: ServerConfig,
+    state: AppState,
+    shutdown_signal: S,
+) -> Result<()>
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
-    let state = build_state(&args).await?;
-
     let app = main_router(state);
 
     let ip: std::net::IpAddr = args.listen_address.parse()?;
@@ -55,23 +62,22 @@ fn main_router(state: AppState) -> Router<()> {
     //     ));
 
     Router::new()
-        .route("/", get(root)) // TODO - change
-        .route("/health", get(health))
-        // .layer(session_layer)
-        .nest("/auth", auth_router())
         .nest("/users", users_router())
         .nest("/store", store_router(state.config().upload_limit_mb))
         .nest("/api/language", mbs4_app::rest_api::language::router())
         .route(
             "/protected",
-            get(protected).layer(
-                ServiceBuilder::new()
-                    .layer(TokenLayer::new(state.clone()))
-                    .layer(RequiredRolesLayer::new(["admin"])),
-            ),
+            get(protected).layer(ServiceBuilder::new().layer(RequiredRolesLayer::new(["admin"]))),
         )
+        // All above routes are protected
+        .layer(TokenLayer::new(state.clone()))
+        .nest("/auth", auth_router())
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state)
+        // static and public resources
+        .route("/", get(root))
+        .route("/index.html", get(root)) // TODO - change
+        .route("/health", get(health))
 }
 
 async fn protected(claim: ApiClaim) -> impl IntoResponse {

@@ -1,6 +1,6 @@
 use garde::Validate as _;
 use mbs4_dal::user;
-use mbs4_e2e_tests::{prepare_env, spawn_server};
+use mbs4_e2e_tests::{TestUser, launch_env, prepare_env};
 use mbs4_types::general::ValidEmail;
 use tracing::info;
 use tracing_test::traced_test;
@@ -22,11 +22,7 @@ async fn test_invalid_user_email() {
     assert!(new_user.email.validate().is_err());
     let base_url = args.base_url.clone();
 
-    spawn_server(args).await.unwrap();
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .unwrap();
+    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
 
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};

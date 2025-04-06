@@ -1,5 +1,5 @@
 use mbs4_dal::language::{Language, LanguageShort};
-use mbs4_e2e_tests::{prepare_env, spawn_server};
+use mbs4_e2e_tests::{TestUser, launch_env, prepare_env};
 use reqwest::Url;
 use tracing::info;
 use tracing_test::traced_test;
@@ -39,11 +39,7 @@ async fn test_paging() {
     transaction.commit().await.unwrap();
     info!("Created {} languages", count);
 
-    spawn_server(args).await.unwrap();
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .unwrap();
+    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
     let api_url = base_url.join("api/language").unwrap();
 
     let count_url = extend_url(&api_url, "count");
@@ -96,11 +92,7 @@ async fn test_languages() {
 
     let base_url = args.base_url.clone();
 
-    spawn_server(args).await.unwrap();
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .unwrap();
+    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
 
     let api_url = base_url.join("api/language").unwrap();
     let langs = [
