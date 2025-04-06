@@ -1,4 +1,6 @@
 pub mod error;
+pub mod format;
+pub mod genre;
 pub mod language;
 pub mod user;
 

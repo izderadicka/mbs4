@@ -90,12 +90,23 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             })
             .collect::<Vec<_>>();
 
-        let repo_impl = quote! {
-            // these must be provided by hosting crate
+        let update_fields = mutable_fields
+            .iter()
+            .map(|f| format!("{} = ?", f))
+            .collect::<Vec<_>>()
+            .join(",");
+        let update_cmd = format!(
+            "UPDATE {table_name} SET {update_fields},version = ? WHERE id = ? and version = ?"
+        );
+        let count_cmd = format!("SELECT count(*) FROM {table_name}");
+        let select_many_query =
+            format!("SELECT id,{insert_fields} FROM {table_name} {{order}} LIMIT ? OFFSET ?");
+        let delete_cmd = format!("DELETE FROM {table_name} WHERE id = ?");
+        let select_one_query = format!("SELECT * FROM {table_name} WHERE id = ?");
 
+        let repo_impl = quote! {
             use futures::{StreamExt as _, TryStreamExt as _};
             use sqlx::{Acquire as _, Executor as _};
-
 
             pub type #repo_name = #repo_impl_name<sqlx::Pool<crate::ChosenDB>>;
 
@@ -130,10 +141,9 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     let mut conn = self.executor.acquire().await?;
                     let mut transaction = conn.begin().await?;
                     let result = sqlx::query(
-                        "UPDATE language SET name = ?, code = ?, version = ? WHERE id = ? and version = ?",
+                        #update_cmd,
                     )
-                    .bind(&payload.name)
-                    .bind(&payload.code)
+                    #(#bound_fields)*
                     .bind(version + 1)
                     .bind(id)
                     .bind(version)
@@ -150,7 +160,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
 
                 pub async fn count(&self) -> crate::error::Result<u64> {
-                    let count: u64 = sqlx::query_scalar("SELECT count(*) FROM language")
+                    let count: u64 = sqlx::query_scalar(#count_cmd)
                         .fetch_one(&self.executor)
                         .await?;
                     Ok(count)
@@ -163,7 +173,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
                     let order = params.ordering(VALID_ORDER_FIELDS)?;
                     let records = sqlx::query_as::<_, #short_struct_name>(&format!(
-                        "SELECT id, name, code FROM language {order} LIMIT ? OFFSET ?"
+                        #select_many_query
                     ))
                     .bind(params.limit)
                     .bind(params.offset)
@@ -175,7 +185,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
 
                 pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
-                    let res = sqlx::query("DELETE FROM language WHERE id = ?")
+                    let res = sqlx::query(#delete_cmd)
                         .bind(id)
                         .execute(&self.executor)
                         .await?;
@@ -196,7 +206,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             where
                 E: sqlx::Executor<'c, Database = crate::ChosenDB>,
             {
-                let record: #full_struct_name = sqlx::query_as!(#full_struct_name, "SELECT * FROM language WHERE id = ?", id)
+                let record: #full_struct_name = sqlx::query_as!(#full_struct_name, #select_one_query, id)
                     .fetch_one(executor)
                     .await?
                     .into();

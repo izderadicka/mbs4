@@ -2097,6 +2097,7 @@ dependencies = [
  "argon2",
  "futures",
  "garde",
+ "mbs4-macros",
  "mbs4-types",
  "serde",
  "serde_json",
