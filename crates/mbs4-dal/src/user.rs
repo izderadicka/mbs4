@@ -5,7 +5,7 @@ use argon2::{
 
 use futures::StreamExt as _;
 use garde::Validate;
-use mbs4_types::general::ValidEmail;
+use mbs4_types::{claim::Role, general::ValidEmail};
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
 use tracing::debug;
@@ -31,13 +31,21 @@ fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
     Ok(res.is_ok())
 }
 
+fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
+    role.parse::<Role>()
+        .map_err(|e| garde::Error::new(e))
+        .map(|_| ())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Validate)]
-#[garde(allow_unvalidated)]
 pub struct CreateUser {
     #[garde(dive)]
     pub email: ValidEmail,
+    #[garde(length(min = 3, max = 255))]
     pub name: Option<String>,
+    #[garde(length(min = 8, max = 255))]
     pub password: Option<String>,
+    #[garde(inner(inner(custom(is_valid_role))))]
     pub roles: Option<Vec<String>>,
 }
 

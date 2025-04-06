@@ -8,16 +8,11 @@ use futures::FutureExt;
 use mbs4_app::state::{AppConfig, AppState};
 use mbs4_app::store::store_router;
 use mbs4_app::{
-    auth::{
-        auth_router,
-        token::{RequiredRolesLayer, TokenLayer},
-    },
+    auth::{auth_router, token::TokenLayer},
     user::users_router,
 };
-use mbs4_types::claim::ApiClaim;
 use mbs4_types::oidc::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
-use tower::ServiceBuilder;
 use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
@@ -74,10 +69,6 @@ fn main_router(state: AppState) -> Router<()> {
         .route("/", get(root))
         .route("/index.html", get(root)) // TODO - change
         .route("/health", get(health))
-}
-
-async fn protected(claim: ApiClaim) -> impl IntoResponse {
-    format!("This is a protected route, welcome {claim:?}")
 }
 
 async fn root(request: axum::extract::Request) -> impl IntoResponse {

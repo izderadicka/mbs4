@@ -7,7 +7,7 @@ use mbs4_server::{
     config::{Parser, ServerConfig},
     run::{build_state, run, run_with_state},
 };
-use mbs4_types::claim::ApiClaim;
+use mbs4_types::claim::{ApiClaim, Role};
 use rand::{Rng as _, distr::Alphanumeric};
 use reqwest::Client;
 use tempfile::TempDir;
@@ -157,17 +157,17 @@ pub fn issue_token(state: &AppState, claim: ApiClaim) -> Result<String> {
 }
 
 pub fn admin_token(state: &AppState) -> Result<String> {
-    let claim = ApiClaim::new_expired("admin@localhost", ["admin", "trusted"]);
+    let claim = ApiClaim::new_expired("admin@localhost", [Role::Admin, Role::Trusted]);
     issue_token(state, claim).map_err(|e| e.into())
 }
 
 pub fn user_token(state: &AppState) -> Result<String> {
-    let claim = ApiClaim::new_expired::<String>("user@localhost", []);
+    let claim = ApiClaim::new_expired::<Role>("user@localhost", []);
     issue_token(state, claim).map_err(|e| e.into())
 }
 
 pub fn trusted_user_token(state: &AppState) -> Result<String> {
-    let claim = ApiClaim::new_expired("user@localhost", ["trusted"]);
+    let claim = ApiClaim::new_expired("trusted@localhost", [Role::Trusted]);
     issue_token(state, claim).map_err(|e| e.into())
 }
 

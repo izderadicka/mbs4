@@ -75,7 +75,7 @@ where
         let mut inner = std::mem::replace(&mut self.inner, clone);
         Box::pin(async move {
             if let Some(claim) = req.extensions().get::<ApiClaim>() {
-                if !claim.has_any_role(&*roles) {
+                if !claim.has_any_role_ref(&*roles) {
                     debug!("User token does not have required roles");
                     return Ok(StatusCode::FORBIDDEN.into_response());
                 }
@@ -244,7 +244,14 @@ pub async fn token(
     if let Some(known_user) = user {
         let token = ApiClaim::new_expired(
             known_user.id.to_string(),
-            known_user.roles.iter().flat_map(|v| v.iter()),
+            known_user.roles.iter().flat_map(|v| {
+                v.iter().filter_map(|role_name| {
+                    role_name
+                        .parse::<Role>()
+                        .map_err(|e| error!("Failed to parse role name: {e}"))
+                        .ok()
+                })
+            }),
         );
 
         let signed_token = state.tokens().issue(token).map_err(|e| {

@@ -69,17 +69,21 @@ impl TokenManager {
 
 #[cfg(test)]
 mod tests {
-    use mbs4_types::claim::ApiClaim;
+    use mbs4_types::claim::{ApiClaim, Role};
 
     use super::*;
 
-    #[test]
-    fn test_token() {
-        let claim = ApiClaim {
+    fn dummy_claim() -> ApiClaim {
+        ApiClaim {
             exp: 0,
             sub: "123".to_string(),
-            roles: ["admin".into(), "user".into()].into(),
-        };
+            roles: [Role::Admin, Role::Trusted].into(),
+        }
+    }
+
+    #[test]
+    fn test_token() {
+        let claim = dummy_claim();
         let manager = TokenManager::new("secret", std::time::Duration::from_secs(3600));
         let token = manager.issue(claim).unwrap();
         let res = manager.validate::<ApiClaim>(&token);
@@ -91,11 +95,7 @@ mod tests {
 
     #[test]
     fn test_token_expiration() {
-        let claim = ApiClaim {
-            exp: 0,
-            sub: "123".to_string(),
-            roles: ["admin".into(), "user".into()].into(),
-        };
+        let claim = dummy_claim();
         let manager = TokenManager::new("secret", std::time::Duration::from_secs(3600));
         let token = manager.issue_expired(claim).unwrap();
         let res = manager.validate::<ApiClaim>(&token);

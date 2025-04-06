@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use http::StatusCode;
+use mbs4_types::claim::Role;
 
 use crate::state::AppState;
 
@@ -42,5 +43,5 @@ pub fn users_router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(create_user).get(list_users))
         .route("/{id}", delete(delete_user))
-        .layer(RequiredRolesLayer::new(["admin"]))
+        .layer(RequiredRolesLayer::new([Role::Admin]))
 }

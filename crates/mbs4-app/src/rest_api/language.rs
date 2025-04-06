@@ -1,5 +1,6 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api};
 use mbs4_dal::language::{CreateLanguage, LanguageRepository};
+use mbs4_types::claim::Role;
 
 use crate::state::AppState;
 #[allow(unused_imports)]
@@ -11,7 +12,7 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(crud_api::create))
         .route("/{id}", delete(crud_api::delete).put(crud_api::update))
-        .layer(RequiredRolesLayer::new(["admin"]))
+        .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/", get(crud_api::list))
         .route("/count", get(crud_api::count))
         .route("/all", get(crud_api::list_all))

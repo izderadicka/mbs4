@@ -1,43 +1,39 @@
-use std::{borrow::Borrow, clone, collections::HashSet, hash::Hash, time::SystemTime};
+use std::{clone, collections::HashSet, fmt::Display, hash::Hash, str::FromStr, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Clone)]
-pub struct Role(String);
+use crate::error::Error;
 
-impl AsRef<str> for Role {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
+#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+pub enum Role {
+    Admin,
+    Trusted,
+    #[cfg(test)]
+    JustForTest,
+}
+
+impl Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Role::Admin => write!(f, "admin"),
+            Role::Trusted => write!(f, "trusted"),
+            #[cfg(test)]
+            Role::JustForTest => write!(f, "just_for_test"),
+        }
     }
 }
 
-impl Borrow<str> for Role {
-    fn borrow(&self) -> &str {
-        self.as_ref()
-    }
-}
+impl FromStr for Role {
+    type Err = Error;
 
-impl Borrow<String> for Role {
-    fn borrow(&self) -> &String {
-        &self.0
-    }
-}
-
-impl From<String> for Role {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&String> for Role {
-    fn from(value: &String) -> Self {
-        Self(value.clone())
-    }
-}
-
-impl From<&str> for Role {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "admin" => Ok(Role::Admin),
+            "trusted" => Ok(Role::Trusted),
+            #[cfg(test)]
+            "just_for_test" => Ok(Role::JustForTest),
+            _ => Err(Error::msg(format!("Invalid role: {}", s))),
+        }
     }
 }
 
@@ -47,25 +43,25 @@ pub trait TimeLimited {
 }
 
 pub trait Authorization {
-    fn has_role<Q>(&self, role: &Q) -> bool
-    where
-        Role: Borrow<Q>,
-        Q: Hash + Eq + ?Sized;
+    fn has_role(&self, role: Role) -> bool;
 
-    fn has_any_role<'a, Q, I>(&self, roles: I) -> bool
+    fn has_any_role<I>(&self, roles: I) -> bool
     where
-        Role: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-        I: IntoIterator<Item = &'a Q>,
+        I: IntoIterator<Item = Role>,
     {
         roles.into_iter().any(|role| self.has_role(role))
     }
 
-    fn has_all_roles<'a, Q, I>(&self, roles: I) -> bool
+    fn has_any_role_ref<'a, I>(&self, roles: I) -> bool
     where
-        Role: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-        I: IntoIterator<Item = &'a Q>,
+        I: IntoIterator<Item = &'a Role>,
+    {
+        roles.into_iter().any(|role| self.has_role(*role))
+    }
+
+    fn has_all_roles<I>(&self, roles: I) -> bool
+    where
+        I: IntoIterator<Item = Role>,
     {
         roles.into_iter().all(|role| self.has_role(role))
     }
@@ -80,12 +76,8 @@ pub struct UserClaim {
 }
 
 impl Authorization for UserClaim {
-    fn has_role<Q>(&self, role: &Q) -> bool
-    where
-        Role: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.roles.contains(role)
+    fn has_role(&self, role: Role) -> bool {
+        self.roles.contains(&role)
     }
 }
 
@@ -110,12 +102,8 @@ impl ApiClaim {
 }
 
 impl Authorization for ApiClaim {
-    fn has_role<Q>(&self, role: &Q) -> bool
-    where
-        Role: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.roles.contains(role)
+    fn has_role(&self, role: Role) -> bool {
+        self.roles.contains(&role)
     }
 }
 
@@ -142,19 +130,21 @@ mod tests {
 
     #[test]
     fn test_role() {
-        let role = Role("admin".to_string());
-        assert_eq!(role.as_ref(), "admin");
+        let role_admin = Role::Admin;
+        let role_trusted = Role::Trusted;
+        let role_test = Role::JustForTest;
+        assert_eq!(role_admin.to_string(), "admin");
+        assert_eq!(role_trusted.to_string(), "trusted");
         let claim = ApiClaim {
             sub: "123".to_string(),
             exp: 1,
-            roles: HashSet::from([role.clone(), "guest".into()]),
+            roles: HashSet::from([role_admin, Role::Trusted]),
         };
-        assert!(claim.has_role(&role));
-        assert!(claim.has_role("admin"));
-        assert!(claim.has_role(&"admin".to_string()));
-        assert!(!claim.has_role("user"));
-        assert!(claim.has_any_role(["admin", "user"]));
-        assert!(claim.has_any_role(vec!["admin", "user"]));
-        assert!(claim.has_all_roles(["admin", "guest"]));
+        assert!(claim.has_role(role_admin));
+        assert!(claim.has_role(role_trusted));
+        assert!(!claim.has_role(role_test));
+        assert!(claim.has_any_role([Role::Admin, Role::JustForTest]));
+        assert!(claim.has_any_role(vec![Role::Trusted, Role::JustForTest]));
+        assert!(claim.has_all_roles([Role::Admin, Role::Trusted]));
     }
 }

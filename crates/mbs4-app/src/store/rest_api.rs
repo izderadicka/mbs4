@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use mbs4_types::claim::Role;
 
 use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
@@ -87,7 +88,7 @@ pub fn store_router(limit_mb: usize) -> Router<AppState> {
     let app = Router::new()
         .route("/upload/form/{*path}", post(upload))
         .route("/upload/direct/{*path}", post(upload_direct))
-        .layer(RequiredRolesLayer::new(["admin", "trusted"]))
+        .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
     app
