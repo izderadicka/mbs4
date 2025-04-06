@@ -46,7 +46,7 @@ async fn test_auth() {
 
     let token = response.text().await.unwrap();
 
-    let url = base_url.join("protected").unwrap();
+    let url = base_url.join("users").unwrap();
     let response = client
         .get(url)
         .header("Authorization", format!("Bearer {}", token))
@@ -55,4 +55,7 @@ async fn test_auth() {
         .unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
+
+    let users: Vec<user::User> = response.json().await.unwrap();
+    assert_eq!(users.len(), 1);
 }

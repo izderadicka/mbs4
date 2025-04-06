@@ -65,10 +65,6 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/users", users_router())
         .nest("/store", store_router(state.config().upload_limit_mb))
         .nest("/api/language", mbs4_app::rest_api::language::router())
-        .route(
-            "/protected",
-            get(protected).layer(ServiceBuilder::new().layer(RequiredRolesLayer::new(["admin"]))),
-        )
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())

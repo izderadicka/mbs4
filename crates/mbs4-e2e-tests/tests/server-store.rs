@@ -20,7 +20,7 @@ async fn test_store() {
     const FILE_SIZE: u64 = 50 * 1024;
     random_text_file(&test_file_path, FILE_SIZE).await.unwrap();
 
-    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::TrustedUser).await.unwrap();
 
     let url = base_url.join("store/download/tmp/test.txt").unwrap();
     let response = client.get(url).send().await.unwrap();

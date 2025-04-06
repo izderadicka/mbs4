@@ -22,7 +22,7 @@ async fn test_invalid_user_email() {
     assert!(new_user.email.validate().is_err());
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
 
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};

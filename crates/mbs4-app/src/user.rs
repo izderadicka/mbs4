@@ -1,4 +1,4 @@
-use crate::{error::ApiResult, repository_from_request};
+use crate::{auth::token::RequiredRolesLayer, error::ApiResult, repository_from_request};
 use axum_valid::Garde;
 use mbs4_dal::user::{CreateUser, UserRepository};
 
@@ -42,4 +42,5 @@ pub fn users_router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(create_user).get(list_users))
         .route("/{id}", delete(delete_user))
+        .layer(RequiredRolesLayer::new(["admin"]))
 }

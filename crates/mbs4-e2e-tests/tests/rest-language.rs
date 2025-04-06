@@ -92,7 +92,7 @@ async fn test_languages() {
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
 
     let api_url = base_url.join("api/language").unwrap();
     let langs = [

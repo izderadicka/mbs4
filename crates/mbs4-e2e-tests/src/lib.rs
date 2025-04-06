@@ -157,12 +157,17 @@ pub fn issue_token(state: &AppState, claim: ApiClaim) -> Result<String> {
 }
 
 pub fn admin_token(state: &AppState) -> Result<String> {
-    let claim = ApiClaim::new_expired("admin@localhost", ["admin", "power"]);
+    let claim = ApiClaim::new_expired("admin@localhost", ["admin", "trusted"]);
     issue_token(state, claim).map_err(|e| e.into())
 }
 
 pub fn user_token(state: &AppState) -> Result<String> {
     let claim = ApiClaim::new_expired::<String>("user@localhost", []);
+    issue_token(state, claim).map_err(|e| e.into())
+}
+
+pub fn trusted_user_token(state: &AppState) -> Result<String> {
+    let claim = ApiClaim::new_expired("user@localhost", ["trusted"]);
     issue_token(state, claim).map_err(|e| e.into())
 }
 
@@ -174,6 +179,7 @@ pub fn auth_headers(token: String) -> Result<HeaderMap> {
 
 pub enum TestUser {
     Admin,
+    TrustedUser,
     User,
     None,
 }
@@ -181,20 +187,16 @@ pub enum TestUser {
 impl TestUser {
     pub fn auth_header(&self, state: &AppState) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
+        let mut insert = |token: String| -> Result<()> {
+            headers.insert("Authorization", format!("Bearer {}", token).parse()?);
+
+            Ok(())
+        };
         match self {
-            TestUser::Admin => {
-                headers.insert(
-                    "Authorization",
-                    format!("Bearer {}", admin_token(state)?).parse()?,
-                );
-            }
-            TestUser::User => {
-                headers.insert(
-                    "Authorization",
-                    format!("Bearer {}", user_token(state)?).parse()?,
-                );
-            }
+            TestUser::Admin => insert(admin_token(state)?)?,
+            TestUser::User => insert(user_token(state)?)?,
             TestUser::None => {}
+            TestUser::TrustedUser => insert(trusted_user_token(state)?)?,
         }
         Ok(headers)
     }

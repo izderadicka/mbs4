@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
 use super::{Store as _, ValidPath};
 
@@ -87,6 +87,7 @@ pub fn store_router(limit_mb: usize) -> Router<AppState> {
     let app = Router::new()
         .route("/upload/form/{*path}", post(upload))
         .route("/upload/direct/{*path}", post(upload_direct))
+        .layer(RequiredRolesLayer::new(["admin", "trusted"]))
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
     app
