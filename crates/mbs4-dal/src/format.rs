@@ -1,5 +1,5 @@
 use garde::Validate;
-use mbs4_macros::Repository;
+use mbs4_macros::ValueRepository as Repository;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, Repository)]

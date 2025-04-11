@@ -1,3 +1,4 @@
+pub mod author;
 pub mod error;
 pub mod format;
 pub mod genre;

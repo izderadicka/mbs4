@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 argon2 = { version = "0.5.3", features = ["std"] }
 futures = "0.3.31"
-sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

@@ -8,5 +8,6 @@
             "name": "mbs4",
             "database": "test-data/mbs4.db"
         }
-    ]
+    ],
+    "wca.enable": false
 }
