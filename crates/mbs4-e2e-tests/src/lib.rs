@@ -9,8 +9,9 @@ use mbs4_server::{
 };
 use mbs4_types::claim::{ApiClaim, Role};
 use rand::{Rng as _, distr::Alphanumeric};
-use reqwest::Client;
+use reqwest::{Client, Url};
 use tempfile::TempDir;
+use time::PrimitiveDateTime;
 use tokio::io::AsyncWriteExt as _;
 use tracing::debug;
 
@@ -213,4 +214,18 @@ pub async fn launch_env(args: ServerConfig, user: TestUser) -> Result<(Client, A
         .build()?;
 
     Ok((client, state))
+}
+
+pub fn extend_url(api_url: &Url, segment: impl ToString) -> Url {
+    let mut record_url = api_url.clone();
+    record_url
+        .path_segments_mut()
+        .unwrap()
+        .push(&segment.to_string());
+    record_url
+}
+
+pub fn now() -> time::PrimitiveDateTime {
+    let now = time::OffsetDateTime::now_utc();
+    time::PrimitiveDateTime::new(now.date(), now.time())
 }

@@ -1,5 +1,5 @@
 use mbs4_dal::language::{Language, LanguageShort};
-use mbs4_e2e_tests::{TestUser, launch_env, prepare_env};
+use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
 use reqwest::Url;
 use tracing::info;
 use tracing_test::traced_test;
@@ -74,15 +74,6 @@ async fn test_paging() {
     assert_eq!(50, page.len());
     assert_eq!("aa", page[0].code);
     assert_eq!("bx", page[49].code);
-}
-
-fn extend_url(api_url: &Url, segment: impl ToString) -> Url {
-    let mut record_url = api_url.clone();
-    record_url
-        .path_segments_mut()
-        .unwrap()
-        .push(&segment.to_string());
-    record_url
 }
 
 #[tokio::test]

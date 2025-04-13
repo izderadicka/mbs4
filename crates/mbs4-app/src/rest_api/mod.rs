@@ -3,6 +3,7 @@ use mbs4_dal::ListingParams;
 
 use crate::error::{ApiError, ApiResult};
 
+pub mod author;
 pub mod language;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize)]

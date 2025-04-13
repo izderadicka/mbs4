@@ -1,14 +1,24 @@
-use garde::Validate;
+use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Validate)]
-pub struct CreateAuthor {
+#[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
+pub struct Author {
+    #[spec(id)]
+    pub id: i64,
     #[garde(length(min = 1, max = 255))]
-    last_name: String,
+    pub last_name: String,
     #[garde(length(min = 1, max = 255))]
-    first_name: Option<String>,
+    pub first_name: Option<String>,
     #[garde(length(min = 1, max = 5000))]
-    description: Option<String>,
+    #[omit(short, sort)]
+    pub description: Option<String>,
     #[garde(range(min = 0))]
-    version: Option<i64>,
+    #[spec(version)]
+    pub version: i64,
+    #[spec(created_by)]
+    pub created_by: Option<String>,
+    #[spec(created)]
+    pub created: time::PrimitiveDateTime,
+    #[spec(modified)]
+    pub modified: time::PrimitiveDateTime,
 }

@@ -1,9 +1,16 @@
 use quote::{format_ident, quote};
-use syn::{Data, Field, Ident, punctuated::Punctuated};
+use syn::{Attribute, Data, Field, Ident, Type, punctuated::Punctuated};
 
 const OMIT: &str = "omit";
 const OMIT_SHORT: &str = "short";
 const OMIT_SORT: &str = "sort";
+const SPEC: &str = "spec";
+const SPEC_ID: &str = "id";
+const SPEC_CREATED_BY: &str = "created_by";
+const SPEC_CREATED: &str = "created";
+const SPEC_MODIFIED: &str = "modified";
+const SPEC_VERSION: &str = "version";
+const GARDE: &str = "garde";
 
 fn prepare_field(f: &Field) -> Field {
     let mut field = f.clone();
@@ -12,13 +19,79 @@ fn prepare_field(f: &Field) -> Field {
     field
 }
 
-fn filter_field(f: &Field, omit: &str) -> bool {
+fn prepare_input_field(f: &Field) -> Field {
+    let mut field = f.clone();
+    field.attrs = f
+        .attrs
+        .clone()
+        .into_iter()
+        .filter(|a| a.path().is_ident(GARDE))
+        .collect();
+    field.vis = syn::Visibility::Public(syn::token::Pub::default());
+    field
+}
+
+fn params_contains(attr: &Attribute, name: &str) -> bool {
+    attr.parse_args_with(Punctuated::<Ident, syn::Token![,]>::parse_terminated)
+        .unwrap()
+        .into_iter()
+        .any(|n| n == name)
+}
+
+// fn params_contains_any(attr: &Attribute, names: &[&str]) -> bool {
+//     attr.parse_args_with(Punctuated::<Ident, syn::Token![,]>::parse_terminated)
+//         .unwrap()
+//         .into_iter()
+//         .any(|n| names.iter().any(|name| n == *name))
+// }
+
+fn field_has_attr_with_value(f: &Field, attr_name: &str, value: &str) -> bool {
     for attr in &f.attrs {
-        if attr.path().is_ident(OMIT) {
-            let params = attr
-                .parse_args_with(Punctuated::<Ident, syn::Token![,]>::parse_terminated)
-                .unwrap();
-            if params.into_iter().any(|n| n == omit) {
+        if attr.path().is_ident(attr_name) && params_contains(&attr, value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn special_field_name<'a>(
+    mut fields: impl Iterator<Item = &'a Field>,
+    spec_param: &str,
+) -> Option<String> {
+    fields
+        .find(|f| field_has_attr_with_value(f, SPEC, spec_param))
+        .map(|f| f.ident.as_ref().unwrap().to_string())
+}
+
+// fn type_is_datetime(ty: &Type) -> bool {
+//     match ty {
+//         Type::Path(p) => p.path.segments.iter().any(|s| {
+//             let name = s.ident.to_string().to_lowercase();
+//             name.contains("datetime")
+//         }),
+//         _ => false,
+//     }
+// }
+
+fn filter_field(f: &Field, omit: Option<&str>, keep_spec: &[&str]) -> bool {
+    for attr in &f.attrs {
+        if omit.is_some() && attr.path().is_ident(OMIT) {
+            let omit = omit.unwrap();
+            if params_contains(attr, omit) {
+                return false;
+            }
+        } else if attr.path().is_ident(SPEC) {
+            if keep_spec.is_empty() {
+                return false;
+            }
+            let mut keep = false;
+            for name in keep_spec {
+                if params_contains(attr, name) {
+                    keep = true;
+                    break;
+                }
+            }
+            if !keep {
                 return false;
             }
         }
@@ -28,87 +101,127 @@ fn filter_field(f: &Field, omit: &str) -> bool {
 
 pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    let create_struct_name = input.ident.clone();
-    let name = create_struct_name.to_string();
-    let entity_name = if name.starts_with("Create") {
-        name.replace("Create", "")
-    } else {
-        let e = syn::Error::new(
-            input.ident.span(),
-            format!("Unexpected name {}, should start with Create", name),
-        );
-        return e.to_compile_error().into();
-    };
-    let table_name = entity_name.to_lowercase();
 
     if let Data::Struct(data) = input.data {
-        let base_fields = data
-            .fields
-            .iter()
-            .filter(|f| f.ident.is_some() && f.ident.as_ref() != Some(&format_ident!("version")));
+        let entity_ident = input.ident.clone();
+        let entity_name = entity_ident.to_string();
 
-        let fields = base_fields.clone().map(prepare_field);
-        let short_fields = base_fields
-            .clone()
-            .filter(|f| filter_field(f, OMIT_SHORT))
-            .map(prepare_field);
+        let table_name = entity_name.to_lowercase();
+        let base_fields = data.fields.iter().filter(|f| f.ident.is_some());
 
-        // unwrap is ok as we filter unnamed fields above
-        let sortable_fields = base_fields
-            .clone()
-            .filter(|f| filter_field(f, OMIT_SORT))
-            .map(|f| f.ident.as_ref().unwrap().to_string());
-        let mutable_fields_idents = fields.clone().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
-        let mutable_fields = mutable_fields_idents
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<_>>();
-
-        let full_struct_name = format_ident!("{}", entity_name);
-
-        let common_atts = quote! {
-            #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, sqlx::FromRow)]
+        let common_input_atts = quote! {
+            #[derive(Debug,  serde::Deserialize, Clone, garde::Validate)]
         };
 
-        let full_struct = quote! {
-            #common_atts
-            pub struct #full_struct_name {
-                pub id: i64,
-                #(#fields,)*
-                pub version: i64,
-                pub created_by: Option<String>,
-                pub created: time::OffsetDateTime,
-                pub modified: time::OffsetDateTime,
+        let create_fields: Vec<_> = base_fields
+            .clone()
+            .filter(|f| filter_field(f, None, &[SPEC_CREATED_BY]))
+            .map(prepare_input_field)
+            .collect();
+
+        let create_struct_name = format_ident!("Create{entity_name}");
+        let create_struct = quote! {
+            #common_input_atts
+            #[garde(allow_unvalidated)]
+            pub struct #create_struct_name {
+                #(#create_fields,)*
             }
         };
 
+        let update_fields: Vec<_> = base_fields
+            .clone()
+            .filter(|f| filter_field(f, None, &[SPEC_ID, SPEC_VERSION]))
+            .map(prepare_input_field)
+            .collect();
+        let update_struct_name = format_ident!("Update{entity_name}");
+        let update_struct = quote! {
+            #common_input_atts
+            #[garde(allow_unvalidated)]
+            pub struct #update_struct_name {
+                #(#update_fields,)*
+            }
+        };
+
+        let short_fields: Vec<_> = base_fields
+            .clone()
+            .filter(|f| filter_field(f, Some(OMIT_SHORT), &[SPEC_ID]))
+            .map(prepare_field)
+            .collect();
+
         let short_struct_name = format_ident!("{}Short", entity_name);
         let short_struct = quote! {
-            #common_atts
+            #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
             pub struct #short_struct_name {
-                pub id: i64,
                 #(#short_fields,)*
             }
 
         };
 
+        // unwrap is ok as we filter unnamed fields above
+        let sortable_fields = base_fields
+            .clone()
+            .filter(|f| filter_field(f, Some(OMIT_SORT), &[SPEC_ID, SPEC_CREATED, SPEC_MODIFIED]))
+            .map(|f| f.ident.as_ref().unwrap().to_string());
+
         let sortable_fields_const = quote! {
-            const VALID_ORDER_FIELDS: &[&str] = &["id", "created", "modified", #(#sortable_fields),*];
+            const VALID_ORDER_FIELDS: &[&str] = &[#(#sortable_fields),*];
         };
 
         // REPO ===================================================================
         let repo_name = format_ident!("{}Repository", entity_name);
         let repo_impl_name = format_ident!("{}RepositoryImpl", entity_name);
-        let insert_fields = mutable_fields.join(",");
-        let placeholders = mutable_fields
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
 
-        let insert_cmd =
-            format!("INSERT INTO {table_name}({insert_fields},version) VALUES ({placeholders},1)");
-        let bound_fields = mutable_fields_idents
+        let types_def = quote! {
+            use futures::{StreamExt as _, TryStreamExt as _};
+            use sqlx::{Acquire as _, Executor as _};
+
+            pub type #repo_name = #repo_impl_name<sqlx::Pool<crate::ChosenDB>>;
+
+            pub struct #repo_impl_name<E> {
+                executor: E,
+            }
+        };
+
+        // GET =====================================================================
+
+        let select_one_query = format!("SELECT * FROM {table_name} WHERE id = ?");
+        let select_one_query_ident: Ident = format_ident!("SELECT_ONE_QUERY");
+        let select_one_query_const = quote! {
+            const #select_one_query_ident: &str = #select_one_query;
+        };
+
+        let get_one_fn = quote! {
+            async fn get<'c, E>(id: i64, executor: E) -> crate::error::Result<#entity_ident>
+            where
+                E: sqlx::Executor<'c, Database = crate::ChosenDB>,
+            {
+                let record = sqlx::query_as::<_, #entity_ident>(#select_one_query_ident)
+                    .bind(id)
+                    .fetch_one(executor)
+                    .await?
+                    .into();
+                Ok(record)
+            }
+        };
+
+        // SPECIAL FIELDS ==========================================================
+
+        let version_field = special_field_name(base_fields.clone(), SPEC_VERSION);
+        let created_field = special_field_name(base_fields.clone(), SPEC_CREATED);
+        let modified_field = special_field_name(base_fields.clone(), SPEC_MODIFIED);
+
+        // CREATE ==================================================================
+
+        let insert_fields_idents: Vec<_> = create_fields
+            .iter()
+            .map(|f| f.ident.as_ref().unwrap())
+            .collect();
+        let mut insert_fields: Vec<_> =
+            insert_fields_idents.iter().map(|i| i.to_string()).collect();
+
+        let mut placeholders = insert_fields.iter().map(|_| "?").collect::<Vec<_>>();
+
+        let mut bound_fields = insert_fields_idents
             .iter()
             .map(|f| {
                 quote!(.bind(&payload.#f
@@ -116,8 +229,64 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             })
             .collect::<Vec<_>>();
 
-        let update_fields = mutable_fields
-            .iter()
+        let now_def = if created_field.is_some() || modified_field.is_some() {
+            quote!(
+                let now = time::OffsetDateTime::now_utc();
+                let now = time::PrimitiveDateTime::new(now.date(), now.time());
+            )
+        } else {
+            quote!()
+        };
+
+        if let Some(created) = created_field {
+            insert_fields.push(created);
+            placeholders.push("?".into());
+            bound_fields.push({
+                let now = format_ident!("now");
+                quote!(.bind(#now))
+            })
+        }
+
+        if let Some(modified) = modified_field {
+            insert_fields.push(modified);
+            placeholders.push("?".into());
+            bound_fields.push({
+                let now = format_ident!("now");
+                quote!(.bind(#now))
+            })
+        }
+
+        if let Some(version) = version_field {
+            insert_fields.push(version);
+            placeholders.push("1".into())
+        }
+
+        let placeholders = placeholders.join(",");
+        let insert_fields = insert_fields.join(",");
+
+        let insert_query =
+            format!("INSERT INTO {table_name}({insert_fields}) VALUES ({placeholders})");
+        println!("QUERY: {}", insert_query);
+        let insert_query_ident: Ident = format_ident!("INSERT_QUERY");
+        let insert_query_const = quote! {
+            const #insert_query_ident: &str = #insert_query;
+        };
+        let create_fn = quote!(
+            pub async fn create(&self, payload: #create_struct_name) -> crate::error::Result<#entity_ident> {
+                #now_def
+                let result = sqlx::query(#insert_query_ident)
+                    #(#bound_fields)*
+                    .execute(&self.executor)
+                    .await?;
+
+                let id = result.last_insert_rowid();
+                self.get(id).await
+            }
+
+        );
+
+        let update_fields_idents = update_fields.iter().map(|f| f.ident.as_ref().unwrap());
+        let update_fields = update_fields_idents
             .map(|f| format!("{} = ?", f))
             .collect::<Vec<_>>()
             .join(",");
@@ -128,18 +297,8 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let select_many_query =
             format!("SELECT id,{insert_fields} FROM {table_name} {{order}} LIMIT ? OFFSET ?");
         let delete_cmd = format!("DELETE FROM {table_name} WHERE id = ?");
-        let select_one_query = format!("SELECT * FROM {table_name} WHERE id = ?");
 
         let repo_impl = quote! {
-            use futures::{StreamExt as _, TryStreamExt as _};
-            use sqlx::{Acquire as _, Executor as _};
-
-            pub type #repo_name = #repo_impl_name<sqlx::Pool<crate::ChosenDB>>;
-
-            pub struct #repo_impl_name<E> {
-                executor: E,
-            }
-
             impl<'c, E> #repo_impl_name<E>
             where
                 for<'a> &'a E:
@@ -149,101 +308,91 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     Self { executor }
                 }
 
-                pub async fn create(&self, payload: #create_struct_name) -> crate::error::Result<#full_struct_name> {
-                    let result = sqlx::query(#insert_cmd)
-                        #(#bound_fields)*
-                        .execute(&self.executor)
-                        .await?;
+                #create_fn
 
-                    let id = result.last_insert_rowid();
-                    self.get(id).await
-                }
+            //     pub async fn update(&self, id: i64, payload: #create_struct_name) -> crate::error::Result<#entity_ident> {
+            //         let version = payload.version.ok_or_else(|| {
+            //             tracing::debug!("No version provided");
+            //             crate::error::Error::MissingVersion
+            //         })?;
+            //         let mut conn = self.executor.acquire().await?;
+            //         let mut transaction = conn.begin().await?;
+            //         let result = sqlx::query(
+            //             #update_cmd,
+            //         )
+            //         #(#bound_fields)*
+            //         .bind(version + 1)
+            //         .bind(id)
+            //         .bind(version)
+            //         .execute(&mut *transaction)
+            //         .await?;
 
-                pub async fn update(&self, id: i64, payload: #create_struct_name) -> crate::error::Result<#full_struct_name> {
-                    let version = payload.version.ok_or_else(|| {
-                        tracing::debug!("No version provided");
-                        crate::error::Error::MissingVersion
-                    })?;
-                    let mut conn = self.executor.acquire().await?;
-                    let mut transaction = conn.begin().await?;
-                    let result = sqlx::query(
-                        #update_cmd,
-                    )
-                    #(#bound_fields)*
-                    .bind(version + 1)
-                    .bind(id)
-                    .bind(version)
-                    .execute(&mut *transaction)
-                    .await?;
+            //         if result.rows_affected() == 0 {
+            //             Err(crate::error::Error::FailedUpdate { id, version })
+            //         } else {
+            //             let record = get(id, &mut *transaction).await?;
+            //             transaction.commit().await?;
+            //             Ok(record)
+            //         }
+            //     }
 
-                    if result.rows_affected() == 0 {
-                        Err(crate::error::Error::FailedUpdate { id, version })
-                    } else {
-                        let record = get(id, &mut *transaction).await?;
-                        transaction.commit().await?;
-                        Ok(record)
-                    }
-                }
+            //     pub async fn count(&self) -> crate::error::Result<u64> {
+            //         let count: u64 = sqlx::query_scalar(#count_cmd)
+            //             .fetch_one(&self.executor)
+            //             .await?;
+            //         Ok(count)
+            //     }
 
-                pub async fn count(&self) -> crate::error::Result<u64> {
-                    let count: u64 = sqlx::query_scalar(#count_cmd)
-                        .fetch_one(&self.executor)
-                        .await?;
-                    Ok(count)
-                }
+            //     pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
+            //         self.list(crate::ListingParams::default()).await
+            //     }
 
-                pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
-                    self.list(crate::ListingParams::default()).await
-                }
+            //     pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
+            //         let order = params.ordering(VALID_ORDER_FIELDS)?;
+            //         let records = sqlx::query_as::<_, #short_struct_name>(&format!(
+            //             #select_many_query
+            //         ))
+            //         .bind(params.limit)
+            //         .bind(params.offset)
+            //         .fetch(&self.executor)
+            //         .take(crate::MAX_LIMIT)
+            //         .try_collect::<Vec<_>>()
+            //         .await?;
+            //         Ok(records)
+            //     }
 
-                pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
-                    let order = params.ordering(VALID_ORDER_FIELDS)?;
-                    let records = sqlx::query_as::<_, #short_struct_name>(&format!(
-                        #select_many_query
-                    ))
-                    .bind(params.limit)
-                    .bind(params.offset)
-                    .fetch(&self.executor)
-                    .take(crate::MAX_LIMIT)
-                    .try_collect::<Vec<_>>()
-                    .await?;
-                    Ok(records)
-                }
+            //     pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
+            //         let res = sqlx::query(#delete_cmd)
+            //             .bind(id)
+            //             .execute(&self.executor)
+            //             .await?;
 
-                pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
-                    let res = sqlx::query(#delete_cmd)
-                        .bind(id)
-                        .execute(&self.executor)
-                        .await?;
+            //         if res.rows_affected() == 0 {
+            //             Err(crate::error::Error::RecordNotFound("Language".to_string()))
+            //         } else {
+            //             Ok(())
+            //         }
+            //     }
 
-                    if res.rows_affected() == 0 {
-                        Err(crate::error::Error::RecordNotFound("Language".to_string()))
-                    } else {
-                        Ok(())
-                    }
-                }
-
-                pub async fn get(&self, id: i64) -> crate::error::Result<#full_struct_name> {
+                pub async fn get(&self, id: i64) -> crate::error::Result<#entity_ident> {
                     get(id, &self.executor).await
                 }
-            }
+             }
 
-            async fn get<'c, E>(id: i64, executor: E) -> crate::error::Result<#full_struct_name>
-            where
-                E: sqlx::Executor<'c, Database = crate::ChosenDB>,
-            {
-                let record: #full_struct_name = sqlx::query_as!(#full_struct_name, #select_one_query, id)
-                    .fetch_one(executor)
-                    .await?
-                    .into();
-                Ok(record)
-            }
+            #get_one_fn
         };
         // REPO END ===============================================================
         quote! {
-            #full_struct
+            #create_struct
+            #update_struct
             #short_struct
+
             #sortable_fields_const
+            #select_one_query_const
+            #insert_query_const
+
+            #types_def
+            #repo_impl
 
         }
         .into()

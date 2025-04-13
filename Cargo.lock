@@ -2103,6 +2103,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror 2.0.11",
+ "time",
  "tracing",
 ]
 
@@ -2124,6 +2125,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tempfile",
+ "time",
  "tokio",
  "tokio-util",
  "tracing",
