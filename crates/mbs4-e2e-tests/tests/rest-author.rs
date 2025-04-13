@@ -15,7 +15,7 @@ async fn test_authors() {
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::TrustedUser).await.unwrap();
 
     let api_url = base_url.join("api/author").unwrap();
 
