@@ -15,6 +15,7 @@ pub mod crud_api {
     use axum::{extract::Path, response::IntoResponse, Json};
     use axum_valid::Garde;
     use http::StatusCode;
+    use mbs4_dal::author::UpdateAuthor;
     pub async fn create(
         repository: AuthorRepository,
         Garde(Json(payload)): Garde<Json<CreateAuthor>>,
@@ -32,12 +33,27 @@ pub mod crud_api {
 
         Ok((StatusCode::OK, Json(record)))
     }
+
+    /*************  ✨ Windsurf Command ⭐  *************/
+    /// Update an author with the given ID.
+    ///
+    /// The payload should contain the updated fields.
+    /*******  7b5b73bf-6884-4b6f-896e-27fdb55681e0  *******/
+    pub async fn update(
+        Path(id): Path<i64>,
+        repository: AuthorRepository,
+        Garde(Json(payload)): Garde<Json<UpdateAuthor>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let record = repository.update(id, payload).await?;
+
+        Ok((StatusCode::OK, Json(record)))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(crud_api::create))
-        // .route("/{id}", delete(crud_api::delete).put(crud_api::update))
+        .route("/{id}", put(crud_api::update))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         // .route("/", get(crud_api::list))
         // .route("/count", get(crud_api::count))

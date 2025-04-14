@@ -221,7 +221,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         let mut placeholders = insert_fields.iter().map(|_| "?").collect::<Vec<_>>();
 
-        let mut bound_fields = insert_fields_idents
+        let mut bound_fields_insert = insert_fields_idents
             .iter()
             .map(|f| {
                 quote!(.bind(&payload.#f
@@ -241,23 +241,23 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         if let Some(created) = created_field {
             insert_fields.push(created);
             placeholders.push("?".into());
-            bound_fields.push({
+            bound_fields_insert.push({
                 let now = format_ident!("now");
                 quote!(.bind(#now))
             })
         }
 
-        if let Some(modified) = modified_field {
-            insert_fields.push(modified);
+        if let Some(ref modified) = modified_field {
+            insert_fields.push(modified.into());
             placeholders.push("?".into());
-            bound_fields.push({
+            bound_fields_insert.push({
                 let now = format_ident!("now");
                 quote!(.bind(#now))
             })
         }
 
-        if let Some(version) = version_field {
-            insert_fields.push(version);
+        if let Some(ref version) = version_field {
+            insert_fields.push(version.into());
             placeholders.push("1".into())
         }
 
@@ -266,7 +266,6 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         let insert_query =
             format!("INSERT INTO {table_name}({insert_fields}) VALUES ({placeholders})");
-        println!("QUERY: {}", insert_query);
         let insert_query_ident: Ident = format_ident!("INSERT_QUERY");
         let insert_query_const = quote! {
             const #insert_query_ident: &str = #insert_query;
@@ -275,7 +274,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             pub async fn create(&self, payload: #create_struct_name) -> crate::error::Result<#entity_ident> {
                 #now_def
                 let result = sqlx::query(#insert_query_ident)
-                    #(#bound_fields)*
+                    #(#bound_fields_insert)*
                     .execute(&self.executor)
                     .await?;
 
@@ -285,14 +284,82 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         );
 
-        let update_fields_idents = update_fields.iter().map(|f| f.ident.as_ref().unwrap());
-        let update_fields = update_fields_idents
+        // UPDATE ==================================================================
+        let update_fields_idents = base_fields
+            .clone()
+            .filter(|f| filter_field(f, None, &[]))
+            .map(|f| f.ident.as_ref().unwrap());
+        let mut update_fields = update_fields_idents
+            .clone()
             .map(|f| format!("{} = ?", f))
-            .collect::<Vec<_>>()
-            .join(",");
-        let update_cmd = format!(
-            "UPDATE {table_name} SET {update_fields},version = ? WHERE id = ? and version = ?"
+            .collect::<Vec<_>>();
+        if let Some(ref modified) = modified_field {
+            update_fields.push(format!("{modified} = ?"));
+        }
+
+        let where_clause = if let Some(ref version) = version_field {
+            update_fields.push(format!("{version} = ?"));
+            format!("{version}=? and")
+        } else {
+            "".into()
+        };
+        let update_fields = update_fields.join(",");
+        let update_query_ident: Ident = format_ident!("UPDATE_QUERY");
+        let update_query =
+            format!("UPDATE {table_name} SET {update_fields} WHERE {where_clause} id = ?");
+        println!("QUERY: {}", update_query);
+        let update_query_const = quote! {
+            const #update_query_ident: &str = #update_query;
+        };
+
+        let mut bound_fields_update: Vec<_> = update_fields_idents
+            .map(|name| quote!(.bind(payload.#name)))
+            .collect();
+
+        let now_def = if modified_field.is_some() {
+            bound_fields_update.push(quote!(.bind(now)));
+            quote!(
+                let now = time::OffsetDateTime::now_utc();
+                let now = time::PrimitiveDateTime::new(now.date(), now.time());
+            )
+        } else {
+            quote!()
+        };
+        let version_def = if let Some(ref version) = version_field {
+            let version_ident = format_ident!("{version}");
+            bound_fields_update.push(quote!(.bind(#version_ident + 1)));
+            bound_fields_update.push(quote!(.bind(#version_ident)));
+            quote!(let version = payload.version;)
+        } else {
+            quote!()
+        };
+
+        let update_fn = quote!(
+            pub async fn update(&self, id: i64, payload: #update_struct_name) -> crate::error::Result<#entity_ident> {
+                #version_def
+                #now_def
+                let mut conn = self.executor.acquire().await?;
+                let mut transaction = conn.begin().await?;
+                let result = sqlx::query(
+                    #update_query_ident,
+                )
+                #(#bound_fields_update)*
+                .bind(id)
+                .execute(&mut *transaction)
+                .await?;
+
+                if result.rows_affected() == 0 {
+                    Err(crate::error::Error::FailedUpdate { id, version })
+                } else {
+                    let record = get(id, &mut *transaction).await?;
+                    transaction.commit().await?;
+                    Ok(record)
+                }
+            }
         );
+
+        // COUNT ======================================================================
+
         let count_cmd = format!("SELECT count(*) FROM {table_name}");
         let select_many_query =
             format!("SELECT id,{insert_fields} FROM {table_name} {{order}} LIMIT ? OFFSET ?");
@@ -309,32 +376,8 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
 
                 #create_fn
+                #update_fn
 
-            //     pub async fn update(&self, id: i64, payload: #create_struct_name) -> crate::error::Result<#entity_ident> {
-            //         let version = payload.version.ok_or_else(|| {
-            //             tracing::debug!("No version provided");
-            //             crate::error::Error::MissingVersion
-            //         })?;
-            //         let mut conn = self.executor.acquire().await?;
-            //         let mut transaction = conn.begin().await?;
-            //         let result = sqlx::query(
-            //             #update_cmd,
-            //         )
-            //         #(#bound_fields)*
-            //         .bind(version + 1)
-            //         .bind(id)
-            //         .bind(version)
-            //         .execute(&mut *transaction)
-            //         .await?;
-
-            //         if result.rows_affected() == 0 {
-            //             Err(crate::error::Error::FailedUpdate { id, version })
-            //         } else {
-            //             let record = get(id, &mut *transaction).await?;
-            //             transaction.commit().await?;
-            //             Ok(record)
-            //         }
-            //     }
 
             //     pub async fn count(&self) -> crate::error::Result<u64> {
             //         let count: u64 = sqlx::query_scalar(#count_cmd)
@@ -390,6 +433,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             #sortable_fields_const
             #select_one_query_const
             #insert_query_const
+            #update_query_const
 
             #types_def
             #repo_impl
