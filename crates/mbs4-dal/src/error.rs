@@ -25,6 +25,9 @@ pub enum Error {
 
     #[error("Invalid order by field: {0}")]
     InvalidOrderByField(String),
+
+    #[error("Async error: {0}")]
+    AsyncError(#[from] tokio::task::JoinError),
 }
 
 impl From<sqlx::Error> for Error {

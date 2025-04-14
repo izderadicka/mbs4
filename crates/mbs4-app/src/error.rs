@@ -74,6 +74,13 @@ impl IntoResponse for ApiError {
                     tracing::debug!("Invalid order by field: {field}");
                     (StatusCode::BAD_REQUEST, "Invalid order by field".into())
                 }
+                mbs4_dal::Error::AsyncError(error) => {
+                    tracing::error!("Async error: {error}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Application error".into(),
+                    )
+                }
             },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,

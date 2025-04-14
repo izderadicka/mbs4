@@ -21,6 +21,12 @@ fn hash_password(password: &str) -> HashResult<String> {
     Ok(password_hash)
 }
 
+async fn hash_password_async(password: impl Into<String>) -> Result<String> {
+    let password: String = password.into();
+    let res = tokio::task::spawn_blocking(move || hash_password(&password)).await??;
+    Ok(res)
+}
+
 #[allow(dead_code)]
 fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
     let parsed_hash = PasswordHash::new(password_hash)?;
@@ -29,6 +35,17 @@ fn verify_password(password: &str, password_hash: &str) -> HashResult<bool> {
         debug!("Invalid password, error {e}");
     }
     Ok(res.is_ok())
+}
+
+async fn verify_password_async(
+    password: impl Into<String>,
+    password_hash: impl Into<String>,
+) -> Result<bool> {
+    let password: String = password.into();
+    let password_hash: String = password_hash.into();
+    let res =
+        tokio::task::spawn_blocking(move || verify_password(&password, &password_hash)).await??;
+    Ok(res)
 }
 
 fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
@@ -96,7 +113,10 @@ where
     }
 
     pub async fn create(&self, payload: CreateUser) -> Result<User> {
-        let password = payload.password.map(|p| hash_password(&p)).transpose()?;
+        let password = match payload.password {
+            Some(p) => Some(hash_password_async(p).await?),
+            None => None,
+        };
         let email = payload.email.as_ref();
         let roles = payload.roles.map(|roles| roles.join(","));
         let result = sqlx::query!(
@@ -175,7 +195,10 @@ where
                     Error::InvalidCredentials
                 })?;
         if let Some(hashed_password) = hashed_password {
-            if verify_password(password, &hashed_password).unwrap_or(false) {
+            if verify_password_async(password, hashed_password)
+                .await
+                .unwrap_or(false)
+            {
                 return self.get(id).await;
             }
         }
