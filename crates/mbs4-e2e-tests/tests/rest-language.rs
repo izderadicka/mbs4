@@ -1,6 +1,5 @@
 use mbs4_dal::language::{Language, LanguageShort};
 use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
-use reqwest::Url;
 use tracing::info;
 use tracing_test::traced_test;
 

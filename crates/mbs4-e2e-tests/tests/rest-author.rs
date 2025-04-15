@@ -1,4 +1,4 @@
-use mbs4_dal::author::{Author, UpdateAuthor};
+use mbs4_dal::author::Author;
 use mbs4_e2e_tests::{TestUser, extend_url, launch_env, now, prepare_env};
 use tracing::info;
 use tracing_test::traced_test;
@@ -72,11 +72,19 @@ async fn test_authors() {
     let rec: Author = response.json().await.unwrap();
     assert_eq!(rec.last_name, "Kulisak");
     assert_eq!(rec.first_name, Some("Usak".into()));
+    assert_eq!(rec.version, 2);
 
-    // let response = client.delete(record_url.clone()).send().await.unwrap();
-    // assert!(response.status().is_success());
+    let response = client.get(api_url.clone()).send().await.unwrap();
+    info!("Response: {:#?}", response);
+    assert!(response.status().is_success());
+    let recs: Vec<serde_json::Value> = response.json().await.unwrap();
+    assert_eq!(recs.len(), 1);
 
-    // let response = client.get(record_url.clone()).send().await.unwrap();
-    // assert!(!response.status().is_success());
-    // assert_eq!(response.status().as_u16(), 404);
+    let response = client.delete(record_url.clone()).send().await.unwrap();
+    info!("Response: {:#?}", response);
+    assert!(response.status().is_success());
+
+    let response = client.get(record_url.clone()).send().await.unwrap();
+    assert!(!response.status().is_success());
+    assert_eq!(response.status().as_u16(), 404);
 }

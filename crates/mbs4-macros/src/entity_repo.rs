@@ -1,5 +1,5 @@
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, Field, Ident, Type, punctuated::Punctuated};
+use syn::{Attribute, Data, Field, Ident, punctuated::Punctuated};
 
 const OMIT: &str = "omit";
 const OMIT_SHORT: &str = "short";
@@ -360,10 +360,69 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         // COUNT ======================================================================
 
-        let count_cmd = format!("SELECT count(*) FROM {table_name}");
+        let count_query = format!("SELECT count(*) FROM {table_name}");
+        let count_query_ident: Ident = format_ident!("COUNT_QUERY");
+        let count_query_const = quote! {
+            const #count_query_ident: &str = #count_query;
+        };
+        let count_fn = quote! {
+            pub async fn count(&self) -> crate::error::Result<u64> {
+                let count: u64 = sqlx::query_scalar(#count_query_ident)
+                    .fetch_one(&self.executor)
+                    .await?;
+                Ok(count)
+            }
+        };
+
+        // LIST ======================================================================
+        let short_fields_names = short_fields
+            .iter()
+            .map(|f| f.ident.as_ref().unwrap().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         let select_many_query =
-            format!("SELECT id,{insert_fields} FROM {table_name} {{order}} LIMIT ? OFFSET ?");
-        let delete_cmd = format!("DELETE FROM {table_name} WHERE id = ?");
+            format!("SELECT {short_fields_names} FROM {table_name} {{order}} LIMIT ? OFFSET ?");
+        let select_many_query_ident: Ident = format_ident!("SELECT_MANY_QUERY");
+        let select_many_query_const = quote! {
+            const #select_many_query_ident: &str = #select_many_query;
+        };
+
+        let list_fn = quote! {
+            pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
+                let order = params.ordering(VALID_ORDER_FIELDS)?;
+                let records = sqlx::query_as::<_, #short_struct_name>(&format!(
+                    #select_many_query
+                ))
+                .bind(params.limit)
+                .bind(params.offset)
+                .fetch(&self.executor)
+                .take(crate::MAX_LIMIT)
+                .try_collect::<Vec<_>>()
+                .await?;
+                Ok(records)
+            }
+        };
+
+        // DELETE ======================================================================
+        let delete_query = format!("DELETE FROM {table_name} WHERE id = ?");
+        let delete_query_ident: Ident = format_ident!("DELETE_QUERY");
+        let delete_query_const = quote! {
+            const #delete_query_ident: &str = #delete_query;
+        };
+        let delete_fn = quote! {
+            pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
+                let res = sqlx::query(#delete_query_ident)
+                    .bind(id)
+                    .execute(&self.executor)
+                    .await?;
+
+                if res.rows_affected() == 0 {
+                    Err(crate::error::Error::RecordNotFound("Language".to_string()))
+                } else {
+                    Ok(())
+                }
+            }
+        };
 
         let repo_impl = quote! {
             impl<'c, E> #repo_impl_name<E>
@@ -377,45 +436,13 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                 #create_fn
                 #update_fn
+                #count_fn
+                #list_fn
+                #delete_fn
 
-
-            //     pub async fn count(&self) -> crate::error::Result<u64> {
-            //         let count: u64 = sqlx::query_scalar(#count_cmd)
-            //             .fetch_one(&self.executor)
-            //             .await?;
-            //         Ok(count)
-            //     }
-
-            //     pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
-            //         self.list(crate::ListingParams::default()).await
-            //     }
-
-            //     pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
-            //         let order = params.ordering(VALID_ORDER_FIELDS)?;
-            //         let records = sqlx::query_as::<_, #short_struct_name>(&format!(
-            //             #select_many_query
-            //         ))
-            //         .bind(params.limit)
-            //         .bind(params.offset)
-            //         .fetch(&self.executor)
-            //         .take(crate::MAX_LIMIT)
-            //         .try_collect::<Vec<_>>()
-            //         .await?;
-            //         Ok(records)
-            //     }
-
-            //     pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
-            //         let res = sqlx::query(#delete_cmd)
-            //             .bind(id)
-            //             .execute(&self.executor)
-            //             .await?;
-
-            //         if res.rows_affected() == 0 {
-            //             Err(crate::error::Error::RecordNotFound("Language".to_string()))
-            //         } else {
-            //             Ok(())
-            //         }
-            //     }
+                pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
+                    self.list(crate::ListingParams::default()).await
+                }
 
                 pub async fn get(&self, id: i64) -> crate::error::Result<#entity_ident> {
                     get(id, &self.executor).await
@@ -434,6 +461,9 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             #select_one_query_const
             #insert_query_const
             #update_query_const
+            #count_query_const
+            #select_many_query_const
+            #delete_query_const
 
             #types_def
             #repo_impl
