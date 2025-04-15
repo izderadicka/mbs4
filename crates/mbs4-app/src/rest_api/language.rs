@@ -1,12 +1,12 @@
-use crate::{auth::token::RequiredRolesLayer, crud_api_old};
-use mbs4_dal::language::{CreateLanguage, LanguageRepository};
+use crate::{auth::token::RequiredRolesLayer, crud_api};
+use mbs4_dal::language::{CreateLanguage, LanguageRepository, UpdateLanguage};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
-crud_api_old!(LanguageRepository, CreateLanguage);
+crud_api!(LanguageRepository, CreateLanguage, UpdateLanguage);
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()

@@ -1,5 +1,5 @@
 use garde::Validate;
-use mbs4_macros::ValueRepository;
+use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
 //these are required for macro to work
@@ -9,14 +9,17 @@ pub mod error {
     pub use mbs4_dal::error::{Error, Result};
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Validate, ValueRepository)]
-pub struct CreateLanguage {
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, Repository)]
+pub struct Language {
+    #[spec(id)]
+    id: i64,
     #[garde(length(min = 1, max = 255))]
     name: String,
     #[garde(length(min = 2, max = 4))]
     code: String,
     #[garde(range(min = 0))]
-    version: Option<i64>,
+    #[spec(version)]
+    version: i64,
 }
 
 #[test]
@@ -24,8 +27,8 @@ fn test_repository() {
     let language = CreateLanguage {
         name: "English".to_string(),
         code: "en".to_string(),
-        version: None,
     };
+
     assert!(language.validate().is_ok());
 
     let _language_full = Language {

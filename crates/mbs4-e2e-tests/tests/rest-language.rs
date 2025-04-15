@@ -1,12 +1,51 @@
-use mbs4_dal::language::{Language, LanguageShort};
+use mbs4_dal::language::Language;
 use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
+use serde_json::json;
 use tracing::info;
 use tracing_test::traced_test;
 
-fn create_language(name: &str, code: &str, version: Option<i64>) -> serde_json::Value {
-    match version {
-        Some(v) => serde_json::json!({"name":name,"code":code,"version":v}),
-        None => serde_json::json!({"name":name,"code":code}),
+// fn create_language(name: &str, code: &str, version: Option<i64>) -> serde_json::Value {
+//     match version {
+//         Some(v) => serde_json::json!({"name":name,"code":code,"version":v}),
+//         None => serde_json::json!({"name":name,"code":code}),
+//     }
+// }
+
+trait ObjectItem<T> {
+    fn object_value(&self, key: &str) -> T;
+}
+
+struct ObjRef<'a> {
+    value: &'a serde_json::Value,
+}
+
+impl<'a> ObjRef<'a> {
+    fn new(value: &'a serde_json::Value) -> Self {
+        ObjRef { value }
+    }
+}
+
+impl<'a> ObjectItem<&'a str> for ObjRef<'a> {
+    fn object_value(&self, key: &str) -> &'a str {
+        if let Some(value) = self.value.get(key) {
+            match value {
+                serde_json::Value::String(s) => return s.as_str(),
+                _ => panic!("Not String value"),
+            }
+        }
+        panic!("Key {} not found", key);
+    }
+}
+
+impl<'a> ObjectItem<i64> for ObjRef<'a> {
+    fn object_value(&self, key: &str) -> i64 {
+        if let Some(value) = self.value.get(key) {
+            match value {
+                serde_json::Value::Number(n) => return n.as_i64().expect("Not int number"),
+                _ => panic!("Not String value"),
+            }
+        }
+        panic!("Key {} not found", key);
     }
 }
 
@@ -51,7 +90,7 @@ async fn test_paging() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let page: Vec<LanguageShort> = response.json().await.unwrap();
+    let page: Vec<serde_json::Value> = response.json().await.unwrap();
     assert_eq!(100, page.len());
 
     let get_page = async |page: u64| {
@@ -61,18 +100,21 @@ async fn test_paging() {
         let response = client.get(page_url).send().await.unwrap();
         info! {"Response: {:#?}", response};
         assert!(response.status().is_success());
-        let page: Vec<LanguageShort> = response.json().await.unwrap();
+        let page: Vec<serde_json::Value> = response.json().await.unwrap();
         page
     };
 
-    let page: Vec<LanguageShort> = get_page(2).await;
+    let page: Vec<serde_json::Value> = get_page(2).await;
     assert_eq!(50, page.len());
-    assert_eq!("by", page[0].code);
+    let c: &str = ObjRef::new(&page[0]).object_value("code");
+    assert_eq!("by", c);
 
     let page = get_page(1).await;
     assert_eq!(50, page.len());
-    assert_eq!("aa", page[0].code);
-    assert_eq!("bx", page[49].code);
+    let c: &str = ObjRef::new(&page[0]).object_value("code");
+    assert_eq!("aa", c);
+    let c: &str = ObjRef::new(&page[49]).object_value("code");
+    assert_eq!("bx", c);
 }
 
 #[tokio::test]
@@ -92,7 +134,7 @@ async fn test_languages() {
         ("Russian", "ru"),
     ];
     for (name, code) in langs.iter() {
-        let l = create_language(name, code, None);
+        let l = json!({"name":name,"code":code});
         let response = client.post(api_url.clone()).json(&l).send().await.unwrap();
         info!("Response: {:#?}", response);
         assert!(response.status().is_success());
@@ -102,11 +144,11 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<LanguageShort> = response.json().await.unwrap();
+    let stored_langs: Vec<serde_json::Value> = response.json().await.unwrap();
     assert_eq!(langs.len(), stored_langs.len());
-
-    assert_eq!(stored_langs[3].name, "Russian");
-    let id = stored_langs[3].id;
+    let name: &str = ObjRef::new(&stored_langs[3]).object_value("name");
+    assert_eq!("Russian", name);
+    let id: i64 = ObjRef::new(&stored_langs[3]).object_value("id");
     info!("ID: {}", id);
 
     let record_url = extend_url(&api_url, id);
@@ -118,7 +160,8 @@ async fn test_languages() {
     let rec: Language = response.json().await.unwrap();
     assert_eq!(rec.name, "Russian");
 
-    let update_rec = create_language("Porussky", &rec.code, Some(rec.version));
+    let update_rec =
+        json!({"id":id, "name":"Porussky", "code": &rec.code, "version":Some(rec.version)});
     let response = client
         .put(record_url.clone())
         .json(&update_rec)
@@ -131,7 +174,8 @@ async fn test_languages() {
     assert_eq!(new_rec.name, "Porussky");
     assert_eq!(new_rec.version, rec.version + 1);
 
-    let update_rec = create_language("Porusskij", &rec.code, Some(rec.version));
+    let update_rec =
+        json!({"id":id, "name":"Porussky", "code": &rec.code, "version":Some(rec.version)});
     let response = client
         .put(record_url.clone())
         .json(&update_rec)
@@ -152,6 +196,6 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<LanguageShort> = response.json().await.unwrap();
+    let stored_langs: Vec<serde_json::Value> = response.json().await.unwrap();
     assert_eq!(langs.len() - 1, stored_langs.len());
 }

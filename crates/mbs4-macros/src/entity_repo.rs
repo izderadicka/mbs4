@@ -307,7 +307,6 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let update_query_ident: Ident = format_ident!("UPDATE_QUERY");
         let update_query =
             format!("UPDATE {table_name} SET {update_fields} WHERE {where_clause} id = ?");
-        println!("QUERY: {}", update_query);
         let update_query_const = quote! {
             const #update_query_ident: &str = #update_query;
         };
