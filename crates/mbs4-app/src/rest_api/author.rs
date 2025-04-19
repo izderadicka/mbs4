@@ -11,6 +11,7 @@ crud_api!(AuthorRepository, CreateAuthor, UpdateAuthor);
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/{id}", delete(crud_api::delete))
+        .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/", post(crud_api::create))
         .route("/{id}", put(crud_api::update))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))

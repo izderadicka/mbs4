@@ -1,5 +1,5 @@
 use mbs4_dal::author::Author;
-use mbs4_e2e_tests::{TestUser, extend_url, launch_env, now, prepare_env};
+use mbs4_e2e_tests::{TestUser, admin_token, extend_url, launch_env, now, prepare_env};
 use tracing::info;
 use tracing_test::traced_test;
 
@@ -14,7 +14,7 @@ async fn test_authors() {
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::TrustedUser).await.unwrap();
+    let (client, state) = launch_env(args, TestUser::TrustedUser).await.unwrap();
 
     let api_url = base_url.join("api/author").unwrap();
 
@@ -80,7 +80,13 @@ async fn test_authors() {
     let recs: Vec<serde_json::Value> = response.json().await.unwrap();
     assert_eq!(recs.len(), 1);
 
-    let response = client.delete(record_url.clone()).send().await.unwrap();
+    let admin_creds = admin_token(&state).unwrap();
+    let response = client
+        .delete(record_url.clone())
+        .header("Authorization", format!("Bearer {}", admin_creds))
+        .send()
+        .await
+        .unwrap();
     info!("Response: {:#?}", response);
     assert!(response.status().is_success());
 
