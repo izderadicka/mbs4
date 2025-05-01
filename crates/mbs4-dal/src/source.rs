@@ -13,7 +13,8 @@ pub struct Source {
     pub size: i64,
     #[garde(length(min = 20, max = 64))]
     pub hash: String,
-    pub quality: Option<32>,
+    #[garde(range(min = 0.0, max = 100.0))]
+    pub quality: Option<f32>,
     #[garde(range(min = 0))]
     #[spec(version)]
     pub version: i64,

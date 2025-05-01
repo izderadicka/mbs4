@@ -1,12 +1,12 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api};
-use mbs4_dal::author::{AuthorRepository, CreateAuthor, UpdateAuthor};
+use mbs4_dal::source::{CreateSource, SourceRepository, UpdateSource};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
-crud_api!(AuthorRepository, CreateAuthor, UpdateAuthor);
+crud_api!(SourceRepository, CreateSource, UpdateSource);
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()

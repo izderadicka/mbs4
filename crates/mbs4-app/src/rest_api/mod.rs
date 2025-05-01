@@ -4,7 +4,11 @@ use mbs4_dal::ListingParams;
 use crate::error::{ApiError, ApiResult};
 
 pub mod author;
+pub mod format;
+pub mod genre;
 pub mod language;
+pub mod series;
+pub mod source;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize)]
 #[garde(allow_unvalidated)]
@@ -141,77 +145,19 @@ macro_rules! crud_api {
 }
 
 #[macro_export]
-macro_rules! crud_api_old {
-    ($repository:ty, $create_type:ty) => {
-        crate::repository_from_request!($repository);
-        pub mod crud_api {
-            use super::*;
-            use crate::error::ApiResult;
-            use crate::rest_api::Paging;
-            use axum::{
-                extract::{Path, Query},
-                response::IntoResponse,
-                Json,
-            };
-            use axum_valid::Garde;
-            use http::StatusCode;
-            use tracing::debug;
-            pub async fn create(
-                repository: $repository,
-                Garde(Json(payload)): Garde<Json<$create_type>>,
-            ) -> ApiResult<impl IntoResponse> {
-                let record = repository.create(payload).await?;
-
-                Ok((StatusCode::CREATED, Json(record)))
-            }
-
-            pub async fn list(
-                repository: $repository,
-                Garde(Query(paging)): Garde<Query<Paging>>,
-            ) -> ApiResult<impl IntoResponse> {
-                debug!("Paging: {:#?}", paging);
-                let listing_params = paging.into_listing_params(100)?;
-                let users = repository.list(listing_params).await?;
-                Ok((StatusCode::OK, Json(users)))
-            }
-
-            pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {
-                let users = repository.list_all().await?;
-                Ok((StatusCode::OK, Json(users)))
-            }
-
-            pub async fn count(repository: $repository) -> ApiResult<impl IntoResponse> {
-                let count = repository.count().await?;
-                Ok((StatusCode::OK, Json(count)))
-            }
-
-            pub async fn get(
-                Path(id): Path<i64>,
-                repository: $repository,
-            ) -> ApiResult<impl IntoResponse> {
-                let record = repository.get(id).await?;
-
-                Ok((StatusCode::OK, Json(record)))
-            }
-
-            pub async fn update(
-                Path(id): Path<i64>,
-                repository: $repository,
-                Garde(Json(payload)): Garde<Json<$create_type>>,
-            ) -> ApiResult<impl IntoResponse> {
-                let record = repository.update(id, payload).await?;
-
-                Ok((StatusCode::OK, Json(record)))
-            }
-
-            pub async fn delete(
-                Path(id): Path<i64>,
-                repository: $repository,
-            ) -> ApiResult<impl IntoResponse> {
-                repository.delete(id).await?;
-
-                Ok((StatusCode::NO_CONTENT, ()))
-            }
+macro_rules! value_router {
+    () => {
+        pub fn router() -> axum::Router<crate::state::AppState> {
+            use crate::auth::token::RequiredRolesLayer;
+            use axum::routing::{delete, get, post};
+            use mbs4_types::claim::Role;
+            axum::Router::new()
+                .route("/", post(crud_api::create))
+                .route("/{id}", delete(crud_api::delete).put(crud_api::update))
+                .layer(RequiredRolesLayer::new([Role::Admin]))
+                .route("/", get(crud_api::list))
+                .route("/count", get(crud_api::count))
+                .route("/{id}", get(crud_api::get))
         }
     };
 }

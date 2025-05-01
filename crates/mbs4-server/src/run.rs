@@ -60,6 +60,10 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/users", users_router())
         .nest("/store", store_router(state.config().upload_limit_mb))
         .nest("/api/language", mbs4_app::rest_api::language::router())
+        .nest("/api/format", mbs4_app::rest_api::format::router())
+        .nest("/api/genre", mbs4_app::rest_api::genre::router())
+        .nest("/api/series", mbs4_app::rest_api::series::router())
+        .nest("/api/source", mbs4_app::rest_api::source::router())
         .nest("/api/author", mbs4_app::rest_api::author::router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))

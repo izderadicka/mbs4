@@ -4,6 +4,7 @@ pub mod format;
 pub mod genre;
 pub mod language;
 pub mod series;
+pub mod source;
 pub mod user;
 
 use std::fmt::Display;
