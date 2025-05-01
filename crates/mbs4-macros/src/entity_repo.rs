@@ -149,11 +149,28 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             .collect();
 
         let short_struct_name = format_ident!("{}Short", entity_name);
+        let row_impl_fields = short_fields.iter().map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let column_name = format!("{}_{}", table_name, ident.to_string());
+            quote! { #ident:row.try_get(#column_name)?}
+        });
+        let from_row_impl = quote! {
+            impl crate::FromRowPrefixed<'_, crate::ChosenRow> for #short_struct_name  {
+                fn from_row_prefixed(row: &crate::ChosenRow) -> crate::error::Result<Self, sqlx::Error> {
+                    use sqlx::Row;
+                    Ok(#short_struct_name  {
+                        #(#row_impl_fields,)*
+                    })
+                }
+            }
+
+        };
         let short_struct = quote! {
             #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
             pub struct #short_struct_name {
                 #(#short_fields,)*
             }
+            #from_row_impl
 
         };
 

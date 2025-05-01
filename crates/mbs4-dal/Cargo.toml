@@ -16,5 +16,9 @@ mbs4-macros = { path = "../mbs4-macros" }
 garde = { version = "0.22.0", features = ["full"] }
 time.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+futures = "0.3.31"
+
 [profile.dev.package.sqlx-macros]
 opt-level = 3

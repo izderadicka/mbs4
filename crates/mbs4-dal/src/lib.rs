@@ -1,4 +1,5 @@
 pub mod author;
+pub mod ebook;
 pub mod error;
 pub mod format;
 pub mod genre;
@@ -16,6 +17,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use crate::error::Result;
 
 pub type ChosenDB = sqlx::Sqlite;
+pub type ChosenRow = <crate::ChosenDB as sqlx::Database>::Row;
 pub type Pool = sqlx::Pool<ChosenDB>;
 
 pub const MAX_LIMIT: usize = 10_000;
@@ -101,4 +103,11 @@ impl ListingParams {
             .unwrap_or_default();
         Ok(ordering)
     }
+}
+
+pub trait FromRowPrefixed<'r, R>: Sized
+where
+    R: sqlx::Row,
+{
+    fn from_row_prefixed(row: &'r R) -> Result<Self, sqlx::Error>;
 }
