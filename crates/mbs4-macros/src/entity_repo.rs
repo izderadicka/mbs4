@@ -457,7 +457,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 #delete_fn
 
                 pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
-                    self.list(crate::ListingParams::default()).await
+                    self.list(crate::ListingParams::new_unpaged()).await
                 }
 
                 pub async fn get(&self, id: i64) -> crate::error::Result<#entity_ident> {

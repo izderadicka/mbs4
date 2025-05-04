@@ -63,4 +63,15 @@ pub async fn test_ebooks() {
     let ebook = repo.get(1).await.unwrap();
     assert_eq!(ebook.title, "Kniha knih");
     assert_eq!(ebook.series.unwrap().title, "Serie");
+    assert_eq!(ebook.authors.unwrap().len(), 3);
+    assert_eq!(ebook.genres.unwrap().len(), 3);
+    let params = mbs4_dal::ListingParams {
+        order: Some(vec![mbs4_dal::Order::Asc("e.title".to_string())]),
+        ..Default::default()
+    };
+    let all = repo.list(params).await.unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].title, "Kniha knih");
+    assert_eq!(all[0].series.as_ref().unwrap().title, "Serie");
+    assert_eq!(all[0].authors.as_ref().unwrap().len(), 3);
 }

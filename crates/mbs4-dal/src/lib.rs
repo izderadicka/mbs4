@@ -21,6 +21,7 @@ pub type ChosenRow = <crate::ChosenDB as sqlx::Database>::Row;
 pub type Pool = sqlx::Pool<ChosenDB>;
 
 pub const MAX_LIMIT: usize = 10_000;
+pub const DEFAULT_PAGE_SIZE: i64 = 100;
 
 pub async fn new_pool(database_url: &str) -> Result<Pool, Error> {
     let pool = SqlitePoolOptions::new()
@@ -64,7 +65,7 @@ impl Default for ListingParams {
     fn default() -> Self {
         Self {
             offset: 0,
-            limit: MAX_LIMIT as i64,
+            limit: DEFAULT_PAGE_SIZE,
             order: None,
         }
     }
@@ -75,6 +76,14 @@ impl ListingParams {
         Self {
             offset,
             limit,
+            order: None,
+        }
+    }
+
+    pub fn new_unpaged() -> Self {
+        Self {
+            offset: 0,
+            limit: MAX_LIMIT as i64,
             order: None,
         }
     }
@@ -100,6 +109,13 @@ impl ListingParams {
                     .map(|o| o.join(", "))
             })
             .transpose()?
+            .map(|o| {
+                if o.is_empty() {
+                    o
+                } else {
+                    format!("ORDER BY {}", o)
+                }
+            })
             .unwrap_or_default();
         Ok(ordering)
     }
