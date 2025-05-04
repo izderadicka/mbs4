@@ -3,7 +3,7 @@ use crate::{
     series::SeriesShort,
 };
 use serde::Serialize;
-use sqlx::Row;
+use sqlx::{Row, query::QueryAs};
 
 // #[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
 // pub struct Ebook {
@@ -126,11 +126,71 @@ impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
     }
 }
 
+#[derive(Default)]
+struct Where {
+    series_id: Option<i64>,
+    author_id: Option<i64>,
+}
+
+impl Where {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn author(mut self, author_id: i64) -> Self {
+        self.author_id = Some(author_id);
+        self
+    }
+
+    fn series(mut self, series_id: i64) -> Self {
+        self.series_id = Some(series_id);
+        self
+    }
+
+    fn bind<'q, DB, O, A>(&self, mut query: QueryAs<'q, DB, O, A>) -> QueryAs<'q, DB, O, A>
+    where
+        DB: sqlx::Database<Arguments<'q> = A>,
+        i64: sqlx::Encode<'q, DB> + sqlx::Type<DB>,
+    {
+        if let Some(author_id) = self.author_id {
+            query = query.bind(author_id)
+        }
+        if let Some(series_id) = self.series_id {
+            query = query.bind(series_id)
+        }
+        query
+    }
+
+    fn where_clause(&self) -> Option<String> {
+        let mut where_clause = Vec::new();
+        if self.author_id.is_some() {
+            where_clause.push("author_id = ?");
+        }
+        if self.series_id.is_some() {
+            where_clause.push("series_id = ?");
+        }
+
+        if where_clause.is_empty() {
+            None
+        } else {
+            Some(format!("WHERE {}", where_clause.join(" AND ")))
+        }
+    }
+
+    fn extra_tables(&self) -> Option<String> {
+        if self.author_id.is_some() {
+            Some("JOIN ebook_authors ea ON e.id = ea.ebook_id ".to_string())
+        } else {
+            None
+        }
+    }
+}
+
 pub struct EbookRepository<E> {
     executor: E,
 }
 
-const VALID_ORDER_FIELDS: &[&str] = &["e.title", "series_index", "created", "modified"];
+const VALID_ORDER_FIELDS: &[&str] = &["e.title", "s.title", "series_index", "created", "modified"];
 
 impl<'c, E> EbookRepository<E>
 where
@@ -144,7 +204,41 @@ where
         &self,
         params: crate::ListingParams,
     ) -> crate::error::Result<Vec<EbookShort>> {
+        self._list(params, None).await
+    }
+
+    pub async fn list_by_author(
+        &self,
+        params: crate::ListingParams,
+        author_id: i64,
+    ) -> crate::error::Result<Vec<EbookShort>> {
+        self._list(params, Some(Where::new().author(author_id)))
+            .await
+    }
+
+    pub async fn list_by_series(
+        &self,
+        params: crate::ListingParams,
+        series_id: i64,
+    ) -> crate::error::Result<Vec<EbookShort>> {
+        self._list(params, Some(Where::new().series(series_id)))
+            .await
+    }
+
+    async fn _list(
+        &self,
+        params: crate::ListingParams,
+        where_clause: Option<Where>,
+    ) -> crate::error::Result<Vec<EbookShort>> {
         let order = params.ordering(VALID_ORDER_FIELDS)?;
+        let extra_tables = where_clause
+            .as_ref()
+            .and_then(Where::extra_tables)
+            .unwrap_or_default();
+        let where_cond = where_clause
+            .as_ref()
+            .and_then(Where::where_clause)
+            .unwrap_or_default();
         let sql = format!(
             r#"
         SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, 
@@ -153,12 +247,22 @@ where
         FROM ebook e 
         LEFT JOIN language l ON e.language_id = l.id
         LEFT JOIN series s ON e.series_id = s.id
+        {extra_tables}
+        {where_cond}
         {order}
         LIMIT ? OFFSET ?;
         "#
         );
 
-        let mut res = sqlx::query_as::<_, EbookShort>(&sql)
+        // println!("SQL: {}", sql);
+
+        let mut query = sqlx::query_as::<_, EbookShort>(&sql);
+
+        if let Some(where_clause) = where_clause {
+            query = where_clause.bind(query);
+        }
+
+        let mut res = query
             .bind(params.limit)
             .bind(params.offset)
             .fetch_all(&self.executor)

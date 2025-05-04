@@ -1,4 +1,5 @@
 use futures::TryStreamExt as _;
+use mbs4_dal::ListingParams;
 use sqlx::Executor;
 
 const TEST_DATA: &str = r#"
@@ -65,7 +66,7 @@ pub async fn test_ebooks() {
     assert_eq!(ebook.series.unwrap().title, "Serie");
     assert_eq!(ebook.authors.unwrap().len(), 3);
     assert_eq!(ebook.genres.unwrap().len(), 3);
-    let params = mbs4_dal::ListingParams {
+    let params = ListingParams {
         order: Some(vec![mbs4_dal::Order::Asc("e.title".to_string())]),
         ..Default::default()
     };
@@ -73,5 +74,18 @@ pub async fn test_ebooks() {
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].title, "Kniha knih");
     assert_eq!(all[0].series.as_ref().unwrap().title, "Serie");
+    assert_eq!(all[0].language.name, "Czech");
     assert_eq!(all[0].authors.as_ref().unwrap().len(), 3);
+
+    let author_ebooks = repo
+        .list_by_author(ListingParams::default(), 2)
+        .await
+        .unwrap();
+    assert_eq!(author_ebooks.len(), 1);
+
+    let series_ebooks = repo
+        .list_by_series(ListingParams::default(), 1)
+        .await
+        .unwrap();
+    assert_eq!(series_ebooks.len(), 1);
 }
