@@ -186,13 +186,15 @@ impl Where {
     }
 }
 
-pub struct EbookRepository<E> {
+pub struct EbookRepositoryImpl<E> {
     executor: E,
 }
 
 const VALID_ORDER_FIELDS: &[&str] = &["e.title", "s.title", "series_index", "created", "modified"];
 
-impl<'c, E> EbookRepository<E>
+pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<crate::ChosenDB>>;
+
+impl<'c, E> EbookRepositoryImpl<E>
 where
     for<'a> &'a E: sqlx::Executor<'c, Database = crate::ChosenDB>, // + sqlx::Acquire<'c, Database = crate::ChosenDB>,
 {

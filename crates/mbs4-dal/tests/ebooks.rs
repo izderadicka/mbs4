@@ -60,7 +60,7 @@ pub async fn test_ebooks() {
 
     assert_eq!(3, count);
 
-    let repo = mbs4_dal::ebook::EbookRepository::new(conn);
+    let repo = mbs4_dal::ebook::EbookRepositoryImpl::new(conn);
     let ebook = repo.get(1).await.unwrap();
     assert_eq!(ebook.title, "Kniha knih");
     assert_eq!(ebook.series.unwrap().title, "Serie");

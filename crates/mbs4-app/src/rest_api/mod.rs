@@ -4,6 +4,7 @@ use mbs4_dal::ListingParams;
 use crate::error::{ApiError, ApiResult};
 
 pub mod author;
+pub mod ebook;
 pub mod format;
 pub mod genre;
 pub mod language;
