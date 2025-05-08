@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 //these are required for macro to work
 
-pub use mbs4_dal::{ChosenDB, ChosenRow, FromRowPrefixed, ListingParams, MAX_LIMIT};
+pub use mbs4_dal::{Batch, ChosenDB, ChosenRow, FromRowPrefixed, ListingParams, MAX_LIMIT};
 pub mod error {
     pub use mbs4_dal::error::{Error, Result};
 }

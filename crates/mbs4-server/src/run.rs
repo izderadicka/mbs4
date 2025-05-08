@@ -65,6 +65,7 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/api/series", mbs4_app::rest_api::series::router())
         .nest("/api/source", mbs4_app::rest_api::source::router())
         .nest("/api/author", mbs4_app::rest_api::author::router())
+        .nest("/api/ebook", mbs4_app::rest_api::ebook::router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())

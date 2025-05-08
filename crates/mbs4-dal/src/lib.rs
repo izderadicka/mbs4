@@ -124,7 +124,7 @@ impl ListingParams {
 pub struct Batch<T> {
     pub offset: i64,
     pub limit: i64,
-    pub total: i64,
+    pub total: u64,
     pub rows: Vec<T>,
 }
 

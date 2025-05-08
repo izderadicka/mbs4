@@ -77,7 +77,8 @@ async fn test_authors() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info!("Response: {:#?}", response);
     assert!(response.status().is_success());
-    let recs: Vec<serde_json::Value> = response.json().await.unwrap();
+    let res: serde_json::Value = response.json().await.unwrap();
+    let recs = res.get("rows").unwrap().as_array().unwrap();
     assert_eq!(recs.len(), 1);
 
     let admin_creds = admin_token(&state).unwrap();

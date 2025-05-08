@@ -404,7 +404,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         };
 
         let list_fn = quote! {
-            pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<Vec<#short_struct_name>> {
+            pub async fn list(&self, params: crate::ListingParams) -> crate::error::Result<crate::Batch<#short_struct_name>> {
                 let order = params.ordering(VALID_ORDER_FIELDS)?;
                 let records = sqlx::query_as::<_, #short_struct_name>(&format!(
                     #select_many_query
@@ -415,7 +415,13 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .take(crate::MAX_LIMIT)
                 .try_collect::<Vec<_>>()
                 .await?;
-                Ok(records)
+                let count = self.count().await?;
+                Ok(crate::Batch{
+                    offset: params.offset,
+                    limit: params.limit,
+                    rows: records,
+                    total: count,
+                })
             }
         };
 
@@ -457,7 +463,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 #delete_fn
 
                 pub async fn list_all(&self) -> crate::error::Result<Vec<#short_struct_name>> {
-                    self.list(crate::ListingParams::new_unpaged()).await
+                    self.list(crate::ListingParams::new_unpaged()).await.map(|b| b.rows)
                 }
 
                 pub async fn get(&self, id: i64) -> crate::error::Result<#entity_ident> {

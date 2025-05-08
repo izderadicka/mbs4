@@ -202,11 +202,11 @@ where
         Self { executor }
     }
 
-    pub async fn count(&self) -> crate::error::Result<i64> {
+    pub async fn count(&self) -> crate::error::Result<u64> {
         self._count(&None).await
     }
 
-    async fn _count(&self, where_clause: &Option<Where>) -> crate::error::Result<i64> {
+    async fn _count(&self, where_clause: &Option<Where>) -> crate::error::Result<u64> {
         let sql = format!(
             "SELECT COUNT(*) FROM ebook e {extra_tables} {where_clause} ",
             extra_tables = where_clause
@@ -218,7 +218,7 @@ where
                 .and_then(|w| w.where_clause())
                 .unwrap_or_default(),
         );
-        let mut query = sqlx::query_as::<_, (i64,)>(&sql);
+        let mut query = sqlx::query_as::<_, (u64,)>(&sql);
         if let Some(w) = where_clause {
             query = w.bind(query);
         }

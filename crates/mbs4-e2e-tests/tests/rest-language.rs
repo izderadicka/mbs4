@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use mbs4_dal::language::Language;
 use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
 use serde_json::json;
@@ -11,44 +13,6 @@ use tracing_test::traced_test;
 //     }
 // }
 
-trait ObjectItem<T> {
-    fn object_value(&self, key: &str) -> T;
-}
-
-struct ObjRef<'a> {
-    value: &'a serde_json::Value,
-}
-
-impl<'a> ObjRef<'a> {
-    fn new(value: &'a serde_json::Value) -> Self {
-        ObjRef { value }
-    }
-}
-
-impl<'a> ObjectItem<&'a str> for ObjRef<'a> {
-    fn object_value(&self, key: &str) -> &'a str {
-        if let Some(value) = self.value.get(key) {
-            match value {
-                serde_json::Value::String(s) => return s.as_str(),
-                _ => panic!("Not String value"),
-            }
-        }
-        panic!("Key {} not found", key);
-    }
-}
-
-impl<'a> ObjectItem<i64> for ObjRef<'a> {
-    fn object_value(&self, key: &str) -> i64 {
-        if let Some(value) = self.value.get(key) {
-            match value {
-                serde_json::Value::Number(n) => return n.as_i64().expect("Not int number"),
-                _ => panic!("Not String value"),
-            }
-        }
-        panic!("Key {} not found", key);
-    }
-}
-
 #[tokio::test]
 #[traced_test]
 async fn test_paging() {
@@ -56,7 +20,7 @@ async fn test_paging() {
 
     let base_url = args.base_url.clone();
 
-    let mut count = 0;
+    let mut count: u64 = 0;
     let conn = mbs4_dal::new_pool(&args.database_url).await.unwrap();
     let mut transaction = conn.begin().await.unwrap();
 
@@ -84,13 +48,17 @@ async fn test_paging() {
     let response = client.get(count_url).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let count: u64 = response.json().await.unwrap();
-    assert_eq!(count, count as u64);
+    let total: u64 = response.json().await.unwrap();
+    assert_eq!(total, count);
+    let num_pages = (total as f64 / 50.0).ceil() as u64;
 
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let page: Vec<serde_json::Value> = response.json().await.unwrap();
+    let json_result: serde_json::Value = response.json().await.unwrap();
+    let page_no: u64 = json_result.get("page").unwrap().as_u64().unwrap();
+    assert_eq!(1, page_no);
+    let page = json_result.get("rows").unwrap().as_array().unwrap();
     assert_eq!(100, page.len());
 
     let get_page = async |page: u64| {
@@ -100,20 +68,24 @@ async fn test_paging() {
         let response = client.get(page_url).send().await.unwrap();
         info! {"Response: {:#?}", response};
         assert!(response.status().is_success());
-        let page: Vec<serde_json::Value> = response.json().await.unwrap();
-        page
+        let res: serde_json::Value = response.json().await.unwrap();
+        let page_no: u64 = res.get("page").unwrap().as_u64().unwrap();
+        assert_eq!(page, page_no);
+        let total: u64 = res.get("total").unwrap().as_u64().unwrap();
+        assert_eq!(num_pages, total);
+        res.get("rows").unwrap().as_array().unwrap().to_vec()
     };
 
     let page: Vec<serde_json::Value> = get_page(2).await;
     assert_eq!(50, page.len());
-    let c: &str = ObjRef::new(&page[0]).object_value("code");
+    let c: &str = page[0].get("code").unwrap().as_str().unwrap();
     assert_eq!("by", c);
 
     let page = get_page(1).await;
     assert_eq!(50, page.len());
-    let c: &str = ObjRef::new(&page[0]).object_value("code");
+    let c: &str = page[0].get("code").unwrap().as_str().unwrap();
     assert_eq!("aa", c);
-    let c: &str = ObjRef::new(&page[49]).object_value("code");
+    let c: &str = page[49].get("code").unwrap().as_str().unwrap();
     assert_eq!("bx", c);
 }
 
@@ -144,11 +116,17 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<serde_json::Value> = response.json().await.unwrap();
+    let page: HashMap<String, serde_json::Value> = response.json().await.unwrap();
+    println!("Page: {:#?}", page);
+    let stored_langs = page.get("rows").unwrap().as_array().unwrap();
+    let total = page.get("total").unwrap().as_u64().unwrap();
+    let page = page.get("page").unwrap().as_u64().unwrap();
     assert_eq!(langs.len(), stored_langs.len());
-    let name: &str = ObjRef::new(&stored_langs[3]).object_value("name");
+    assert_eq!(1, total);
+    assert_eq!(1, page);
+    let name: &str = stored_langs[3].get("name").unwrap().as_str().unwrap();
     assert_eq!("Russian", name);
-    let id: i64 = ObjRef::new(&stored_langs[3]).object_value("id");
+    let id: i64 = stored_langs[3].get("id").unwrap().as_i64().unwrap();
     info!("ID: {}", id);
 
     let record_url = extend_url(&api_url, id);
@@ -196,6 +174,7 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<serde_json::Value> = response.json().await.unwrap();
+    let page: HashMap<String, serde_json::Value> = response.json().await.unwrap();
+    let stored_langs = page.get("rows").unwrap().as_array().unwrap();
     assert_eq!(langs.len() - 1, stored_langs.len());
 }

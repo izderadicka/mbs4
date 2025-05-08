@@ -121,7 +121,7 @@ macro_rules! crud_api {
             };
             use axum_valid::Garde;
             use http::StatusCode;
-            use tracing::debug;
+            // use tracing::debug;
             pub async fn create(
                 repository: $repository,
                 Garde(Json(payload)): Garde<Json<$create_type>>,
@@ -135,10 +135,14 @@ macro_rules! crud_api {
                 repository: $repository,
                 Garde(Query(paging)): Garde<Query<Paging>>,
             ) -> ApiResult<impl IntoResponse> {
-                debug!("Paging: {:#?}", paging);
+                let default_page_size: u32 = 100;
+                let page_size = paging.page_size(default_page_size);
                 let listing_params = paging.into_listing_params(100)?;
-                let users = repository.list(listing_params).await?;
-                Ok((StatusCode::OK, Json(users)))
+                let batch = repository.list(listing_params).await?;
+                Ok((
+                    StatusCode::OK,
+                    Json(crate::rest_api::Page::from_batch(batch, page_size)),
+                ))
             }
 
             pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {

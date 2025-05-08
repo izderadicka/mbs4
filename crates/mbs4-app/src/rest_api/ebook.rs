@@ -15,12 +15,10 @@ mod crud_api {
     };
     use axum_valid::Garde;
     use http::StatusCode;
-    use tracing::debug;
     pub async fn list(
         repository: EbookRepository,
         Garde(Query(paging)): Garde<Query<Paging>>,
     ) -> ApiResult<impl IntoResponse> {
-        debug!("Paging: {:#?}", paging);
         let default_page_size: u32 = 100;
         let page_size = paging.page_size(default_page_size);
         let listing_params = paging.into_listing_params(default_page_size)?;
