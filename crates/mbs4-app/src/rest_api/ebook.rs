@@ -6,8 +6,8 @@ use axum::routing::{delete, get, post, put};
 crate::repository_from_request!(EbookRepository);
 mod crud_api {
     use super::*;
-    use crate::error::ApiResult;
     use crate::rest_api::Paging;
+    use crate::{error::ApiResult, rest_api::Page};
     use axum::{
         extract::{Path, Query},
         response::IntoResponse,
@@ -21,9 +21,11 @@ mod crud_api {
         Garde(Query(paging)): Garde<Query<Paging>>,
     ) -> ApiResult<impl IntoResponse> {
         debug!("Paging: {:#?}", paging);
-        let listing_params = paging.into_listing_params(100)?;
+        let default_page_size: u32 = 100;
+        let page_size = paging.page_size(default_page_size);
+        let listing_params = paging.into_listing_params(default_page_size)?;
         let users = repository.list(listing_params).await?;
-        Ok((StatusCode::OK, Json(users)))
+        Ok((StatusCode::OK, Json(Page::from_batch(users, page_size))))
     }
 
     pub async fn get(

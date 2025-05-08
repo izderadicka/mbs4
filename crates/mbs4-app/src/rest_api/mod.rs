@@ -1,5 +1,6 @@
 use garde::Validate;
-use mbs4_dal::ListingParams;
+use mbs4_dal::{Batch, ListingParams};
+use serde::Serialize;
 
 use crate::error::{ApiError, ApiResult};
 
@@ -66,6 +67,42 @@ impl Paging {
             limit: limit.into(),
             order,
         })
+    }
+
+    pub fn page_size(&self, default_page_size: u32) -> u32 {
+        self.page_size.unwrap_or(default_page_size)
+    }
+}
+
+#[derive(Serialize)]
+pub struct Page<T: Serialize> {
+    page: u32,
+    page_size: u32,
+    total: u32,
+    rows: Vec<T>,
+}
+
+impl<T> Page<T>
+where
+    T: Serialize,
+{
+    pub fn try_from_batch(
+        batch: Batch<T>,
+        page_size: u32,
+    ) -> Result<Self, std::num::TryFromIntError> {
+        Ok(Self {
+            page: u32::try_from(batch.offset)? / page_size + 1,
+            page_size,
+            total: u32::try_from(
+                (u64::try_from(batch.total)? + page_size as u64 - 1) / page_size as u64,
+            )?,
+            rows: batch.rows,
+        })
+    }
+
+    pub fn from_batch(batch: Batch<T>, page_size: u32) -> Self {
+        Self::try_from_batch(batch, page_size).expect("Failed to convert batch to page")
+        // As we control the batch, this should never fail
     }
 }
 

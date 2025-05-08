@@ -121,6 +121,13 @@ impl ListingParams {
     }
 }
 
+pub struct Batch<T> {
+    pub offset: i64,
+    pub limit: i64,
+    pub total: i64,
+    pub rows: Vec<T>,
+}
+
 pub trait FromRowPrefixed<'r, R>: Sized
 where
     R: sqlx::Row,

@@ -1,6 +1,6 @@
 use crate::{
-    ChosenRow, FromRowPrefixed, author::AuthorShort, genre::GenreShort, language::LanguageShort,
-    series::SeriesShort,
+    Batch, ChosenRow, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
+    language::LanguageShort, series::SeriesShort,
 };
 use serde::Serialize;
 use sqlx::{Row, query::QueryAs};
@@ -202,10 +202,34 @@ where
         Self { executor }
     }
 
+    pub async fn count(&self) -> crate::error::Result<i64> {
+        self._count(&None).await
+    }
+
+    async fn _count(&self, where_clause: &Option<Where>) -> crate::error::Result<i64> {
+        let sql = format!(
+            "SELECT COUNT(*) FROM ebook e {extra_tables} {where_clause} ",
+            extra_tables = where_clause
+                .as_ref()
+                .and_then(|w| w.extra_tables())
+                .unwrap_or_default(),
+            where_clause = where_clause
+                .as_ref()
+                .and_then(|w| w.where_clause())
+                .unwrap_or_default(),
+        );
+        let mut query = sqlx::query_as::<_, (i64,)>(&sql);
+        if let Some(w) = where_clause {
+            query = w.bind(query);
+        }
+        let res = query.fetch_one(&self.executor).await?;
+        Ok(res.0)
+    }
+
     pub async fn list(
         &self,
         params: crate::ListingParams,
-    ) -> crate::error::Result<Vec<EbookShort>> {
+    ) -> crate::error::Result<Batch<EbookShort>> {
         self._list(params, None).await
     }
 
@@ -213,7 +237,7 @@ where
         &self,
         params: crate::ListingParams,
         author_id: i64,
-    ) -> crate::error::Result<Vec<EbookShort>> {
+    ) -> crate::error::Result<Batch<EbookShort>> {
         self._list(params, Some(Where::new().author(author_id)))
             .await
     }
@@ -222,7 +246,7 @@ where
         &self,
         params: crate::ListingParams,
         series_id: i64,
-    ) -> crate::error::Result<Vec<EbookShort>> {
+    ) -> crate::error::Result<Batch<EbookShort>> {
         self._list(params, Some(Where::new().series(series_id)))
             .await
     }
@@ -231,7 +255,7 @@ where
         &self,
         params: crate::ListingParams,
         where_clause: Option<Where>,
-    ) -> crate::error::Result<Vec<EbookShort>> {
+    ) -> crate::error::Result<Batch<EbookShort>> {
         let order = params.ordering(VALID_ORDER_FIELDS)?;
         let extra_tables = where_clause
             .as_ref()
@@ -260,7 +284,7 @@ where
 
         let mut query = sqlx::query_as::<_, EbookShort>(&sql);
 
-        if let Some(where_clause) = where_clause {
+        if let Some(ref where_clause) = where_clause {
             query = where_clause.bind(query);
         }
 
@@ -296,7 +320,7 @@ where
             ebook.authors = Some(
                 sqlx::query_as(
                     r#"
-                SELECT a.id, a.first_name, a.last_name from author a 
+                SELECT a.id, a.first_name, a.last_name FROM author a 
                 JOIN ebook_authors ea ON a.id = ea.author_id
                 WHERE ea.ebook_id = ?
                 LIMIT 3;
@@ -308,7 +332,14 @@ where
             );
         }
 
-        Ok(res)
+        let count = self._count(&where_clause).await?;
+
+        Ok(Batch {
+            offset: params.offset,
+            limit: params.limit,
+            rows: res,
+            total: count,
+        })
     }
 
     pub async fn get(&self, id: i64) -> crate::error::Result<Ebook> {

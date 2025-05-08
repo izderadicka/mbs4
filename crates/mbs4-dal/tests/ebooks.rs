@@ -71,21 +71,24 @@ pub async fn test_ebooks() {
         ..Default::default()
     };
     let all = repo.list(params).await.unwrap();
-    assert_eq!(all.len(), 1);
-    assert_eq!(all[0].title, "Kniha knih");
-    assert_eq!(all[0].series.as_ref().unwrap().title, "Serie");
-    assert_eq!(all[0].language.name, "Czech");
-    assert_eq!(all[0].authors.as_ref().unwrap().len(), 3);
+    assert_eq!(all.rows.len(), 1);
+    assert_eq!(all.total, 1);
+    assert_eq!(all.rows[0].title, "Kniha knih");
+    assert_eq!(all.rows[0].series.as_ref().unwrap().title, "Serie");
+    assert_eq!(all.rows[0].language.name, "Czech");
+    assert_eq!(all.rows[0].authors.as_ref().unwrap().len(), 3);
 
     let author_ebooks = repo
         .list_by_author(ListingParams::default(), 2)
         .await
         .unwrap();
-    assert_eq!(author_ebooks.len(), 1);
+    assert_eq!(author_ebooks.rows.len(), 1);
+    assert_eq!(author_ebooks.total, 1);
 
     let series_ebooks = repo
         .list_by_series(ListingParams::default(), 1)
         .await
         .unwrap();
-    assert_eq!(series_ebooks.len(), 1);
+    assert_eq!(series_ebooks.rows.len(), 1);
+    assert_eq!(series_ebooks.total, 1);
 }
