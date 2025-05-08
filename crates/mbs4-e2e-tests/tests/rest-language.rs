@@ -1,15 +1,17 @@
-use mbs4_dal::language::{Language, LanguageShort};
-use mbs4_e2e_tests::{TestUser, launch_env, prepare_env};
-use reqwest::Url;
+use std::collections::HashMap;
+
+use mbs4_dal::language::Language;
+use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
+use serde_json::json;
 use tracing::info;
 use tracing_test::traced_test;
 
-fn create_language(name: &str, code: &str, version: Option<i64>) -> serde_json::Value {
-    match version {
-        Some(v) => serde_json::json!({"name":name,"code":code,"version":v}),
-        None => serde_json::json!({"name":name,"code":code}),
-    }
-}
+// fn create_language(name: &str, code: &str, version: Option<i64>) -> serde_json::Value {
+//     match version {
+//         Some(v) => serde_json::json!({"name":name,"code":code,"version":v}),
+//         None => serde_json::json!({"name":name,"code":code}),
+//     }
+// }
 
 #[tokio::test]
 #[traced_test]
@@ -18,7 +20,7 @@ async fn test_paging() {
 
     let base_url = args.base_url.clone();
 
-    let mut count = 0;
+    let mut count: u64 = 0;
     let conn = mbs4_dal::new_pool(&args.database_url).await.unwrap();
     let mut transaction = conn.begin().await.unwrap();
 
@@ -46,13 +48,17 @@ async fn test_paging() {
     let response = client.get(count_url).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let count: u64 = response.json().await.unwrap();
-    assert_eq!(count, count as u64);
+    let total: u64 = response.json().await.unwrap();
+    assert_eq!(total, count);
+    let num_pages = (total as f64 / 50.0).ceil() as u64;
 
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let page: Vec<LanguageShort> = response.json().await.unwrap();
+    let json_result: serde_json::Value = response.json().await.unwrap();
+    let page_no: u64 = json_result.get("page").unwrap().as_u64().unwrap();
+    assert_eq!(1, page_no);
+    let page = json_result.get("rows").unwrap().as_array().unwrap();
     assert_eq!(100, page.len());
 
     let get_page = async |page: u64| {
@@ -62,27 +68,25 @@ async fn test_paging() {
         let response = client.get(page_url).send().await.unwrap();
         info! {"Response: {:#?}", response};
         assert!(response.status().is_success());
-        let page: Vec<LanguageShort> = response.json().await.unwrap();
-        page
+        let res: serde_json::Value = response.json().await.unwrap();
+        let page_no: u64 = res.get("page").unwrap().as_u64().unwrap();
+        assert_eq!(page, page_no);
+        let total: u64 = res.get("total").unwrap().as_u64().unwrap();
+        assert_eq!(num_pages, total);
+        res.get("rows").unwrap().as_array().unwrap().to_vec()
     };
 
-    let page: Vec<LanguageShort> = get_page(2).await;
+    let page: Vec<serde_json::Value> = get_page(2).await;
     assert_eq!(50, page.len());
-    assert_eq!("by", page[0].code);
+    let c: &str = page[0].get("code").unwrap().as_str().unwrap();
+    assert_eq!("by", c);
 
     let page = get_page(1).await;
     assert_eq!(50, page.len());
-    assert_eq!("aa", page[0].code);
-    assert_eq!("bx", page[49].code);
-}
-
-fn extend_url(api_url: &Url, segment: impl ToString) -> Url {
-    let mut record_url = api_url.clone();
-    record_url
-        .path_segments_mut()
-        .unwrap()
-        .push(&segment.to_string());
-    record_url
+    let c: &str = page[0].get("code").unwrap().as_str().unwrap();
+    assert_eq!("aa", c);
+    let c: &str = page[49].get("code").unwrap().as_str().unwrap();
+    assert_eq!("bx", c);
 }
 
 #[tokio::test]
@@ -102,7 +106,7 @@ async fn test_languages() {
         ("Russian", "ru"),
     ];
     for (name, code) in langs.iter() {
-        let l = create_language(name, code, None);
+        let l = json!({"name":name,"code":code});
         let response = client.post(api_url.clone()).json(&l).send().await.unwrap();
         info!("Response: {:#?}", response);
         assert!(response.status().is_success());
@@ -112,11 +116,17 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<LanguageShort> = response.json().await.unwrap();
+    let page: HashMap<String, serde_json::Value> = response.json().await.unwrap();
+    println!("Page: {:#?}", page);
+    let stored_langs = page.get("rows").unwrap().as_array().unwrap();
+    let total = page.get("total").unwrap().as_u64().unwrap();
+    let page = page.get("page").unwrap().as_u64().unwrap();
     assert_eq!(langs.len(), stored_langs.len());
-
-    assert_eq!(stored_langs[3].name, "Russian");
-    let id = stored_langs[3].id;
+    assert_eq!(1, total);
+    assert_eq!(1, page);
+    let name: &str = stored_langs[3].get("name").unwrap().as_str().unwrap();
+    assert_eq!("Russian", name);
+    let id: i64 = stored_langs[3].get("id").unwrap().as_i64().unwrap();
     info!("ID: {}", id);
 
     let record_url = extend_url(&api_url, id);
@@ -128,7 +138,8 @@ async fn test_languages() {
     let rec: Language = response.json().await.unwrap();
     assert_eq!(rec.name, "Russian");
 
-    let update_rec = create_language("Porussky", &rec.code, Some(rec.version));
+    let update_rec =
+        json!({"id":id, "name":"Porussky", "code": &rec.code, "version":Some(rec.version)});
     let response = client
         .put(record_url.clone())
         .json(&update_rec)
@@ -141,7 +152,8 @@ async fn test_languages() {
     assert_eq!(new_rec.name, "Porussky");
     assert_eq!(new_rec.version, rec.version + 1);
 
-    let update_rec = create_language("Porusskij", &rec.code, Some(rec.version));
+    let update_rec =
+        json!({"id":id, "name":"Porussky", "code": &rec.code, "version":Some(rec.version)});
     let response = client
         .put(record_url.clone())
         .json(&update_rec)
@@ -162,6 +174,7 @@ async fn test_languages() {
     let response = client.get(api_url.clone()).send().await.unwrap();
     info! {"Response: {:#?}", response};
     assert!(response.status().is_success());
-    let stored_langs: Vec<LanguageShort> = response.json().await.unwrap();
+    let page: HashMap<String, serde_json::Value> = response.json().await.unwrap();
+    let stored_langs = page.get("rows").unwrap().as_array().unwrap();
     assert_eq!(langs.len() - 1, stored_langs.len());
 }

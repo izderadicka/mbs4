@@ -1,7 +1,11 @@
+pub mod author;
+pub mod ebook;
 pub mod error;
 pub mod format;
 pub mod genre;
 pub mod language;
+pub mod series;
+pub mod source;
 pub mod user;
 
 use std::fmt::Display;
@@ -13,9 +17,11 @@ use sqlx::sqlite::SqlitePoolOptions;
 use crate::error::Result;
 
 pub type ChosenDB = sqlx::Sqlite;
+pub type ChosenRow = <crate::ChosenDB as sqlx::Database>::Row;
 pub type Pool = sqlx::Pool<ChosenDB>;
 
 pub const MAX_LIMIT: usize = 10_000;
+pub const DEFAULT_PAGE_SIZE: i64 = 100;
 
 pub async fn new_pool(database_url: &str) -> Result<Pool, Error> {
     let pool = SqlitePoolOptions::new()
@@ -59,7 +65,7 @@ impl Default for ListingParams {
     fn default() -> Self {
         Self {
             offset: 0,
-            limit: MAX_LIMIT as i64,
+            limit: DEFAULT_PAGE_SIZE,
             order: None,
         }
     }
@@ -70,6 +76,14 @@ impl ListingParams {
         Self {
             offset,
             limit,
+            order: None,
+        }
+    }
+
+    pub fn new_unpaged() -> Self {
+        Self {
+            offset: 0,
+            limit: MAX_LIMIT as i64,
             order: None,
         }
     }
@@ -95,7 +109,28 @@ impl ListingParams {
                     .map(|o| o.join(", "))
             })
             .transpose()?
+            .map(|o| {
+                if o.is_empty() {
+                    o
+                } else {
+                    format!("ORDER BY {}", o)
+                }
+            })
             .unwrap_or_default();
         Ok(ordering)
     }
+}
+
+pub struct Batch<T> {
+    pub offset: i64,
+    pub limit: i64,
+    pub total: u64,
+    pub rows: Vec<T>,
+}
+
+pub trait FromRowPrefixed<'r, R>: Sized
+where
+    R: sqlx::Row,
+{
+    fn from_row_prefixed(row: &'r R) -> Result<Self, sqlx::Error>;
 }

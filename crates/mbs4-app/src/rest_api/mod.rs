@@ -1,9 +1,16 @@
 use garde::Validate;
-use mbs4_dal::ListingParams;
+use mbs4_dal::{Batch, ListingParams};
+use serde::Serialize;
 
 use crate::error::{ApiError, ApiResult};
 
+pub mod author;
+pub mod ebook;
+pub mod format;
+pub mod genre;
 pub mod language;
+pub mod series;
+pub mod source;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize)]
 #[garde(allow_unvalidated)]
@@ -61,11 +68,47 @@ impl Paging {
             order,
         })
     }
+
+    pub fn page_size(&self, default_page_size: u32) -> u32 {
+        self.page_size.unwrap_or(default_page_size)
+    }
+}
+
+#[derive(Serialize)]
+pub struct Page<T: Serialize> {
+    page: u32,
+    page_size: u32,
+    total: u32,
+    rows: Vec<T>,
+}
+
+impl<T> Page<T>
+where
+    T: Serialize,
+{
+    pub fn try_from_batch(
+        batch: Batch<T>,
+        page_size: u32,
+    ) -> Result<Self, std::num::TryFromIntError> {
+        Ok(Self {
+            page: u32::try_from(batch.offset)? / page_size + 1,
+            page_size,
+            total: u32::try_from(
+                (u64::try_from(batch.total)? + page_size as u64 - 1) / page_size as u64,
+            )?,
+            rows: batch.rows,
+        })
+    }
+
+    pub fn from_batch(batch: Batch<T>, page_size: u32) -> Self {
+        Self::try_from_batch(batch, page_size).expect("Failed to convert batch to page")
+        // As we control the batch, this should never fail
+    }
 }
 
 #[macro_export]
 macro_rules! crud_api {
-    ($repository:ty, $create_type:ty) => {
+    ($repository:ty, $create_type:ty, $update_type:ty) => {
         crate::repository_from_request!($repository);
         pub mod crud_api {
             use super::*;
@@ -78,7 +121,7 @@ macro_rules! crud_api {
             };
             use axum_valid::Garde;
             use http::StatusCode;
-            use tracing::debug;
+            // use tracing::debug;
             pub async fn create(
                 repository: $repository,
                 Garde(Json(payload)): Garde<Json<$create_type>>,
@@ -92,10 +135,14 @@ macro_rules! crud_api {
                 repository: $repository,
                 Garde(Query(paging)): Garde<Query<Paging>>,
             ) -> ApiResult<impl IntoResponse> {
-                debug!("Paging: {:#?}", paging);
+                let default_page_size: u32 = 100;
+                let page_size = paging.page_size(default_page_size);
                 let listing_params = paging.into_listing_params(100)?;
-                let users = repository.list(listing_params).await?;
-                Ok((StatusCode::OK, Json(users)))
+                let batch = repository.list(listing_params).await?;
+                Ok((
+                    StatusCode::OK,
+                    Json(crate::rest_api::Page::from_batch(batch, page_size)),
+                ))
             }
 
             pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {
@@ -120,7 +167,7 @@ macro_rules! crud_api {
             pub async fn update(
                 Path(id): Path<i64>,
                 repository: $repository,
-                Garde(Json(payload)): Garde<Json<$create_type>>,
+                Garde(Json(payload)): Garde<Json<$update_type>>,
             ) -> ApiResult<impl IntoResponse> {
                 let record = repository.update(id, payload).await?;
 
@@ -135,6 +182,24 @@ macro_rules! crud_api {
 
                 Ok((StatusCode::NO_CONTENT, ()))
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! value_router {
+    () => {
+        pub fn router() -> axum::Router<crate::state::AppState> {
+            use crate::auth::token::RequiredRolesLayer;
+            use axum::routing::{delete, get, post};
+            use mbs4_types::claim::Role;
+            axum::Router::new()
+                .route("/", post(crud_api::create))
+                .route("/{id}", delete(crud_api::delete).put(crud_api::update))
+                .layer(RequiredRolesLayer::new([Role::Admin]))
+                .route("/", get(crud_api::list))
+                .route("/count", get(crud_api::count))
+                .route("/{id}", get(crud_api::get))
         }
     };
 }
