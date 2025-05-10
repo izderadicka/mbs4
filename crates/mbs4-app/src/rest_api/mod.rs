@@ -114,8 +114,9 @@ macro_rules! crud_api {
             use super::*;
             use crate::error::ApiResult;
             use crate::rest_api::Paging;
+            use crate::state::AppState;
             use axum::{
-                extract::{Path, Query},
+                extract::{Path, Query, State},
                 response::IntoResponse,
                 Json,
             };
@@ -133,11 +134,12 @@ macro_rules! crud_api {
 
             pub async fn list(
                 repository: $repository,
+                State(state): State<AppState>,
                 Garde(Query(paging)): Garde<Query<Paging>>,
             ) -> ApiResult<impl IntoResponse> {
-                let default_page_size: u32 = 100;
+                let default_page_size: u32 = state.config().default_page_size;
                 let page_size = paging.page_size(default_page_size);
-                let listing_params = paging.into_listing_params(100)?;
+                let listing_params = paging.into_listing_params(default_page_size)?;
                 let batch = repository.list(listing_params).await?;
                 Ok((
                     StatusCode::OK,
@@ -198,6 +200,7 @@ macro_rules! value_router {
                 .route("/{id}", delete(crud_api::delete).put(crud_api::update))
                 .layer(RequiredRolesLayer::new([Role::Admin]))
                 .route("/", get(crud_api::list))
+                .route("/all", get(crud_api::list_all))
                 .route("/count", get(crud_api::count))
                 .route("/{id}", get(crud_api::get))
         }

@@ -76,6 +76,7 @@ pub struct AppConfig {
     pub base_url: Url,
     pub file_store_path: PathBuf,
     pub upload_limit_mb: usize,
+    pub default_page_size: u32,
 }
 
 pub struct AppStateVolatile {}

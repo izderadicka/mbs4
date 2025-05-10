@@ -1,43 +1,21 @@
-use mbs4_dal::ebook::EbookRepository;
+use mbs4_dal::ebook::{CreateEbook, EbookRepository, UpdateEbook};
+use mbs4_types::claim::Role;
 
-use crate::state::AppState;
+use crate::{auth::token::RequiredRolesLayer, crud_api, state::AppState};
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
-crate::repository_from_request!(EbookRepository);
-mod crud_api {
-    use super::*;
-    use crate::rest_api::Paging;
-    use crate::{error::ApiResult, rest_api::Page};
-    use axum::{
-        extract::{Path, Query},
-        response::IntoResponse,
-        Json,
-    };
-    use axum_valid::Garde;
-    use http::StatusCode;
-    pub async fn list(
-        repository: EbookRepository,
-        Garde(Query(paging)): Garde<Query<Paging>>,
-    ) -> ApiResult<impl IntoResponse> {
-        let default_page_size: u32 = 100;
-        let page_size = paging.page_size(default_page_size);
-        let listing_params = paging.into_listing_params(default_page_size)?;
-        let users = repository.list(listing_params).await?;
-        Ok((StatusCode::OK, Json(Page::from_batch(users, page_size))))
-    }
+// crate::repository_from_request!(EbookRepository);
 
-    pub async fn get(
-        Path(id): Path<i64>,
-        repository: EbookRepository,
-    ) -> ApiResult<impl IntoResponse> {
-        let record = repository.get(id).await?;
-
-        Ok((StatusCode::OK, Json(record)))
-    }
-}
+crud_api!(EbookRepository, CreateEbook, UpdateEbook);
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
+        .route("/{id}", delete(crud_api::delete))
+        .layer(RequiredRolesLayer::new([Role::Admin]))
+        .route("/", post(crud_api::create))
+        .route("/{id}", put(crud_api::update))
+        .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/", get(crud_api::list))
+        .route("/count", get(crud_api::count))
         .route("/{id}", get(crud_api::get))
 }

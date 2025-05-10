@@ -76,6 +76,14 @@ pub struct ServerConfig {
         help = "Maximum upload size in MB"
     )]
     pub upload_limit_mb: usize,
+
+    #[arg(
+        long,
+        env = "MBS4_DEFAULT_PAGE_SIZE",
+        default_value = "100",
+        help = "Default page size"
+    )]
+    pub default_page_size: u32,
 }
 
 impl ServerConfig {

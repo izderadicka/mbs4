@@ -2,43 +2,8 @@ use crate::{
     Batch, ChosenRow, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
     language::LanguageShort, series::SeriesShort,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Row, query::QueryAs};
-
-// #[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
-// pub struct Ebook {
-//     #[spec(id)]
-//     pub id: i64,
-
-//     #[garde(length(min = 1, max = 511))]
-//     pub title: String,
-
-//     #[garde(length(min = 1, max = 5000))]
-//     #[omit(short, sort)]
-//     pub description: Option<String>,
-
-//     #[garde(length(min = 1, max = 1023))]
-//     pub cover: Option<String>,
-
-//     pub base_dir: String,
-
-//     #[garde(range(min = 0))]
-//     pub series_id: Option<i64>,
-//     pub series_index: Option<u32>,
-
-//     #[garde(range(min = 0))]
-//     pub language_id: Option<i64>,
-
-//     #[garde(range(min = 0))]
-//     #[spec(version)]
-//     pub version: i64,
-//     #[spec(created_by)]
-//     pub created_by: Option<String>,
-//     #[spec(created)]
-//     pub created: time::PrimitiveDateTime,
-//     #[spec(modified)]
-//     pub modified: time::PrimitiveDateTime,
-// }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Ebook {
@@ -64,6 +29,47 @@ pub struct Ebook {
     pub created_by: Option<String>,
     pub created: time::PrimitiveDateTime,
     pub modified: time::PrimitiveDateTime,
+}
+
+#[derive(Debug, Deserialize, Clone, garde::Validate)]
+#[garde(allow_unvalidated)]
+pub struct CreateEbook {
+    #[garde(length(min = 1, max = 255))]
+    pub title: String,
+    #[garde(length(min = 1, max = 5000))]
+    pub description: Option<String>,
+    #[garde(length(min = 1, max = 511))]
+    pub cover: Option<String>,
+
+    pub series_id: Option<i64>,
+    #[garde(range(min = 0))]
+    pub series_index: Option<u32>,
+    pub language_id: i64,
+
+    pub authors: Option<Vec<i64>>,
+    pub genres: Option<Vec<i64>>,
+}
+
+#[derive(Debug, Deserialize, Clone, garde::Validate)]
+#[garde(allow_unvalidated)]
+pub struct UpdateEbook {
+    pub id: i64,
+    #[garde(length(min = 1, max = 255))]
+    pub title: String,
+    #[garde(length(min = 1, max = 5000))]
+    pub description: Option<String>,
+    #[garde(length(min = 1, max = 511))]
+    pub cover: Option<String>,
+
+    pub series_id: Option<i64>,
+    #[garde(range(min = 0))]
+    pub series_index: Option<u32>,
+    pub language_id: i64,
+
+    pub authors: Option<Vec<i64>>,
+    pub genres: Option<Vec<i64>>,
+    #[garde(range(min = 0))]
+    pub version: i64,
 }
 
 impl sqlx::FromRow<'_, ChosenRow> for Ebook {
@@ -233,6 +239,12 @@ where
         self._list(params, None).await
     }
 
+    pub async fn list_all(&self) -> crate::error::Result<Vec<EbookShort>> {
+        self.list(crate::ListingParams::new_unpaged())
+            .await
+            .map(|b| b.rows)
+    }
+
     pub async fn list_by_author(
         &self,
         params: crate::ListingParams,
@@ -385,5 +397,26 @@ where
         );
 
         Ok(record)
+    }
+
+    pub async fn create(&self, payload: CreateEbook) -> crate::error::Result<Ebook> {
+        todo!()
+    }
+
+    pub async fn update(&self, id: i64, payload: UpdateEbook) -> crate::error::Result<Ebook> {
+        todo!()
+    }
+
+    pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
+        let res = sqlx::query("DELETE FROM ebook WHERE id = ?")
+            .bind(id)
+            .execute(&self.executor)
+            .await?;
+
+        if res.rows_affected() == 0 {
+            Err(crate::error::Error::RecordNotFound("Language".to_string()))
+        } else {
+            Ok(())
+        }
     }
 }

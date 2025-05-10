@@ -107,11 +107,11 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
         tokio::fs::create_dir_all(&files_path).await?;
         info!("Created directory for ebook files");
     }
-    let upload_limit_mb = config.upload_limit_mb;
     let app_config = AppConfig {
         base_url: config.base_url.clone(),
         file_store_path: files_path,
-        upload_limit_mb,
+        upload_limit_mb: config.upload_limit_mb,
+        default_page_size: config.default_page_size,
     };
 
     let pool = mbs4_dal::new_pool(&config.database_url).await?;
