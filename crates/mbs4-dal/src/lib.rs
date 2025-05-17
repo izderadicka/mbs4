@@ -55,6 +55,7 @@ impl AsRef<str> for Order {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ListingParams {
     pub offset: i64,
     pub limit: i64,

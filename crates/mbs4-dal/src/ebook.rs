@@ -196,7 +196,14 @@ pub struct EbookRepositoryImpl<E> {
     executor: E,
 }
 
-const VALID_ORDER_FIELDS: &[&str] = &["e.title", "s.title", "series_index", "created", "modified"];
+const VALID_ORDER_FIELDS: &[&str] = &[
+    "e.title",
+    "s.title",
+    "series_index",
+    "created",
+    "modified",
+    "e.id",
+];
 
 pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<crate::ChosenDB>>;
 
