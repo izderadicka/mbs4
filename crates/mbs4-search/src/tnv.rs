@@ -43,7 +43,7 @@ impl TantivyIndexer {
 }
 
 impl Indexer for TantivyIndexer {
-    fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>) -> Result<()> {
+    fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> Result<()> {
         for ebook in items {
             let mut doc = TantivyDocument::new();
             doc.add_i64(self.fields.id, ebook.id);

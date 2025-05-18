@@ -1,13 +1,12 @@
 use anyhow::Result;
 use clap::Parser as _;
 use mbs4_dal;
-use mbs4_search::tnv::TantivySearcher;
-use mbs4_search::{Indexer as _, SearchResult, Searcher as _, tnv};
+use mbs4_search::{Indexer as _, SearchResult, Searcher as _, sql};
 
 #[derive(clap::Parser)]
 struct Args {
-    #[arg(long, default_value_t = String::from("test-index"), help = "Index directory")]
-    index_dir: String,
+    #[arg(long, default_value_t = String::from("test.db"), help = "Index db file path")]
+    index_db: String,
 
     #[command(subcommand)]
     command: Command,
@@ -25,7 +24,7 @@ enum Command {
     },
 }
 
-async fn fill_index(mut indexer: tnv::TantivyIndexer, db_path: &str) -> Result<()> {
+async fn fill_index(mut indexer: sql::SqlIndexer, db_path: &str) -> Result<()> {
     let pool = mbs4_dal::new_pool(db_path).await?;
 
     let repository = mbs4_dal::ebook::EbookRepository::new(pool);
@@ -48,7 +47,7 @@ async fn fill_index(mut indexer: tnv::TantivyIndexer, db_path: &str) -> Result<(
             ebooks.push(ebook);
         }
 
-        indexer.index(ebooks)?;
+        indexer.index(ebooks, false)?;
         indexed += page.rows.len();
         page_no += 1;
 
@@ -60,7 +59,7 @@ async fn fill_index(mut indexer: tnv::TantivyIndexer, db_path: &str) -> Result<(
     Ok(())
 }
 
-fn search(searcher: TantivySearcher, query: &str) -> Result<Vec<SearchResult>> {
+fn search(searcher: sql::SqlSearcher, query: &str) -> Result<Vec<SearchResult>> {
     searcher.search(query, 10)
 }
 
@@ -68,7 +67,7 @@ fn search(searcher: TantivySearcher, query: &str) -> Result<Vec<SearchResult>> {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let (indexer, searcher) = tnv::init(&args.index_dir)?;
+    let (indexer, searcher) = sql::init(&args.index_db)?;
 
     match args.command {
         Command::FillIndex { database_path } => fill_index(indexer, &database_path).await?,

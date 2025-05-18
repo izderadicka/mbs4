@@ -1,6 +1,7 @@
+pub mod sql;
 pub mod tnv;
 
-use anyhow::Result;
+pub use anyhow::Result;
 use mbs4_dal::ebook::Ebook;
 
 #[derive(Debug)]
@@ -10,7 +11,7 @@ pub struct SearchResult {
 }
 
 pub trait Indexer {
-    fn index(&mut self, items: Vec<Ebook>) -> Result<()>;
+    fn index(&mut self, items: Vec<Ebook>, update: bool) -> Result<()>;
 }
 
 pub trait Searcher {
