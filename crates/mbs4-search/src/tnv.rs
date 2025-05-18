@@ -45,6 +45,10 @@ impl TantivyIndexer {
 impl Indexer for TantivyIndexer {
     fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> Result<()> {
         for ebook in items {
+            if update {
+                let term = Term::from_field_i64(self.fields.id, ebook.id);
+                self.writer.delete_term(term);
+            }
             let mut doc = TantivyDocument::new();
             doc.add_i64(self.fields.id, ebook.id);
             doc.add_text(self.fields.title, &ebook.title);
