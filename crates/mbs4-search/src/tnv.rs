@@ -1,12 +1,15 @@
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, mpsc};
 
-use crate::{Indexer, Result, SearchResult, Searcher};
+use crate::{Indexer, IndexerResult, IndexingJob, Result, SearchResult, Searcher};
+use mbs4_dal::ebook::Ebook;
 use tantivy::collector::TopDocs;
 use tantivy::query::{Query, QueryParser, RegexQuery};
 use tantivy::tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{Index, IndexWriter, ReloadPolicy};
 use tantivy::{IndexReader, schema::*};
+use tracing::error;
 
 #[derive(Clone)]
 struct Fields {
@@ -29,21 +32,68 @@ impl Fields {
 
 const WRITER_MEMORY_LIMIT: usize = 50_000_000;
 
-pub struct TantivyIndexer {
+struct IndexerRunner {
     writer: IndexWriter,
     fields: Fields,
+    queue: mpsc::Receiver<IndexingJob>,
+}
+
+pub struct TantivyIndexer {
+    sender: mpsc::Sender<IndexingJob>,
 }
 
 impl TantivyIndexer {
     pub fn new(index: &Index) -> Result<Self> {
         let writer = index.writer(WRITER_MEMORY_LIMIT)?;
         let fields = Fields::new(&index.schema())?;
-        Ok(TantivyIndexer { writer, fields })
+        let (sender, receiver) = mpsc::channel();
+        let runner = IndexerRunner {
+            writer,
+            fields,
+            queue: receiver,
+        };
+        std::thread::spawn(move || {
+            runner.run();
+        });
+        Ok(TantivyIndexer { sender })
+    }
+
+    pub fn stop(&self) {
+        if let Err(e) = self.sender.send(IndexingJob::Stop) {
+            error!("Failed to send stop command: {e}");
+        }
     }
 }
 
-impl Indexer for TantivyIndexer {
-    fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> Result<()> {
+impl IndexerRunner {
+    fn run(mut self) {
+        loop {
+            let job = match self.queue.recv() {
+                Ok(job) => job,
+                Err(e) => {
+                    error!("Failed to receive job: {e}");
+                    break;
+                }
+            };
+            match job {
+                IndexingJob::Stop => break,
+                IndexingJob::Add {
+                    items,
+                    update,
+                    sender,
+                } => {
+                    let res = self.index(items, update);
+                    if let Err(ref e) = res {
+                        error!("Indexing failed: {e}");
+                    }
+                    if let Err(_) = sender.send(res) {
+                        error!("Failed to send indexing result");
+                    }
+                }
+            }
+        }
+    }
+    fn index(&mut self, items: Vec<Ebook>, update: bool) -> Result<()> {
         for ebook in items {
             if update {
                 let term = Term::from_field_i64(self.fields.id, ebook.id);
@@ -73,21 +123,49 @@ impl Indexer for TantivyIndexer {
     }
 }
 
+impl Indexer for TantivyIndexer {
+    fn index(&mut self, items: Vec<Ebook>, update: bool) -> IndexerResult {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.sender.send(IndexingJob::Add {
+            items,
+            update,
+            sender,
+        })?;
+        Ok(receiver)
+    }
+
+    fn delete(&mut self, id: Vec<i64>) -> IndexerResult {
+        todo!()
+    }
+
+    fn reset(&mut self) -> IndexerResult {
+        todo!()
+    }
+}
+
 pub struct TantivySearcher {
-    inner: TantivySearcherInner,
+    inner: Arc<TantivySearcherInner>,
 }
 
 impl TantivySearcher {
     pub fn new(index: &Index) -> Result<Self> {
         Ok(TantivySearcher {
-            inner: TantivySearcherInner::new(index)?,
+            inner: Arc::new(TantivySearcherInner::new(index)?),
         })
     }
 }
 
 impl Searcher for TantivySearcher {
-    fn search(&self, query: &str, num_results: usize) -> Result<Vec<SearchResult>> {
-        self.inner.search(query, num_results)
+    async fn search<S: Into<String>>(
+        &self,
+        query: S,
+        num_results: usize,
+    ) -> Result<Vec<SearchResult>> {
+        let indexer = self.inner.clone();
+        let query = query.into();
+        let res =
+            tokio::task::spawn_blocking(move || indexer.search(&query, num_results)).await??;
+        Ok(res)
     }
 }
 

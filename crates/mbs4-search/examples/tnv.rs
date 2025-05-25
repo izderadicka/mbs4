@@ -48,7 +48,8 @@ async fn fill_index(mut indexer: tnv::TantivyIndexer, db_path: &str) -> Result<(
             ebooks.push(ebook);
         }
 
-        indexer.index(ebooks, false)?;
+        let res = indexer.index(ebooks, false)?;
+        res.await??;
         indexed += page.rows.len();
         page_no += 1;
 
@@ -60,12 +61,13 @@ async fn fill_index(mut indexer: tnv::TantivyIndexer, db_path: &str) -> Result<(
     Ok(())
 }
 
-fn search(searcher: TantivySearcher, query: &str) -> Result<Vec<SearchResult>> {
-    searcher.search(query, 10)
+async fn search(searcher: TantivySearcher, query: &str) -> Result<Vec<SearchResult>> {
+    searcher.search(query, 10).await
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
 
     let (indexer, searcher) = tnv::init(&args.index_dir)?;
@@ -74,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
         Command::FillIndex { database_path } => fill_index(indexer, &database_path).await?,
         Command::Search { query } => {
             let start = std::time::Instant::now();
-            let res = search(searcher, &query)?;
+            let res = search(searcher, &query).await?;
             let enlapsed = start.elapsed();
             println!("Results: {:#?}", res);
             println!("Enlapsed: {} ms", enlapsed.as_millis());
