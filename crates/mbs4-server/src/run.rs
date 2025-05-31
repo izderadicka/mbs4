@@ -5,6 +5,7 @@ use crate::error::Result;
 use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
 use futures::FutureExt;
+use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
 use mbs4_app::store::store_router;
 use mbs4_app::{
@@ -66,6 +67,7 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/api/source", mbs4_app::rest_api::source::router())
         .nest("/api/author", mbs4_app::rest_api::author::router())
         .nest("/api/ebook", mbs4_app::rest_api::ebook::router())
+        .nest("/search", mbs4_app::search::router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())
@@ -115,11 +117,13 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     };
 
     let pool = mbs4_dal::new_pool(&config.database_url).await?;
+
     // Its OK here to block, as it's short and called only on init;
 
     let secret = read_secret(&data_dir).await?;
     let tokens = mbs4_auth::token::TokenManager::new(&secret, config.token_validity);
-    Ok(AppState::new(oidc_config, app_config, pool, tokens))
+    let search = Search::new(&config.index_path, pool.clone()).await?;
+    Ok(AppState::new(oidc_config, app_config, pool, tokens, search))
 }
 
 async fn read_secret(data_dir: &Path) -> Result<Vec<u8>, std::io::Error> {

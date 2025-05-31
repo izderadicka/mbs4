@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser as _;
 use mbs4_dal;
-use mbs4_search::{Indexer as _, SearchResult, Searcher as _, sql};
+use mbs4_search::{SearchItem, Searcher as _, sql};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -24,39 +24,12 @@ enum Command {
     },
 }
 
-async fn fill_index(mut indexer: sql::SqlIndexer, db_path: &str) -> Result<()> {
+async fn fill_index(indexer: sql::SqlIndexer, db_path: &str) -> Result<()> {
     let pool = mbs4_dal::new_pool(db_path).await?;
-
-    let repository = mbs4_dal::ebook::EbookRepository::new(pool);
-    const PAGE_SIZE: i64 = 1000;
-    let mut page_no = 0;
-    let params = mbs4_dal::ListingParams {
-        limit: PAGE_SIZE,
-        offset: 0,
-        order: Some(vec![mbs4_dal::Order::Asc("e.id".to_string())]),
-    };
-
-    let mut indexed = 0;
-    loop {
-        let mut page_params = params.clone();
-        page_params.offset = page_no * PAGE_SIZE;
-        let page = repository.list_ids(page_params).await?;
-        let ebooks = repository.map_ids_to_ebooks(&page.rows).await?;
-
-        let res = indexer.index(ebooks, false)?;
-        res.await??;
-        indexed += page.rows.len();
-        page_no += 1;
-
-        if indexed >= page.total as usize {
-            break;
-        }
-    }
-
-    Ok(())
+    sql::initial_index_fill(indexer, pool).await
 }
 
-async fn search(searcher: sql::SqlSearcher, query: &str) -> Result<Vec<SearchResult>> {
+async fn search(searcher: sql::SqlSearcher, query: &str) -> Result<Vec<SearchItem>> {
     searcher.search(query, 10).await
 }
 

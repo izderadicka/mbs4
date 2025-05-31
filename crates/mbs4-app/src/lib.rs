@@ -1,10 +1,10 @@
 pub mod auth;
 pub mod error;
 pub mod rest_api;
+pub mod search;
 pub mod state;
 pub mod store;
 pub mod user;
-// pub mod validate;
 
 #[macro_export]
 macro_rules! repository_from_request {

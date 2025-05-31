@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{error::Result, store::file_store::FileStore};
+use crate::{error::Result, search::Search, store::file_store::FileStore};
 use axum::extract::FromRef;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
@@ -21,6 +21,7 @@ impl AppState {
         app_config: AppConfig,
         pool: Pool,
         tokens: TokenManager,
+        search: Search,
     ) -> Self {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
@@ -32,6 +33,7 @@ impl AppState {
                 pool,
                 store,
                 tokens,
+                search,
             }),
         }
     }
@@ -60,6 +62,10 @@ impl AppState {
     pub fn tokens(&self) -> &TokenManager {
         &self.state.tokens
     }
+
+    pub fn search(&self) -> &Search {
+        &self.state.search
+    }
 }
 
 struct AppStateInner {
@@ -70,6 +76,7 @@ struct AppStateInner {
     store: FileStore,
     #[allow(dead_code)]
     state: RwLock<AppStateVolatile>,
+    search: Search,
 }
 
 pub struct AppConfig {

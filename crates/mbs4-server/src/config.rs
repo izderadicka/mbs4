@@ -48,6 +48,14 @@ pub struct ServerConfig {
 
     #[arg(
         long,
+        default_value = "test-data/mbs4-ft-idx.db",
+        env = "MBS4_INDEX_PATH",
+        help = "Path to fulltext search index"
+    )]
+    pub index_path: PathBuf,
+
+    #[arg(
+        long,
         env = "MBS4_DATA_DIR",
         help = "Data directory, default is system default like ~/.local/share/mbs4"
     )]

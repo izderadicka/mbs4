@@ -6,6 +6,8 @@ use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
 use tracing::error;
 
+const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
+
 const CREATE_INDEX_QUERY: &str = "
 CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, series TEXT, series_id INTEGER, author TEXT, author_id TEXT);
 CREATE VIRTUAL TABLE idx USING fts5(title, series, series_id UNINDEXED, author, author_id UNINDEXED,content=docs, content_rowid=id );
@@ -23,7 +25,7 @@ CREATE TRIGGER after_update AFTER UPDATE ON docs BEGIN
 
 pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlIndexer, SqlSearcher)> {
     let db_path = index_db_path.as_ref();
-    let db_existed = db_path.exists();
+    let db_existed = tokio::fs::try_exists(db_path).await?;
     let db_url = format!(
         "{}",
         db_path
@@ -44,7 +46,7 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
         sqlx::query(CREATE_INDEX_QUERY).execute(&pool).await?;
     }
 
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (sender, receiver) = tokio::sync::mpsc::channel(INDEXING_CHANNEL_CAPACITY);
     let indexer_runner = SqlIndexerRunner {
         pool: pool.clone(),
         queue: receiver,
@@ -54,9 +56,39 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
     Ok((SqlIndexer { queue: sender }, SqlSearcher { pool }))
 }
 
+pub async fn initial_index_fill(mut indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
+    let repository = mbs4_dal::ebook::EbookRepository::new(pool);
+    const PAGE_SIZE: i64 = 1000;
+    let mut page_no = 0;
+    let params = mbs4_dal::ListingParams {
+        limit: PAGE_SIZE,
+        offset: 0,
+        order: Some(vec![mbs4_dal::Order::Asc("e.id".to_string())]),
+    };
+
+    let mut indexed = 0;
+    loop {
+        let mut page_params = params.clone();
+        page_params.offset = page_no * PAGE_SIZE;
+        let page = repository.list_ids(page_params).await?;
+        let ebooks = repository.map_ids_to_ebooks(&page.rows).await?;
+
+        let res = indexer.index(ebooks, false)?;
+        res.await??;
+        indexed += page.rows.len();
+        page_no += 1;
+
+        if indexed >= page.total as usize {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 struct SqlIndexerRunner {
     pool: sqlx::Pool<sqlx::Sqlite>,
-    queue: tokio::sync::mpsc::UnboundedReceiver<IndexingJob>,
+    queue: tokio::sync::mpsc::Receiver<IndexingJob>,
 }
 
 const LIST_SEP: &str = "; ";
@@ -183,19 +215,20 @@ impl SqlIndexerRunner {
 
 #[derive(Clone)]
 pub struct SqlIndexer {
-    queue: tokio::sync::mpsc::UnboundedSender<IndexingJob>,
+    queue: tokio::sync::mpsc::Sender<IndexingJob>,
 }
 
 impl SqlIndexer {
-    pub fn stop(&mut self) {
-        self.queue.send(IndexingJob::Stop).unwrap();
+    pub fn stop(&mut self) -> Result<()> {
+        self.queue.try_send(IndexingJob::Stop)?;
+        Ok(())
     }
 }
 
 impl Indexer for SqlIndexer {
     fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.queue.send(IndexingJob::Add {
+        self.queue.try_send(IndexingJob::Add {
             items,
             update,
             sender,
@@ -207,27 +240,28 @@ impl Indexer for SqlIndexer {
 
     fn delete(&mut self, ids: Vec<i64>) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.queue.send(IndexingJob::Delete { ids, sender })?;
+        self.queue.try_send(IndexingJob::Delete { ids, sender })?;
         Ok(receiver)
     }
 
     fn reset(&mut self) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.queue.send(IndexingJob::Reset { sender })?;
+        self.queue.try_send(IndexingJob::Reset { sender })?;
         Ok(receiver)
     }
 }
 
+#[derive(Clone)]
 pub struct SqlSearcher {
     pool: sqlx::Pool<sqlx::Sqlite>,
 }
 
-impl Searcher for SqlSearcher {
-    async fn search<S: Into<String>>(
+impl SqlSearcher {
+    async fn search_async(
         &self,
-        query: S,
+        query: &str,
         num_results: usize,
-    ) -> Result<Vec<crate::SearchResult>> {
+    ) -> Result<Vec<crate::SearchItem>> {
         let query: String = query.into();
 
         let mut rows = sqlx::query("SELECT title, series, series_id, author, author_id, rowid, rank FROM idx WHERE idx MATCH ? order by rank LIMIT ?")
@@ -270,12 +304,30 @@ impl Searcher for SqlSearcher {
                 id,
             };
 
-            results.push(crate::SearchResult {
+            results.push(crate::SearchItem {
                 score: -rank,
                 doc: res,
             });
         }
 
         Ok(results)
+    }
+}
+
+impl Searcher for SqlSearcher {
+    fn search(&self, query: &str, num_results: usize) -> crate::SearchResult {
+        let (res, sender) = crate::SearchResult::new();
+        let searcher = self.clone();
+        let query = query.to_string();
+        tokio::spawn(async move {
+            let res = searcher.search_async(&query, num_results).await;
+            if let Err(ref e) = res {
+                error!("Search failed: {e}");
+            }
+            if let Err(_) = sender.send(res) {
+                error!("Failed to send search result");
+            }
+        });
+        res
     }
 }
