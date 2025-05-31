@@ -246,6 +246,18 @@ where
         self._list(params, None).await
     }
 
+    pub async fn map_ids_to_ebooks(&self, ids: &[i64]) -> crate::error::Result<Vec<Ebook>> {
+        let mut ebooks = Vec::with_capacity(ids.len());
+        for id in ids {
+            ebooks.push(self.get(*id).await?);
+        }
+        Ok(ebooks)
+    }
+
+    pub async fn list_ids(&self, params: crate::ListingParams) -> crate::error::Result<Batch<i64>> {
+        self._list_ids(params, None).await
+    }
+
     pub async fn list_all(&self) -> crate::error::Result<Vec<EbookShort>> {
         self.list(crate::ListingParams::new_unpaged())
             .await
@@ -261,6 +273,15 @@ where
             .await
     }
 
+    pub async fn list_ids_by_author(
+        &self,
+        params: crate::ListingParams,
+        author_id: i64,
+    ) -> crate::error::Result<Batch<i64>> {
+        self._list_ids(params, Some(Where::new().author(author_id)))
+            .await
+    }
+
     pub async fn list_by_series(
         &self,
         params: crate::ListingParams,
@@ -268,6 +289,56 @@ where
     ) -> crate::error::Result<Batch<EbookShort>> {
         self._list(params, Some(Where::new().series(series_id)))
             .await
+    }
+
+    pub async fn list_ids_by_series(
+        &self,
+        params: crate::ListingParams,
+        series_id: i64,
+    ) -> crate::error::Result<Batch<i64>> {
+        self._list_ids(params, Some(Where::new().series(series_id)))
+            .await
+    }
+
+    async fn _list_ids(
+        &self,
+        params: crate::ListingParams,
+        where_clause: Option<Where>,
+    ) -> crate::error::Result<Batch<i64>> {
+        let order = params.ordering(VALID_ORDER_FIELDS)?;
+        let extra_tables = where_clause
+            .as_ref()
+            .and_then(Where::extra_tables)
+            .unwrap_or_default();
+        let where_cond = where_clause
+            .as_ref()
+            .and_then(Where::where_clause)
+            .unwrap_or_default();
+        let sql = format!(
+            r#"
+        SELECT e.id
+        FROM ebook e 
+        {extra_tables}
+        {where_cond}
+        {order}
+        LIMIT ? OFFSET ?;
+        "#
+        );
+
+        let count = self._count(&where_clause).await?;
+
+        let mut query = sqlx::query_as::<_, (i64,)>(&sql);
+        if let Some(w) = where_clause {
+            query = w.bind(query);
+        }
+        query = query.bind(params.limit).bind(params.offset);
+        let res = query.fetch_all(&self.executor).await?;
+        Ok(Batch {
+            rows: res.iter().map(|r| r.0).collect(),
+            total: count,
+            offset: params.offset,
+            limit: params.limit,
+        })
     }
 
     async fn _list(

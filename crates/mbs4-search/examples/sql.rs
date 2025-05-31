@@ -40,12 +40,8 @@ async fn fill_index(mut indexer: sql::SqlIndexer, db_path: &str) -> Result<()> {
     loop {
         let mut page_params = params.clone();
         page_params.offset = page_no * PAGE_SIZE;
-        let page = repository.list(page_params).await?;
-        let mut ebooks = Vec::with_capacity(page.rows.len());
-        for ebook in &page.rows {
-            let ebook = repository.get(ebook.id).await?;
-            ebooks.push(ebook);
-        }
+        let page = repository.list_ids(page_params).await?;
+        let ebooks = repository.map_ids_to_ebooks(&page.rows).await?;
 
         let res = indexer.index(ebooks, false)?;
         res.await??;
