@@ -2,7 +2,6 @@ use crate::{Author, BookResult, IndexingJob};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
-use serde::Serialize;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
 use tracing::error;
@@ -158,6 +157,24 @@ impl SqlIndexerRunner {
                         error!("Failed to send indexing result");
                     }
                 }
+                IndexingJob::Delete { ids, sender } => {
+                    let res = self.delete_batch(ids).await;
+                    if let Err(ref e) = res {
+                        error!("Indexing failed: {e}");
+                    }
+                    if let Err(_) = sender.send(res) {
+                        error!("Failed to send indexing result");
+                    }
+                }
+                IndexingJob::Reset { sender } => {
+                    let res = self.reset_index().await;
+                    if let Err(ref e) = res {
+                        error!("Indexing failed: {e}");
+                    }
+                    if let Err(_) = sender.send(res) {
+                        error!("Failed to send indexing result");
+                    }
+                }
                 IndexingJob::Stop => break,
             }
         }
@@ -167,6 +184,12 @@ impl SqlIndexerRunner {
 #[derive(Clone)]
 pub struct SqlIndexer {
     queue: tokio::sync::mpsc::UnboundedSender<IndexingJob>,
+}
+
+impl SqlIndexer {
+    pub fn stop(&mut self) {
+        self.queue.send(IndexingJob::Stop).unwrap();
+    }
 }
 
 impl Indexer for SqlIndexer {
@@ -183,11 +206,15 @@ impl Indexer for SqlIndexer {
     }
 
     fn delete(&mut self, ids: Vec<i64>) -> IndexerResult {
-        todo!()
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.queue.send(IndexingJob::Delete { ids, sender })?;
+        Ok(receiver)
     }
 
     fn reset(&mut self) -> IndexerResult {
-        todo!()
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.queue.send(IndexingJob::Reset { sender })?;
+        Ok(receiver)
     }
 }
 
@@ -245,7 +272,7 @@ impl Searcher for SqlSearcher {
 
             results.push(crate::SearchResult {
                 score: -rank,
-                doc: serde_json::to_string(&res).unwrap(),
+                doc: res,
             });
         }
 

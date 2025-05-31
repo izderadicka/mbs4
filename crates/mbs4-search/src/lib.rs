@@ -1,5 +1,4 @@
 pub mod sql;
-pub mod tnv;
 
 pub use anyhow::Result;
 use mbs4_dal::ebook::Ebook;
@@ -8,7 +7,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
     pub score: f32,
-    pub doc: String,
+    pub doc: BookResult,
 }
 
 pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
@@ -48,6 +47,13 @@ enum IndexingJob {
     Add {
         items: Vec<Ebook>,
         update: bool,
+        sender: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    Delete {
+        ids: Vec<i64>,
+        sender: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    Reset {
         sender: tokio::sync::oneshot::Sender<Result<()>>,
     },
 }
