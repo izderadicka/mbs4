@@ -5,7 +5,7 @@ pub use anyhow::Result;
 use mbs4_dal::ebook::Ebook;
 use serde::Serialize;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SearchResult {
     pub score: f32,
     pub doc: String,
