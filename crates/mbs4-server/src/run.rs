@@ -93,17 +93,14 @@ async fn health() -> impl IntoResponse {
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
-    let data_dir = config.data_dir()?;
+    let data_dir = config.data_dir();
     let oidc_config_file = config.oidc_config.clone().unwrap_or_else(|| {
         let path = data_dir.join("oidc-config.toml");
         path.to_string_lossy().to_string()
     });
     let oidc_config = spawn_blocking(move || OIDCConfig::load_config(&oidc_config_file)).await??;
 
-    let files_path = config
-        .files_dir
-        .clone()
-        .unwrap_or_else(|| data_dir.join("ebooks"));
+    let files_path = config.files_dir();
 
     if !files_path.is_dir() {
         tokio::fs::create_dir_all(&files_path).await?;
@@ -116,13 +113,13 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
         default_page_size: config.default_page_size,
     };
 
-    let pool = mbs4_dal::new_pool(&config.database_url).await?;
+    let pool = mbs4_dal::new_pool(&config.database_url()).await?;
 
     // Its OK here to block, as it's short and called only on init;
 
     let secret = read_secret(&data_dir).await?;
     let tokens = mbs4_auth::token::TokenManager::new(&secret, config.token_validity);
-    let search = Search::new(&config.index_path, pool.clone()).await?;
+    let search = Search::new(&config.index_path(), pool.clone()).await?;
     Ok(AppState::new(oidc_config, app_config, pool, tokens, search))
 }
 

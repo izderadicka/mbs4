@@ -21,7 +21,7 @@ async fn test_paging() {
     let base_url = args.base_url.clone();
 
     let mut count: u64 = 0;
-    let conn = mbs4_dal::new_pool(&args.database_url).await.unwrap();
+    let conn = mbs4_dal::new_pool(&args.database_url()).await.unwrap();
     let mut transaction = conn.begin().await.unwrap();
 
     for c1 in 'a'..='z' {

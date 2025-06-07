@@ -8,7 +8,7 @@ use tracing_test::traced_test;
 #[traced_test]
 async fn test_auth() {
     let (args, _config_guard) = prepare_env("test_auth").await.unwrap();
-    let pool = mbs4_dal::new_pool(&args.database_url).await.unwrap();
+    let pool = mbs4_dal::new_pool(&args.database_url()).await.unwrap();
     let user_registry = user::UserRepository::new(pool);
     let user_email = "admin@localhost";
     let user_password = "password";

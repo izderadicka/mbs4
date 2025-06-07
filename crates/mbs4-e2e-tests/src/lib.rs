@@ -94,7 +94,7 @@ pub async fn prepare_env(test_name: &str) -> Result<(ServerConfig, ConfigGuard)>
     let data_dir = dir.join("test-data");
     let (args, config_guard) = test_config(test_name, &data_dir)?;
 
-    let pool = mbs4_dal::new_pool(&args.database_url).await?;
+    let pool = mbs4_dal::new_pool(&args.database_url()).await?;
     sqlx::migrate!("../../migrations").run(&pool).await?;
     Ok((args, config_guard))
 }
