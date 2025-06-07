@@ -3,7 +3,10 @@ use crate::{
     language::LanguageShort, series::SeriesShort,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, query::QueryAs};
+use sqlx::{
+    Acquire, Executor, Row,
+    query::{self, QueryAs},
+};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Ebook {
@@ -48,6 +51,8 @@ pub struct CreateEbook {
 
     pub authors: Option<Vec<i64>>,
     pub genres: Option<Vec<i64>>,
+
+    pub created_by: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, garde::Validate)]
@@ -209,7 +214,8 @@ pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<crate::ChosenDB>>;
 
 impl<'c, E> EbookRepositoryImpl<E>
 where
-    for<'a> &'a E: sqlx::Executor<'c, Database = crate::ChosenDB>, // + sqlx::Acquire<'c, Database = crate::ChosenDB>,
+    for<'a> &'a E:
+        Executor<'c, Database = crate::ChosenDB> + Acquire<'c, Database = crate::ChosenDB>,
 {
     pub fn new(executor: E) -> Self {
         Self { executor }
@@ -478,6 +484,15 @@ where
     }
 
     pub async fn create(&self, payload: CreateEbook) -> crate::error::Result<Ebook> {
+        let mut transaction = self.executor.begin().await?;
+
+        let lang_code: String = sqlx::query_scalar("SELECT code FROM language WHERE id = ?")
+            .bind(payload.language_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+
+        let query = "INSERT INTO ebook (title, description, cover, base_dir, series_id, series_index, language_id, version, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;";
+
         todo!()
     }
 
