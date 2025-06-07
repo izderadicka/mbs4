@@ -1,5 +1,4 @@
 use phf::phf_map;
-use std::collections::HashMap;
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
@@ -13,17 +12,17 @@ fn initials(name: &str) -> String {
 
 #[derive(Debug)]
 pub struct Author<'a> {
-    first_name: Option<&'a str>,
-    last_name: &'a str,
+    pub first_name: Option<&'a str>,
+    pub last_name: &'a str,
 }
 
 #[derive(Debug)]
 pub struct Ebook<'a> {
-    title: &'a str,
-    authors: Vec<Author<'a>>,
-    language_code: &'a str,
-    series_name: Option<&'a str>,
-    series_index: Option<u32>,
+    pub title: &'a str,
+    pub authors: Vec<Author<'a>>,
+    pub language_code: &'a str,
+    pub series_name: Option<&'a str>,
+    pub series_index: Option<u32>,
 }
 
 impl<'a> Ebook<'a> {

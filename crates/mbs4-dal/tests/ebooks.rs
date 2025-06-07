@@ -36,8 +36,7 @@ INSERT INTO ebook_genres (ebook_id, genre_id) VALUES (1,3);
 
 "#;
 
-#[tokio::test]
-pub async fn test_ebooks() {
+async fn init_db() -> sqlx::Pool<sqlx::Sqlite> {
     const DB_URL: &str = "sqlite::memory:";
     let conn = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
@@ -53,6 +52,36 @@ pub async fn test_ebooks() {
         .await
         .unwrap();
 
+    conn
+}
+
+#[tokio::test]
+async fn test_ebook_create() {
+    let conn = init_db().await;
+    let repo = mbs4_dal::ebook::EbookRepositoryImpl::new(conn);
+
+    let new_ebook = mbs4_dal::ebook::CreateEbook {
+        title: "Hrabosum hrabe".to_string(),
+        description: None,
+        cover: None,
+        series_id: Some(1),
+        series_index: Some(1),
+        language_id: 1,
+        authors: Some(vec![1, 2, 3]),
+        genres: Some(vec![1, 2, 3]),
+        created_by: Some("ivan".to_string()),
+    };
+
+    let ebook = repo.create(new_ebook).await.unwrap();
+    assert_eq!(ebook.title, "Hrabosum hrabe");
+    assert_eq!(ebook.series.unwrap().title, "Serie");
+    assert_eq!(ebook.authors.unwrap().len(), 3);
+    assert_eq!(ebook.genres.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn test_ebooks() {
+    let conn = init_db().await;
     let count: u64 = sqlx::query_scalar("select count(*) from author")
         .fetch_one(&conn)
         .await

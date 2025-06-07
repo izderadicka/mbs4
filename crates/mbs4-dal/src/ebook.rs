@@ -1,12 +1,12 @@
+use std::vec;
+
 use crate::{
-    Batch, ChosenRow, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
+    Batch, ChosenRow, Error, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
     language::LanguageShort, series::SeriesShort,
 };
+use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    Acquire, Executor, Row,
-    query::{self, QueryAs},
-};
+use sqlx::{Acquire, Executor, Row, query::QueryAs};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Ebook {
@@ -484,16 +484,139 @@ where
     }
 
     pub async fn create(&self, payload: CreateEbook) -> crate::error::Result<Ebook> {
+        match (&payload.series_id, &payload.series_index) {
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(Error::InvalidEntity(
+                    "Series name and index must be provided together".into(),
+                ));
+            }
+            _ => (),
+        }
+
         let mut transaction = self.executor.begin().await?;
 
         let lang_code: String = sqlx::query_scalar("SELECT code FROM language WHERE id = ?")
             .bind(payload.language_id)
             .fetch_one(&mut *transaction)
-            .await?;
+            .await
+            .map_err(Error::DBReferenceError)?;
+        let series_name: Option<String> = if let Some(series_id) = payload.series_id {
+            sqlx::query_scalar("SELECT title FROM series WHERE id = ?")
+                .bind(series_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(Error::DBReferenceError)?
+        } else {
+            None
+        };
 
-        let query = "INSERT INTO ebook (title, description, cover, base_dir, series_id, series_index, language_id, version, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;";
+        struct ShortAuthor {
+            first_name: Option<String>,
+            last_name: String,
+        }
 
-        todo!()
+        let authors = if let Some(author_ids) = payload.authors.as_ref() {
+            if !author_ids.is_empty() {
+                let mut authors = Vec::with_capacity(author_ids.len());
+                let placeholders = author_ids
+                    .iter()
+                    .map(|_| "?")
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let query = format!(
+                    "SELECT first_name, last_name FROM author WHERE id IN ({placeholders})"
+                );
+                let mut query = sqlx::query(&query);
+                for author_id in author_ids.iter() {
+                    query = query.bind(author_id);
+                }
+                let mut stream = query.fetch(&mut *transaction);
+                while let Some(res) = stream.next().await {
+                    let row = res?;
+                    authors.push(ShortAuthor {
+                        first_name: row.get(0),
+                        last_name: row.get(1),
+                    })
+                }
+                authors
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        if authors.len() != payload.authors.as_ref().map(|a| a.len()).unwrap_or(0) {
+            return Err(Error::InvalidEntity(
+                "Some authors could not be found".to_string(),
+            ));
+        }
+
+        let book_meta = mbs4_types::utils::naming::Ebook {
+            title: &payload.title,
+            authors: authors
+                .iter()
+                .map(|a| mbs4_types::utils::naming::Author {
+                    first_name: a.first_name.as_deref(),
+                    last_name: &a.last_name,
+                })
+                .collect(),
+            language_code: &lang_code,
+            series_name: series_name.as_deref(),
+            series_index: payload.series_index,
+        };
+
+        let base_dir = book_meta
+            .ebook_base_dir()
+            .ok_or_else(|| Error::InvalidEntity("Cannot constuct base dir".to_string()))?;
+
+        let now = time::OffsetDateTime::now_utc();
+        let now = time::PrimitiveDateTime::new(now.date(), now.time());
+
+        let query = "INSERT INTO ebook (title, description, base_dir, series_id, series_index, language_id, version, created_by, created, modified) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+        let book_id = sqlx::query(query)
+            .bind(payload.title)
+            .bind(payload.description)
+            .bind(base_dir)
+            .bind(payload.series_id)
+            .bind(payload.series_index)
+            .bind(payload.language_id)
+            .bind(1)
+            .bind(payload.created_by)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *transaction)
+            .await?
+            .last_insert_rowid();
+
+        if let Some(ref genres) = payload.genres {
+            let query = "INSERT INTO ebook_genres (ebook_id, genre_id) VALUES (?, ?);";
+            for genre_id in genres.iter() {
+                sqlx::query(query)
+                    .bind(book_id)
+                    .bind(genre_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+
+        if let Some(authors) = payload.authors {
+            let query = "INSERT INTO ebook_authors (ebook_id, author_id) VALUES (?, ?);";
+            for author_id in authors.iter() {
+                sqlx::query(query)
+                    .bind(book_id)
+                    .bind(author_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+
+        transaction.commit().await?;
+
+        self.get(book_id).await
     }
 
     pub async fn update(&self, id: i64, payload: UpdateEbook) -> crate::error::Result<Ebook> {

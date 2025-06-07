@@ -28,6 +28,12 @@ pub enum Error {
 
     #[error("Async error: {0}")]
     AsyncError(#[from] tokio::task::JoinError),
+
+    #[error("DB reference error: {0}")]
+    DBReferenceError(sqlx::Error),
+
+    #[error("Invalid entity: {0}")]
+    InvalidEntity(String),
 }
 
 impl From<sqlx::Error> for Error {

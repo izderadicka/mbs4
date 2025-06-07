@@ -81,6 +81,17 @@ impl IntoResponse for ApiError {
                         "Application error".into(),
                     )
                 }
+                mbs4_dal::Error::DBReferenceError(error) => {
+                    tracing::error!("DB reference error: {error}");
+                    (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "Invalid references in entity".into(),
+                    )
+                }
+                mbs4_dal::Error::InvalidEntity(msg) => {
+                    tracing::error!("Invalid entity: {msg}");
+                    (StatusCode::UNPROCESSABLE_ENTITY, "Invalid entity".into())
+                }
             },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,
