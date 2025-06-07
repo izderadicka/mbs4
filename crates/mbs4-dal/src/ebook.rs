@@ -41,8 +41,6 @@ pub struct CreateEbook {
     pub title: String,
     #[garde(length(min = 1, max = 5000))]
     pub description: Option<String>,
-    #[garde(length(min = 1, max = 511))]
-    pub cover: Option<String>,
 
     pub series_id: Option<i64>,
     #[garde(range(min = 0))]
@@ -592,27 +590,8 @@ where
             .await?
             .last_insert_rowid();
 
-        if let Some(ref genres) = payload.genres {
-            let query = "INSERT INTO ebook_genres (ebook_id, genre_id) VALUES (?, ?);";
-            for genre_id in genres.iter() {
-                sqlx::query(query)
-                    .bind(book_id)
-                    .bind(genre_id)
-                    .execute(&mut *transaction)
-                    .await?;
-            }
-        }
-
-        if let Some(authors) = payload.authors {
-            let query = "INSERT INTO ebook_authors (ebook_id, author_id) VALUES (?, ?);";
-            for author_id in authors.iter() {
-                sqlx::query(query)
-                    .bind(book_id)
-                    .bind(author_id)
-                    .execute(&mut *transaction)
-                    .await?;
-            }
-        }
+        insert_ebook_dependencies(book_id, payload.genres, payload.authors, &mut transaction)
+            .await?;
 
         transaction.commit().await?;
 
@@ -620,7 +599,54 @@ where
     }
 
     pub async fn update(&self, id: i64, payload: UpdateEbook) -> crate::error::Result<Ebook> {
-        todo!()
+        match (&payload.series_id, &payload.series_index) {
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(Error::InvalidEntity(
+                    "Series name and index must be provided together".into(),
+                ));
+            }
+            _ => (),
+        }
+
+        if payload.id != id {
+            return Err(crate::Error::InvalidEntity("Entity id mismatch".into()));
+        }
+
+        let mut transaction = self.executor.begin().await?;
+        let now = time::OffsetDateTime::now_utc();
+        let now = time::PrimitiveDateTime::new(now.date(), now.time());
+
+        let sql = "UPDATE ebook SET title = ?, description = ?, series_id = ?, series_index = ?, language_id = ?, modified = ? WHERE id = ?";
+        let num_update = sqlx::query(sql)
+            .bind(payload.title)
+            .bind(payload.description)
+            .bind(payload.series_id)
+            .bind(payload.series_index)
+            .bind(payload.language_id)
+            .bind(now)
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+
+        if num_update == 0 {
+            return Err(Error::RecordNotFound("Ebook".to_string()));
+        }
+
+        sqlx::query("DELETE FROM ebook_authors WHERE ebook_id = ?")
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?;
+
+        sqlx::query("DELETE FROM ebook_genres WHERE ebook_id = ?")
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?;
+
+        insert_ebook_dependencies(id, payload.genres, payload.authors, &mut transaction).await?;
+
+        transaction.commit().await?;
+        self.get(id).await
     }
 
     pub async fn delete(&self, id: i64) -> crate::error::Result<()> {
@@ -635,4 +661,37 @@ where
             Ok(())
         }
     }
+}
+
+async fn insert_ebook_dependencies(
+    book_id: i64,
+    genres: Option<Vec<i64>>,
+    authors: Option<Vec<i64>>,
+    transaction: &mut sqlx::Transaction<'_, crate::ChosenDB>,
+) -> crate::error::Result<()> {
+    if let Some(ref genres) = genres {
+        let query = "INSERT INTO ebook_genres (ebook_id, genre_id) VALUES (?, ?);";
+        for genre_id in genres.iter() {
+            sqlx::query(query)
+                .bind(book_id)
+                .bind(genre_id)
+                .execute(&mut **transaction)
+                .await
+                .map_err(Error::DBReferenceError)?;
+        }
+    }
+
+    if let Some(ref authors) = authors {
+        let query = "INSERT INTO ebook_authors (ebook_id, author_id) VALUES (?, ?);";
+        for author_id in authors.iter() {
+            sqlx::query(query)
+                .bind(book_id)
+                .bind(author_id)
+                .execute(&mut **transaction)
+                .await
+                .map_err(Error::DBReferenceError)?;
+        }
+    }
+
+    Ok(())
 }

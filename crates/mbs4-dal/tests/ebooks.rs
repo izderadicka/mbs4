@@ -56,6 +56,45 @@ async fn init_db() -> sqlx::Pool<sqlx::Sqlite> {
 }
 
 #[tokio::test]
+async fn test_ebook_update() {
+    let conn = init_db().await;
+    let repo = mbs4_dal::ebook::EbookRepositoryImpl::new(conn);
+
+    let ebook = repo.get(1).await.unwrap();
+
+    let updated_ebook = mbs4_dal::ebook::UpdateEbook {
+        id: ebook.id,
+        title: "Nova kniha".to_string(),
+        description: ebook.description,
+        language_id: ebook.language.id,
+        series_id: ebook.series.map(|s| s.id),
+        series_index: ebook.series_index,
+        cover: ebook.cover,
+        authors: ebook.authors.map(|authors| {
+            authors
+                .into_iter()
+                .filter(|a| a.id != 1)
+                .map(|a| a.id)
+                .collect()
+        }),
+        genres: ebook.genres.map(|genres| {
+            genres
+                .into_iter()
+                .filter(|a| a.id != 2)
+                .map(|g| g.id)
+                .collect()
+        }),
+        version: ebook.version,
+    };
+
+    let updated = repo.update(ebook.id, updated_ebook).await.unwrap();
+    assert_eq!(updated.title, "Nova kniha");
+    assert_eq!(updated.series.unwrap().title, "Serie");
+    assert_eq!(updated.authors.unwrap().len(), 2);
+    assert_eq!(updated.genres.unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn test_ebook_create() {
     let conn = init_db().await;
     let repo = mbs4_dal::ebook::EbookRepositoryImpl::new(conn);
@@ -63,7 +102,6 @@ async fn test_ebook_create() {
     let new_ebook = mbs4_dal::ebook::CreateEbook {
         title: "Hrabosum hrabe".to_string(),
         description: None,
-        cover: None,
         series_id: Some(1),
         series_index: Some(1),
         language_id: 1,

@@ -354,6 +354,11 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             pub async fn update(&self, id: i64, payload: #update_struct_name) -> crate::error::Result<#entity_ident> {
                 #version_def
                 #now_def
+                if payload.id != id {
+                    return Err(crate::Error::InvalidEntity(
+                    "Entity id mismatch".into(),
+                ));
+                }
                 let mut conn = self.executor.acquire().await?;
                 let mut transaction = conn.begin().await?;
                 let result = sqlx::query(
