@@ -166,7 +166,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         };
         let short_struct = quote! {
-            #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
+            #[derive(Debug, Serialize, Deserialize,Clone, sqlx::FromRow)]
             pub struct #short_struct_name {
                 #(#short_fields,)*
             }

@@ -16,7 +16,7 @@ CREATE TABLE series (
     --rating REAL,
     --rating_count INTEGER,
     description TEXT,
-    created_by TEXT NOT NULL
+    created_by TEXT
 );
 -- Creating indexes
 CREATE INDEX ix_series_modified ON series(modified);
@@ -53,7 +53,7 @@ CREATE TABLE ebook (
     --downloads      INTEGER,
     cover TEXT,
     base_dir TEXT NOT NULL,
-    created_by TEXT NOT NULL,
+    created_by TEXT,
     FOREIGN KEY (language_id) REFERENCES language(id),
     FOREIGN KEY (series_id) REFERENCES series(id)
 );
@@ -90,7 +90,7 @@ CREATE TABLE source (
     quality REAL,
     -- Equivalent to double precision
     --quality_count  INTEGER,
-    created_by TEXT NOT NULL,
+    created_by TEXT,
     FOREIGN KEY (ebook_id) REFERENCES ebook(id) ON DELETE CASCADE,
     FOREIGN KEY (format_id) REFERENCES format(id)
 );

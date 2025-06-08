@@ -8,7 +8,7 @@ use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::{Acquire, Executor, Row, query::QueryAs};
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Ebook {
     pub id: i64,
 
