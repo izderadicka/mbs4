@@ -40,7 +40,7 @@ mod crud_api_write {
         Garde(Json(payload)): Garde<Json<UpdateEbook>>,
     ) -> ApiResult<impl IntoResponse> {
         let record = repository.update(id, payload).await?;
-        if let Err(e) = state.search().index_book(record.clone(), false) {
+        if let Err(e) = state.search().index_book(record.clone(), true) {
             tracing::error!("Failed to index book: {}", e);
         }
 

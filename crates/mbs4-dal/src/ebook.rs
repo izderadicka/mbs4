@@ -616,7 +616,7 @@ where
         let now = time::OffsetDateTime::now_utc();
         let now = time::PrimitiveDateTime::new(now.date(), now.time());
 
-        let sql = "UPDATE ebook SET title = ?, description = ?, series_id = ?, series_index = ?, language_id = ?, modified = ? WHERE id = ?";
+        let sql = "UPDATE ebook SET title = ?, description = ?, series_id = ?, series_index = ?, language_id = ?, modified = ?, version = version + 1 WHERE id = ? AND version = ?";
         let num_update = sqlx::query(sql)
             .bind(payload.title)
             .bind(payload.description)
@@ -625,6 +625,7 @@ where
             .bind(payload.language_id)
             .bind(now)
             .bind(id)
+            .bind(payload.version)
             .execute(&mut *transaction)
             .await?
             .rows_affected();
