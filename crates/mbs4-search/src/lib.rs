@@ -52,9 +52,9 @@ impl Future for SearchResult {
 pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
 
 pub trait Indexer {
-    fn index(&mut self, items: Vec<Ebook>, update: bool) -> IndexerResult;
-    fn delete(&mut self, id: Vec<i64>) -> IndexerResult;
-    fn reset(&mut self) -> IndexerResult;
+    fn index(&self, items: Vec<Ebook>, update: bool) -> IndexerResult;
+    fn delete(&self, id: Vec<i64>) -> IndexerResult;
+    fn reset(&self) -> IndexerResult;
 }
 
 pub trait Searcher {

@@ -45,6 +45,16 @@ impl Search {
     pub fn search(&self, query: &str, num_results: usize) -> SearchResult {
         self.inner.searcher.search(query, num_results)
     }
+
+    pub fn index_book(&self, book: mbs4_dal::ebook::Ebook, update: bool) -> Result<()> {
+        let _res = self.inner.indexer.index(vec![book], update)?;
+        Ok(())
+    }
+
+    pub fn delete_book(&self, id: i64) -> Result<()> {
+        let _res = self.inner.indexer.delete(vec![id])?;
+        Ok(())
+    }
 }
 
 struct SearchInner {

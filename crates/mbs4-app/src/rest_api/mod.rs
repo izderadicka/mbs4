@@ -107,6 +107,45 @@ where
 }
 
 #[macro_export]
+macro_rules! api_read_only {
+    ($repository:ty) => {
+        pub async fn list(
+            repository: $repository,
+            State(state): State<AppState>,
+            Garde(Query(paging)): Garde<Query<Paging>>,
+        ) -> ApiResult<impl IntoResponse> {
+            let default_page_size: u32 = state.config().default_page_size;
+            let page_size = paging.page_size(default_page_size);
+            let listing_params = paging.into_listing_params(default_page_size)?;
+            let batch = repository.list(listing_params).await?;
+            Ok((
+                StatusCode::OK,
+                Json(crate::rest_api::Page::from_batch(batch, page_size)),
+            ))
+        }
+
+        pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {
+            let users = repository.list_all().await?;
+            Ok((StatusCode::OK, Json(users)))
+        }
+
+        pub async fn count(repository: $repository) -> ApiResult<impl IntoResponse> {
+            let count = repository.count().await?;
+            Ok((StatusCode::OK, Json(count)))
+        }
+
+        pub async fn get(
+            Path(id): Path<i64>,
+            repository: $repository,
+        ) -> ApiResult<impl IntoResponse> {
+            let record = repository.get(id).await?;
+
+            Ok((StatusCode::OK, Json(record)))
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! crud_api {
     ($repository:ty, $create_type:ty, $update_type:ty) => {
         crate::repository_from_request!($repository);
@@ -123,6 +162,9 @@ macro_rules! crud_api {
             use axum_valid::Garde;
             use http::StatusCode;
             // use tracing::debug;
+
+            crate::api_read_only!($repository);
+
             pub async fn create(
                 repository: $repository,
                 Garde(Json(payload)): Garde<Json<$create_type>>,
@@ -130,40 +172,6 @@ macro_rules! crud_api {
                 let record = repository.create(payload).await?;
 
                 Ok((StatusCode::CREATED, Json(record)))
-            }
-
-            pub async fn list(
-                repository: $repository,
-                State(state): State<AppState>,
-                Garde(Query(paging)): Garde<Query<Paging>>,
-            ) -> ApiResult<impl IntoResponse> {
-                let default_page_size: u32 = state.config().default_page_size;
-                let page_size = paging.page_size(default_page_size);
-                let listing_params = paging.into_listing_params(default_page_size)?;
-                let batch = repository.list(listing_params).await?;
-                Ok((
-                    StatusCode::OK,
-                    Json(crate::rest_api::Page::from_batch(batch, page_size)),
-                ))
-            }
-
-            pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {
-                let users = repository.list_all().await?;
-                Ok((StatusCode::OK, Json(users)))
-            }
-
-            pub async fn count(repository: $repository) -> ApiResult<impl IntoResponse> {
-                let count = repository.count().await?;
-                Ok((StatusCode::OK, Json(count)))
-            }
-
-            pub async fn get(
-                Path(id): Path<i64>,
-                repository: $repository,
-            ) -> ApiResult<impl IntoResponse> {
-                let record = repository.get(id).await?;
-
-                Ok((StatusCode::OK, Json(record)))
             }
 
             pub async fn update(
@@ -184,6 +192,26 @@ macro_rules! crud_api {
 
                 Ok((StatusCode::NO_CONTENT, ()))
             }
+        }
+    };
+
+    ($repository:ty) => {
+        crate::repository_from_request!($repository);
+        pub mod crud_api {
+            use super::*;
+            use crate::error::ApiResult;
+            use crate::rest_api::Paging;
+            use crate::state::AppState;
+            use axum::{
+                extract::{Path, Query, State},
+                response::IntoResponse,
+                Json,
+            };
+            use axum_valid::Garde;
+            use http::StatusCode;
+            // use tracing::debug;
+
+            crate::api_read_only!($repository);
         }
     };
 }

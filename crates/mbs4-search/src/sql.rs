@@ -56,7 +56,7 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
     Ok((SqlIndexer { queue: sender }, SqlSearcher { pool }))
 }
 
-pub async fn initial_index_fill(mut indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
+pub async fn initial_index_fill(indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
     let repository = mbs4_dal::ebook::EbookRepository::new(pool);
     const PAGE_SIZE: i64 = 1000;
     let mut page_no = 0;
@@ -226,25 +226,24 @@ impl SqlIndexer {
 }
 
 impl Indexer for SqlIndexer {
-    fn index(&mut self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> IndexerResult {
+    fn index(&self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.queue.try_send(IndexingJob::Add {
             items,
             update,
             sender,
         })?;
-        // This is workaround - for future where indexer will run in separate thread
 
         Ok(receiver)
     }
 
-    fn delete(&mut self, ids: Vec<i64>) -> IndexerResult {
+    fn delete(&self, ids: Vec<i64>) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.queue.try_send(IndexingJob::Delete { ids, sender })?;
         Ok(receiver)
     }
 
-    fn reset(&mut self) -> IndexerResult {
+    fn reset(&self) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.queue.try_send(IndexingJob::Reset { sender })?;
         Ok(receiver)
