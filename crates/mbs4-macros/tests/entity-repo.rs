@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use mbs4_macros::Repository;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 //these are required for macro to work
 
