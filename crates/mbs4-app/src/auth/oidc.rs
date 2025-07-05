@@ -173,7 +173,7 @@ pub async fn callback(
     })?;
 
     match user_registry.find_by_email(&user_info.email).await {
-        Ok(known_user) => after_ok_login(&state, &session, known_user).await,
+        Ok(known_user) => after_ok_login(&state, &session, known_user, "/").await,
         Err(_) => {
             //TODO: consider allowing authenticated users with no roles
             warn!("Unknown user: {}", user_info.email);

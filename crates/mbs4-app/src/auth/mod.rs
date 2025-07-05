@@ -1,13 +1,14 @@
 use std::time::Duration;
 
-use crate::state::AppState;
+use crate::{auth::token::create_token, state::AppState};
 use axum::{
-    extract::{FromRequest as _, State},
+    extract::{FromRequest as _, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, Form, Json,
 };
 use http::StatusCode;
+use serde::Deserialize;
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
@@ -64,11 +65,15 @@ struct LoginCredentials {
     password: String,
 }
 
-pub async fn after_ok_login(
+pub async fn after_ok_login<S>(
     state: &AppState,
     session: &Session,
     known_user: mbs4_dal::user::User,
-) -> Result<impl IntoResponse, StatusCode> {
+    redirect_path: S,
+) -> Result<axum::response::Redirect, StatusCode>
+where
+    S: AsRef<str>,
+{
     session
         .insert(SESSION_USER_KEY, known_user)
         .await
@@ -77,7 +82,9 @@ pub async fn after_ok_login(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let redirect_url = state.build_url("/").map_err(|e| {
+    let redirect_path = redirect_path.as_ref();
+
+    let redirect_url = state.build_url(redirect_path).map_err(|e| {
         error!("Failed to build redirect URL: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -85,10 +92,30 @@ pub async fn after_ok_login(
     Ok(Redirect::to(redirect_url.as_str()))
 }
 
+#[derive(Deserialize, Debug)]
+pub struct DbLoginParams {
+    redirect: Option<String>,
+}
+
+pub enum LoginResponse {
+    Redirect(axum::response::Redirect),
+    Token(String),
+}
+
+impl IntoResponse for LoginResponse {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            LoginResponse::Redirect(r) => r.into_response(),
+            LoginResponse::Token(t) => t.into_response(),
+        }
+    }
+}
+
 pub async fn db_login(
     state: State<AppState>,
     user_registry: mbs4_dal::user::UserRepository,
     session: Session,
+    Query(DbLoginParams { redirect, .. }): Query<DbLoginParams>,
     request: axum::extract::Request,
 ) -> Result<impl IntoResponse, StatusCode> {
     let content_type = request
@@ -123,6 +150,14 @@ pub async fn db_login(
             debug!("User check error: {e}");
             StatusCode::UNAUTHORIZED
         })?;
-
-    after_ok_login(&state, &session, user).await
+    if let Some(redirect) = redirect {
+        let redirect = after_ok_login(&state, &session, user, redirect).await?;
+        Ok(LoginResponse::Redirect(redirect))
+    } else {
+        let token = create_token(&state, user).map_err(|e| {
+            error!("Failed to issue token: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        Ok(LoginResponse::Token(token))
+    }
 }

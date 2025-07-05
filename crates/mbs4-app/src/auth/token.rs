@@ -231,6 +231,23 @@ impl FromRequestParts<AppState> for ApiClaim {
     }
 }
 
+pub(crate) fn create_token(state: &AppState, known_user: User) -> anyhow::Result<String> {
+    let token = ApiClaim::new_expired(
+        known_user.id.to_string(),
+        known_user.roles.iter().flat_map(|v| {
+            v.iter().filter_map(|role_name| {
+                role_name
+                    .parse::<Role>()
+                    .map_err(|e| error!("Failed to parse role name: {e}"))
+                    .ok()
+            })
+        }),
+    );
+
+    let signed_token = state.tokens().issue(token)?;
+    Ok(signed_token)
+}
+
 pub async fn token(
     session: Session,
     cookies: Cookies,
@@ -242,19 +259,7 @@ pub async fn token(
     })?;
 
     if let Some(known_user) = user {
-        let token = ApiClaim::new_expired(
-            known_user.id.to_string(),
-            known_user.roles.iter().flat_map(|v| {
-                v.iter().filter_map(|role_name| {
-                    role_name
-                        .parse::<Role>()
-                        .map_err(|e| error!("Failed to parse role name: {e}"))
-                        .ok()
-                })
-            }),
-        );
-
-        let signed_token = state.tokens().issue(token).map_err(|e| {
+        let signed_token = create_token(&state, known_user).map_err(|e| {
             error!("Failed to issue token: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
