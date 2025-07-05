@@ -28,7 +28,7 @@ async fn test_auth() {
         .build()
         .unwrap();
 
-    let url = base_url.join("auth/login").unwrap();
+    let url = base_url.join("auth/login?redirect=/").unwrap();
     info! {"Login URL: {:#?}", url};
     let response = client
         .post(url)

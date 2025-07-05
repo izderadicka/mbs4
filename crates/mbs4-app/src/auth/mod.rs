@@ -95,6 +95,7 @@ where
 #[derive(Deserialize, Debug)]
 pub struct DbLoginParams {
     redirect: Option<String>,
+    token: Option<bool>,
 }
 
 pub enum LoginResponse {
@@ -115,7 +116,7 @@ pub async fn db_login(
     state: State<AppState>,
     user_registry: mbs4_dal::user::UserRepository,
     session: Session,
-    Query(DbLoginParams { redirect, .. }): Query<DbLoginParams>,
+    Query(DbLoginParams { redirect, token }): Query<DbLoginParams>,
     request: axum::extract::Request,
 ) -> Result<impl IntoResponse, StatusCode> {
     let content_type = request
@@ -150,14 +151,16 @@ pub async fn db_login(
             debug!("User check error: {e}");
             StatusCode::UNAUTHORIZED
         })?;
-    if let Some(redirect) = redirect {
-        let redirect = after_ok_login(&state, &session, user, redirect).await?;
-        Ok(LoginResponse::Redirect(redirect))
-    } else {
+    let return_token = token.unwrap_or_default();
+    if return_token {
         let token = create_token(&state, user).map_err(|e| {
             error!("Failed to issue token: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
         Ok(LoginResponse::Token(token))
+    } else {
+        let redirect =
+            after_ok_login(&state, &session, user, redirect.unwrap_or("/".to_string())).await?;
+        Ok(LoginResponse::Redirect(redirect))
     }
 }
