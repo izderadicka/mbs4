@@ -35,9 +35,17 @@ pub struct ServerConfig {
         long,
         env = "MBS4_BASE_URL",
         default_value = "http://localhost:3000",
-        help = "Base URL of server, as visible to users"
+        help = "Base URL of frontend app and server, as visible to users"
     )]
     pub base_url: Url,
+
+    #[arg(
+        long,
+        env = "MBS4_BASE_URL",
+        default_value = "http://localhost:3000",
+        help = "Base URL of server, if different from base_url, defaults to base_url"
+    )]
+    pub base_backend_url: Option<Url>,
 
     #[arg(
         long,
@@ -92,6 +100,9 @@ pub struct ServerConfig {
         help = "Default page size"
     )]
     pub default_page_size: u32,
+
+    #[arg(long, env = "MBS4_NO_CORS", help = "Disable CORS")]
+    pub no_cors: bool,
 }
 
 fn default_data_dir() -> String {

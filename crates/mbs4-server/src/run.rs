@@ -34,7 +34,14 @@ pub async fn run_graceful_with_state<S>(
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
-    let app = main_router(state);
+    let mut app = main_router(state);
+
+    if !args.no_cors {
+        app = app.layer(
+            // TODO: Consider if we want to allow credentials and restrict headers
+            tower_http::cors::CorsLayer::very_permissive(),
+        );
+    }
 
     let ip: std::net::IpAddr = args.listen_address.parse()?;
     let addr = std::net::SocketAddr::from((ip, args.port));
@@ -108,6 +115,11 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     }
     let app_config = AppConfig {
         base_url: config.base_url.clone(),
+        base_backend_url: config
+            .base_backend_url
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.base_url.clone()),
         file_store_path: files_path,
         upload_limit_mb: config.upload_limit_mb,
         default_page_size: config.default_page_size,

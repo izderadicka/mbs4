@@ -73,7 +73,7 @@ impl FromRequestParts<AppState> for OIDCClient {
 
         let provider_config = state.get_oidc_provider(&provider_id);
         if let Some(provider) = provider_config {
-            let redirect_url = state.build_url("auth/callback").map_err(|e| {
+            let redirect_url = state.build_backend_url("auth/callback").map_err(|e| {
                 error!("Failed to build auth callback URL: {e}");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -120,9 +120,9 @@ impl ProvidersCache {
 }
 
 pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResponse, StatusCode> {
-    let (url, _secrets) = client.auth_url();
+    let (url, secrets) = client.auth_url();
     session
-        .insert(SESSION_SECRETS_KEY, _secrets)
+        .insert(SESSION_SECRETS_KEY, secrets)
         .await
         .map_err(|e| {
             error!("Failed to store secrets in session: {e}");

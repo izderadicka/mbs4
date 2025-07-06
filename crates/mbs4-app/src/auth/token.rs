@@ -233,7 +233,7 @@ impl FromRequestParts<AppState> for ApiClaim {
 
 pub(crate) fn create_token(state: &AppState, known_user: User) -> anyhow::Result<String> {
     let token = ApiClaim::new_expired(
-        known_user.id.to_string(),
+        known_user.email,
         known_user.roles.iter().flat_map(|v| {
             v.iter().filter_map(|role_name| {
                 role_name

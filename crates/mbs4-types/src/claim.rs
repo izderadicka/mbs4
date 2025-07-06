@@ -84,6 +84,7 @@ impl Authorization for UserClaim {
 #[derive(Debug, Serialize, Deserialize, clone::Clone)]
 pub struct ApiClaim {
     pub sub: String,
+    pub iat: u64,
     pub exp: u64,
     pub roles: HashSet<Role>,
 }
@@ -95,6 +96,10 @@ impl ApiClaim {
     {
         Self {
             sub: sub.into(),
+            iat: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             exp: 0,
             roles: roles.into_iter().map(Into::into).collect(),
         }
@@ -137,6 +142,10 @@ mod tests {
         assert_eq!(role_trusted.to_string(), "trusted");
         let claim = ApiClaim {
             sub: "123".to_string(),
+            iat: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             exp: 1,
             roles: HashSet::from([role_admin, Role::Trusted]),
         };

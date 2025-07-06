@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{auth::token::create_token, state::AppState};
 use axum::{
     extract::{FromRequest as _, Query, State},
@@ -17,7 +15,7 @@ use tracing::{debug, error, warn};
 const SESSION_COOKIE_NAME: &str = "mbs4";
 const TOKEN_COOKIE_NAME: &str = "mbs4_token";
 const SESSION_USER_KEY: &str = "user";
-const SESSION_EXPIRY_SECS: u64 = 3600;
+const SESSION_EXPIRY_SECS: i64 = 3600;
 
 pub mod oidc;
 pub mod token;
@@ -48,7 +46,7 @@ pub fn auth_router() -> axum::Router<AppState> {
         .with_name(SESSION_COOKIE_NAME)
         .with_secure(true)
         .with_expiry(tower_sessions::Expiry::AtDateTime(
-            OffsetDateTime::now_utc() + Duration::from_secs(SESSION_EXPIRY_SECS),
+            OffsetDateTime::now_utc().saturating_add(time::Duration::seconds(SESSION_EXPIRY_SECS)),
         ));
     axum::Router::new()
         .route("/login", get(oidc::login).post(db_login))

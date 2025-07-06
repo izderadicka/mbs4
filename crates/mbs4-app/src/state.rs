@@ -51,6 +51,12 @@ impl AppState {
         Ok(url)
     }
 
+    pub fn build_backend_url(&self, relative_url: &str) -> Result<Url> {
+        let base = &self.config().base_backend_url;
+        let url = base.join(relative_url)?;
+        Ok(url)
+    }
+
     pub fn pool(&self) -> &Pool {
         &self.state.pool
     }
@@ -81,6 +87,7 @@ struct AppStateInner {
 
 pub struct AppConfig {
     pub base_url: Url,
+    pub base_backend_url: Url,
     pub file_store_path: PathBuf,
     pub upload_limit_mb: usize,
     pub default_page_size: u32,

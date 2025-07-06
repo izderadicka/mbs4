@@ -76,6 +76,10 @@ mod tests {
     fn dummy_claim() -> ApiClaim {
         ApiClaim {
             exp: 0,
+            iat: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             sub: "123".to_string(),
             roles: [Role::Admin, Role::Trusted].into(),
         }
