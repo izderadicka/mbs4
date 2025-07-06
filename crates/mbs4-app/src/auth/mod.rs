@@ -45,8 +45,8 @@ pub fn auth_router() -> axum::Router<AppState> {
     let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
         .with_name(SESSION_COOKIE_NAME)
         .with_secure(true)
-        .with_expiry(tower_sessions::Expiry::AtDateTime(
-            OffsetDateTime::now_utc().saturating_add(time::Duration::seconds(SESSION_EXPIRY_SECS)),
+        .with_expiry(tower_sessions::Expiry::OnInactivity(
+            (time::Duration::seconds(SESSION_EXPIRY_SECS)),
         ));
     axum::Router::new()
         .route("/login", get(oidc::login).post(db_login))
