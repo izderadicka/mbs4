@@ -5,7 +5,7 @@ use std::{
 
 use crate::state::AppState;
 use axum::{
-    extract::{FromRequestParts, Request, State},
+    extract::{FromRequestParts, Query, Request, State},
     response::{IntoResponse, Response},
     Extension, RequestPartsExt,
 };
@@ -16,6 +16,7 @@ use headers::{authorization::Bearer, Authorization, HeaderMapExt};
 use http::{request::Parts, StatusCode};
 use mbs4_dal::user::User;
 use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
+use serde::Deserialize;
 use time::OffsetDateTime;
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
@@ -248,11 +249,21 @@ pub(crate) fn create_token(state: &AppState, known_user: User) -> anyhow::Result
     Ok(signed_token)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TokenRetrievalToken {
+    pub trt: String,
+}
+
 pub async fn token(
     session: Session,
     cookies: Cookies,
+    Query(TokenRetrievalToken { trt: tr_token }): Query<TokenRetrievalToken>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    state.tokens().validate_tr_token(&tr_token).map_err(|e| {
+        error!("Failed to validate TR token: {e}");
+        StatusCode::UNAUTHORIZED
+    })?;
     let user = session.get::<User>(SESSION_USER_KEY).await.map_err(|e| {
         error!("Failed to get user from session: {e}");
         StatusCode::INTERNAL_SERVER_ERROR

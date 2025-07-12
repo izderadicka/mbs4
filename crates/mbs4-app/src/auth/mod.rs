@@ -7,7 +7,6 @@ use axum::{
 };
 use http::StatusCode;
 use serde::Deserialize;
-use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
@@ -46,7 +45,7 @@ pub fn auth_router() -> axum::Router<AppState> {
         .with_name(SESSION_COOKIE_NAME)
         .with_secure(true)
         .with_expiry(tower_sessions::Expiry::OnInactivity(
-            (time::Duration::seconds(SESSION_EXPIRY_SECS)),
+            time::Duration::seconds(SESSION_EXPIRY_SECS),
         ));
     axum::Router::new()
         .route("/login", get(oidc::login).post(db_login))
@@ -82,10 +81,15 @@ where
 
     let redirect_path = redirect_path.as_ref();
 
-    let redirect_url = state.build_url(redirect_path).map_err(|e| {
+    let mut redirect_url = state.build_url(redirect_path).map_err(|e| {
         error!("Failed to build redirect URL: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let tr_token = state.tokens().create_tr_token().map_err(|e| {
+        error!("Failed to create TR token: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    redirect_url.query_pairs_mut().append_pair("trt", &tr_token);
 
     Ok(Redirect::to(redirect_url.as_str()))
 }

@@ -2229,11 +2229,15 @@ name = "mbs4-auth"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "hmac",
  "jsonwebtoken",
  "mbs4-types",
  "openidconnect",
+ "rand 0.9.1",
  "reqwest",
  "serde",
+ "sha2",
  "tokio",
  "tracing",
  "tracing-test",

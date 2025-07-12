@@ -130,7 +130,9 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     // Its OK here to block, as it's short and called only on init;
 
     let secret = read_secret(&data_dir).await?;
-    let tokens = mbs4_auth::token::TokenManager::new(&secret, config.token_validity);
+    assert!(secret.len() == 64);
+    let tokens =
+        mbs4_auth::token::TokenManager::new(&secret[0..32], &secret[32..], config.token_validity);
     let search = Search::new(&config.index_path(), pool.clone()).await?;
     Ok(AppState::new(oidc_config, app_config, pool, tokens, search))
 }
@@ -141,7 +143,7 @@ async fn read_secret(data_dir: &Path) -> Result<Vec<u8>, std::io::Error> {
     let secret = if fs::try_exists(&secret_file).await? {
         fs::read(&secret_file).await?
     } else {
-        let random_bytes = rand::random::<[u8; 32]>();
+        let random_bytes = rand::random::<[u8; 64]>();
         #[cfg(unix)]
         let mut file = {
             use std::fs::OpenOptions;

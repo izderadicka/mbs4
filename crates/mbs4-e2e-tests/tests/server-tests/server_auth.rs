@@ -1,5 +1,6 @@
 use mbs4_dal::user;
 use mbs4_e2e_tests::{prepare_env, spawn_server};
+use reqwest::{StatusCode, Url};
 use serde_json::json;
 use tracing::info;
 use tracing_test::traced_test;
@@ -25,6 +26,7 @@ async fn test_auth() {
     spawn_server(args).await.unwrap();
     let client = reqwest::Client::builder()
         .cookie_store(true)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap();
 
@@ -37,9 +39,22 @@ async fn test_auth() {
         .await
         .unwrap();
     info! {"Login Response: {:#?}", response};
-    assert!(response.status().is_success());
+    assert_eq!(StatusCode::SEE_OTHER, response.status());
 
-    let url = base_url.join("auth/token").unwrap();
+    let location = response
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let location = Url::parse(location).unwrap();
+    let tr_token = location
+        .query_pairs()
+        .find_map(|(k, v)| if k == "trt" { Some(v) } else { None })
+        .expect("tr token not found in location query");
+
+    let mut url = base_url.join("auth/token").unwrap();
+    url.query_pairs_mut().append_pair("trt", &tr_token);
     let response = client.get(url).send().await.unwrap();
     info! {"Token Response: {:#?}", response};
     assert!(response.status().is_success());
