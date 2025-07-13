@@ -36,7 +36,7 @@ where
 {
     let mut app = main_router(state);
 
-    if !args.no_cors {
+    if args.cors {
         app = app.layer(
             // TODO: Consider if we want to allow credentials and restrict headers
             tower_http::cors::CorsLayer::very_permissive(),
@@ -107,23 +107,12 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     });
     let oidc_config = spawn_blocking(move || OIDCConfig::load_config(&oidc_config_file)).await??;
 
-    let files_path = config.files_dir();
+    let app_config: AppConfig = config.into();
 
-    if !files_path.is_dir() {
-        tokio::fs::create_dir_all(&files_path).await?;
+    if !app_config.file_store_path.is_dir() {
+        tokio::fs::create_dir_all(&app_config.file_store_path).await?;
         info!("Created directory for ebook files");
     }
-    let app_config = AppConfig {
-        base_url: config.base_url.clone(),
-        base_backend_url: config
-            .base_backend_url
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.base_url.clone()),
-        file_store_path: files_path,
-        upload_limit_mb: config.upload_limit_mb,
-        default_page_size: config.default_page_size,
-    };
 
     let pool = mbs4_dal::new_pool(&config.database_url()).await?;
 

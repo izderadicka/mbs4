@@ -3,6 +3,7 @@ use std::{fs, path::PathBuf, time::Duration};
 
 use crate::error::Result;
 pub use clap::Parser;
+use mbs4_app::state::AppConfig;
 use url::Url;
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -101,8 +102,13 @@ pub struct ServerConfig {
     )]
     pub default_page_size: u32,
 
-    #[arg(long, env = "MBS4_NO_CORS", help = "Disable CORS")]
-    pub no_cors: bool,
+    #[arg(
+        long,
+        env = "MBS4_CORS",
+        help = "Enable CORS and also Cookies SameSite=None, useful for development, production should be false and web clients should have same URL as backend",
+        default_value = "false"
+    )]
+    pub cors: bool,
 }
 
 fn default_data_dir() -> String {
@@ -144,5 +150,22 @@ impl ServerConfig {
         self.index_path
             .clone()
             .unwrap_or_else(|| self.data_dir().join("mbs4-ft-idx.db"))
+    }
+}
+
+impl From<&ServerConfig> for AppConfig {
+    fn from(config: &ServerConfig) -> Self {
+        AppConfig {
+            base_url: config.base_url.clone(),
+            base_backend_url: config
+                .base_backend_url
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.base_url.clone()),
+            file_store_path: config.files_dir(),
+            upload_limit_mb: config.upload_limit_mb,
+            default_page_size: config.default_page_size,
+            cors: config.cors,
+        }
     }
 }

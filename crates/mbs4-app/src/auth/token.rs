@@ -254,6 +254,24 @@ pub struct TokenRetrievalToken {
     pub trt: String,
 }
 
+pub(crate) fn set_token_cookie(token: String, cookies: &Cookies, state: &AppState) {
+    let same_site = if state.config().cors {
+        SameSite::None
+    } else {
+        SameSite::Strict
+    };
+    let cookie = Cookie::build((TOKEN_COOKIE_NAME, token))
+        .http_only(true)
+        .secure(true)
+        .path("/")
+        .same_site(same_site)
+        .expires(Expiration::DateTime(
+            OffsetDateTime::now_utc() + state.tokens().default_validity(),
+        ));
+
+    cookies.add(cookie.into());
+}
+
 pub async fn token(
     session: Session,
     cookies: Cookies,
@@ -275,16 +293,7 @@ pub async fn token(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        let cookie = Cookie::build((TOKEN_COOKIE_NAME, signed_token.clone()))
-            .http_only(true)
-            .secure(true)
-            .path("/")
-            .same_site(SameSite::Lax)
-            .expires(Expiration::DateTime(
-                OffsetDateTime::now_utc() + state.tokens().default_validity(),
-            ));
-
-        cookies.add(cookie.into());
+        set_token_cookie(signed_token.clone(), &cookies, &state);
 
         Ok(signed_token)
     } else {
