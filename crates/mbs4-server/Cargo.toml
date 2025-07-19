@@ -30,3 +30,6 @@ tower-cookies = "0.11.0"
 tower = "0.5.2"
 futures = "0.3.31"
 tower-http = { version = "0.6.6", features = ["cors"] }
+utoipa-axum = "0.2.0"
+utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_order", "time"] }
+utoipa-swagger-ui = { version = "9.0.2", default-features = false, features = ["axum", "vendored"] }

@@ -16,6 +16,7 @@ mbs4-macros = { path = "../mbs4-macros" }
 garde = { version = "0.22.0", features = ["full"] }
 time.workspace = true
 tokio.workspace = true
+utoipa = { version = "5.4.0", features = ["preserve_order", "time"] }
 
 [dev-dependencies]
 tokio.workspace = true

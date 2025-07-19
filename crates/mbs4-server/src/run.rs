@@ -15,6 +15,8 @@ use mbs4_app::{
 use mbs4_types::oidc::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tracing::{debug, info};
+use utoipa::openapi::OpenApi;
+use utoipa::OpenApi as _;
 
 pub async fn run(args: ServerConfig) -> Result<()> {
     let state = build_state(&args).await?;
@@ -55,6 +57,14 @@ where
     Ok(())
 }
 
+#[derive(utoipa::OpenApi)]
+#[openapi()]
+struct HelloApi;
+
+fn api_docs() -> OpenApi {
+    HelloApi::openapi().nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
+}
+
 fn main_router(state: AppState) -> Router<()> {
     // Not needed now
     // let session_store = tower_sessions::MemoryStore::default();
@@ -63,6 +73,8 @@ fn main_router(state: AppState) -> Router<()> {
     //     .with_expiry(tower_sessions::Expiry::OnInactivity(
     //         time::Duration::seconds(15),
     //     ));
+
+    let docs = api_docs();
 
     Router::new()
         .nest("/users", users_router())
@@ -84,6 +96,7 @@ fn main_router(state: AppState) -> Router<()> {
         .route("/", get(root))
         .route("/index.html", get(root)) // TODO - change
         .route("/health", get(health))
+        .merge(utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", docs))
 }
 
 async fn root(request: axum::extract::Request) -> impl IntoResponse {

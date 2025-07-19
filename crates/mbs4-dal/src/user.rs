@@ -54,9 +54,10 @@ fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
         .map(|_| ())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Validate)]
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, utoipa::ToSchema)]
 pub struct CreateUser {
     #[garde(dive)]
+    #[schema(value_type = String)]
     pub email: ValidEmail,
     #[garde(length(min = 3, max = 255))]
     pub name: Option<String>,
@@ -74,7 +75,7 @@ pub(crate) struct UserInt {
     roles: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 pub struct User {
     pub id: i64,
     pub name: String,

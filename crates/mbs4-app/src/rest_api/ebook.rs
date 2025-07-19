@@ -1,10 +1,19 @@
 use mbs4_dal::ebook::EbookRepository;
 use mbs4_types::claim::Role;
+use utoipa::{openapi::OpenApi, OpenApi as _};
 
 use crate::{auth::token::RequiredRolesLayer, crud_api, state::AppState};
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 // crate::repository_from_request!(EbookRepository);
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(crud_api_write::create, crud_api_write::update, crud_api_write::delete))]
+struct ModuleDocs;
+
+pub fn api_docs() -> OpenApi {
+    ModuleDocs::openapi()
+}
 
 crud_api!(EbookRepository);
 
@@ -20,6 +29,7 @@ mod crud_api_write {
 
     use crate::{error::ApiResult, state::AppState};
 
+    #[utoipa::path(post, path = "/")]
     pub async fn create(
         repository: EbookRepository,
         State(state): State<AppState>,
@@ -33,6 +43,7 @@ mod crud_api_write {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
+    #[utoipa::path(put, path = "/{id}")]
     pub async fn update(
         Path(id): Path<i64>,
         repository: EbookRepository,
@@ -47,6 +58,7 @@ mod crud_api_write {
         Ok((StatusCode::OK, Json(record)))
     }
 
+    #[utoipa::path(delete, path = "/{id}")]
     pub async fn delete(
         Path(id): Path<i64>,
         repository: EbookRepository,
