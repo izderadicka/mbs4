@@ -1,12 +1,17 @@
-use crate::{auth::token::create_token, state::AppState};
+use crate::{
+    auth::token::{create_token, set_token_cookie},
+    state::AppState,
+};
 use axum::{
     extract::{FromRequest as _, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, Form, Json,
 };
+use cookie::{Cookie, Expiration};
 use http::StatusCode;
 use serde::Deserialize;
+use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
@@ -33,7 +38,21 @@ pub async fn logout(
         .await
         .unwrap_or_else(|e| warn!("Failed to delete session: {e}"));
 
-    cookies.remove(tower_cookies::Cookie::new(SESSION_COOKIE_NAME, ""));
+    let expired_date = OffsetDateTime::now_utc() - time::Duration::days(1);
+
+    let remove_cookie = |cookie_name: &'static str| {
+        if let Some(_existing_cookie) = cookies.get(cookie_name) {
+            let c = Cookie::build((cookie_name, ""))
+                .http_only(true)
+                .secure(true)
+                .path("/")
+                .expires(Expiration::DateTime(expired_date));
+            cookies.add(c.into());
+        }
+    };
+
+    remove_cookie(TOKEN_COOKIE_NAME);
+    remove_cookie(SESSION_COOKIE_NAME);
 
     Ok(Redirect::temporary(redirect_url.as_str()))
 }
@@ -118,6 +137,7 @@ pub async fn db_login(
     state: State<AppState>,
     user_registry: mbs4_dal::user::UserRepository,
     session: Session,
+    cookies: Cookies,
     Query(DbLoginParams { redirect, token }): Query<DbLoginParams>,
     request: axum::extract::Request,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -154,11 +174,12 @@ pub async fn db_login(
             StatusCode::UNAUTHORIZED
         })?;
     let return_token = token.unwrap_or_default();
+    let token = create_token(&state, user.clone()).map_err(|e| {
+        error!("Failed to issue token: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    set_token_cookie(token.clone(), &cookies, &state);
     if return_token {
-        let token = create_token(&state, user).map_err(|e| {
-            error!("Failed to issue token: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
         Ok(LoginResponse::Token(token))
     } else {
         let redirect =
