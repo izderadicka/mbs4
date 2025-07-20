@@ -1,7 +1,6 @@
 use crate::error::{ApiError, ApiResult};
 use garde::Validate;
 use mbs4_dal::{Batch, ListingParams};
-use paste::paste;
 use serde::Serialize;
 
 pub mod author;
@@ -108,9 +107,9 @@ where
 
 #[macro_export]
 macro_rules! api_read_only {
-    ($repository:ty) => {
+    ($entity:ty) => {
         pub async fn list(
-            repository: $repository,
+            repository: EntityRepository,
             State(state): State<AppState>,
             Garde(Query(paging)): Garde<Query<Paging>>,
         ) -> ApiResult<impl IntoResponse> {
@@ -124,19 +123,19 @@ macro_rules! api_read_only {
             ))
         }
 
-        pub async fn list_all(repository: $repository) -> ApiResult<impl IntoResponse> {
+        pub async fn list_all(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let users = repository.list_all().await?;
             Ok((StatusCode::OK, Json(users)))
         }
 
-        pub async fn count(repository: $repository) -> ApiResult<impl IntoResponse> {
+        pub async fn count(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let count = repository.count().await?;
             Ok((StatusCode::OK, Json(count)))
         }
 
         pub async fn get(
             Path(id): Path<i64>,
-            repository: $repository,
+            repository: EntityRepository,
         ) -> ApiResult<impl IntoResponse> {
             let record = repository.get(id).await?;
 
@@ -147,8 +146,9 @@ macro_rules! api_read_only {
 
 #[macro_export]
 macro_rules! crud_api {
-    ($repository:ty, $create_type:ty, $update_type:ty) => {
-        crate::repository_from_request!($repository);
+    ($entity:ty) => {
+        type EntityRepository = paste::paste! {[<$entity Repository>]};
+        crate::repository_from_request!(EntityRepository);
         pub mod crud_api {
             use super::*;
             use crate::error::ApiResult;
@@ -163,11 +163,14 @@ macro_rules! crud_api {
             use http::StatusCode;
             // use tracing::debug;
 
-            crate::api_read_only!($repository);
+            type CreateEntity = paste::paste! {[<Create $entity>]};
+            type UpdateEntity = paste::paste! {[<Update $entity>]};
+
+            crate::api_read_only!($entity);
 
             pub async fn create(
-                repository: $repository,
-                Garde(Json(payload)): Garde<Json<$create_type>>,
+                repository: EntityRepository,
+                Garde(Json(payload)): Garde<Json<CreateEntity>>,
             ) -> ApiResult<impl IntoResponse> {
                 let record = repository.create(payload).await?;
 
@@ -176,8 +179,8 @@ macro_rules! crud_api {
 
             pub async fn update(
                 Path(id): Path<i64>,
-                repository: $repository,
-                Garde(Json(payload)): Garde<Json<$update_type>>,
+                repository: EntityRepository,
+                Garde(Json(payload)): Garde<Json<UpdateEntity>>,
             ) -> ApiResult<impl IntoResponse> {
                 let record = repository.update(id, payload).await?;
 
@@ -186,7 +189,7 @@ macro_rules! crud_api {
 
             pub async fn delete(
                 Path(id): Path<i64>,
-                repository: $repository,
+                repository: EntityRepository,
             ) -> ApiResult<impl IntoResponse> {
                 repository.delete(id).await?;
 
@@ -195,8 +198,9 @@ macro_rules! crud_api {
         }
     };
 
-    ($repository:ty) => {
-        crate::repository_from_request!($repository);
+    ($entity:ty, RO) => {
+        type EntityRepository = paste::paste! {[<$entity Repository>]};
+        crate::repository_from_request!(EntityRepository);
         pub mod crud_api {
             use super::*;
             use crate::error::ApiResult;
@@ -211,7 +215,7 @@ macro_rules! crud_api {
             use http::StatusCode;
             // use tracing::debug;
 
-            crate::api_read_only!($repository);
+            crate::api_read_only!($entity);
         }
     };
 }

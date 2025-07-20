@@ -6,7 +6,7 @@ use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
-crud_api!(AuthorRepository, CreateAuthor, UpdateAuthor);
+crud_api!(Author);
 
 mod extra_crud_api {
     use axum::{

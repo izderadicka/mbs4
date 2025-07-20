@@ -6,7 +6,7 @@ use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
-crud_api!(SeriesRepository, CreateSeries, UpdateSeries);
+crud_api!(Series);
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()

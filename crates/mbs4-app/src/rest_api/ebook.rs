@@ -15,7 +15,7 @@ pub fn api_docs() -> OpenApi {
     ModuleDocs::openapi()
 }
 
-crud_api!(EbookRepository);
+crud_api!(Ebook, RO);
 
 mod crud_api_write {
     use axum::{
