@@ -40,6 +40,7 @@ axum-valid = { version = "0.23.0", default-features = false, features = [
 garde = "0.22.0"
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_order", "time"] }
 utoipa-axum = "0.2.0"
+paste = "1.0.15"
 
 
 [dev-dependencies]

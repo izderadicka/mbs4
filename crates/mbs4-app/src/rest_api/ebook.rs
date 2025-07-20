@@ -25,11 +25,11 @@ mod crud_api_write {
     };
     use axum_valid::Garde;
     use http::StatusCode;
-    use mbs4_dal::ebook::{CreateEbook, EbookRepository, UpdateEbook};
+    use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
 
     use crate::{error::ApiResult, state::AppState};
 
-    #[utoipa::path(post, path = "/")]
+    #[utoipa::path(post, path = "/", responses((status = StatusCode::CREATED, description = "Created", body = Ebook)))]
     pub async fn create(
         repository: EbookRepository,
         State(state): State<AppState>,
@@ -43,7 +43,7 @@ mod crud_api_write {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
-    #[utoipa::path(put, path = "/{id}")]
+    #[utoipa::path(put, path = "/{id}", responses((status = StatusCode::OK, description = "Updated", body = Ebook)))]
     pub async fn update(
         Path(id): Path<i64>,
         repository: EbookRepository,

@@ -2248,6 +2248,7 @@ dependencies = [
  "mbs4-search",
  "mbs4-types",
  "new_mime_guess",
+ "paste",
  "rand 0.9.1",
  "serde",
  "serde_json",
