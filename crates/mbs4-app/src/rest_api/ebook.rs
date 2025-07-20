@@ -1,4 +1,4 @@
-use mbs4_dal::ebook::EbookRepository;
+use mbs4_dal::ebook::{Ebook, EbookRepository, EbookShort};
 use mbs4_types::claim::Role;
 use utoipa::{openapi::OpenApi, OpenApi as _};
 
@@ -12,7 +12,8 @@ use axum::routing::{delete, get, post, put};
 struct ModuleDocs;
 
 pub fn api_docs() -> OpenApi {
-    ModuleDocs::openapi()
+    let docs = ModuleDocs::openapi();
+    docs.merge_from(crud_api::api_docs())
 }
 
 crud_api!(Ebook, RO);

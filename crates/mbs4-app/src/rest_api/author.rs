@@ -1,5 +1,5 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api};
-use mbs4_dal::author::{AuthorRepository, CreateAuthor, UpdateAuthor};
+use mbs4_dal::author::{Author, AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;

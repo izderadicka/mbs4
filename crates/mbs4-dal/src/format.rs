@@ -1,7 +1,7 @@
 use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, Repository)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, Repository, utoipa::ToSchema)]
 pub struct Format {
     #[spec(id)]
     pub id: i64,

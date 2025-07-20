@@ -1,5 +1,5 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api};
-use mbs4_dal::source::{CreateSource, SourceRepository, UpdateSource};
+use mbs4_dal::source::{CreateSource, Source, SourceRepository, SourceShort, UpdateSource};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;

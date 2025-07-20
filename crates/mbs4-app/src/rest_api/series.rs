@@ -1,5 +1,5 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api};
-use mbs4_dal::series::{CreateSeries, SeriesRepository, UpdateSeries};
+use mbs4_dal::series::{CreateSeries, Series, SeriesRepository, SeriesShort, UpdateSeries};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;

@@ -1,7 +1,7 @@
 use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Repository, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, Repository, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Language {
     #[spec(id)]
     pub id: i64,
