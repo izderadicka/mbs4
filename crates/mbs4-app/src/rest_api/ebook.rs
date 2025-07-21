@@ -30,7 +30,7 @@ mod crud_api_write {
 
     use crate::{error::ApiResult, state::AppState};
 
-    #[utoipa::path(post, path = "/", responses((status = StatusCode::CREATED, description = "Created", body = Ebook)))]
+    #[utoipa::path(post, path = "", responses((status = StatusCode::CREATED, description = "Created", body = Ebook)))]
     pub async fn create(
         repository: EbookRepository,
         State(state): State<AppState>,

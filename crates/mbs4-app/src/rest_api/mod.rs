@@ -12,6 +12,7 @@ pub mod series;
 pub mod source;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 #[garde(allow_unvalidated)]
 pub struct Paging {
     page: Option<u32>,
@@ -109,7 +110,7 @@ where
 macro_rules! api_read_only {
     ($entity:ty) => {
         type EntityShort = paste::paste! {[<$entity Short>]};
-        #[utoipa::path(get, path = "/",
+        #[utoipa::path(get, path = "",
         params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>)))]
         pub async fn list(
             repository: EntityRepository,
