@@ -8,7 +8,8 @@ use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::{Acquire, Executor, Row, query::QueryAs};
 
-#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Ebook {
     pub id: i64,
 
@@ -34,7 +35,8 @@ pub struct Ebook {
     pub modified: time::PrimitiveDateTime,
 }
 
-#[derive(Debug, Deserialize, Clone, garde::Validate, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, Clone, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[garde(allow_unvalidated)]
 pub struct CreateEbook {
     #[garde(length(min = 1, max = 255))]
@@ -53,7 +55,8 @@ pub struct CreateEbook {
     pub created_by: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, garde::Validate, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, Clone, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[garde(allow_unvalidated)]
 pub struct UpdateEbook {
     pub id: i64,
@@ -103,7 +106,8 @@ impl sqlx::FromRow<'_, ChosenRow> for Ebook {
     }
 }
 
-#[derive(Debug, Serialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookShort {
     pub id: i64,
     pub title: String,

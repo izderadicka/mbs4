@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 use garde::Validate;
 use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};

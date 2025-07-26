@@ -54,10 +54,26 @@ fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
         .map(|_| ())
 }
 
+#[cfg(feature = "openapi")]
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, utoipa::ToSchema)]
+#[cfg_attr(feature = "openapi", derive())]
 pub struct CreateUser {
     #[garde(dive)]
     #[schema(value_type = String)]
+    pub email: ValidEmail,
+    #[garde(length(min = 3, max = 255))]
+    pub name: Option<String>,
+    #[garde(length(min = 8, max = 255))]
+    pub password: Option<String>,
+    #[garde(inner(inner(custom(is_valid_role))))]
+    pub roles: Option<Vec<String>>,
+}
+
+#[cfg(not(feature = "openapi"))]
+#[derive(Debug, Serialize, Deserialize, Clone, Validate)]
+#[cfg_attr(feature = "openapi", derive())]
+pub struct CreateUser {
+    #[garde(dive)]
     pub email: ValidEmail,
     #[garde(length(min = 3, max = 255))]
     pub name: Option<String>,
@@ -75,7 +91,8 @@ pub(crate) struct UserInt {
     roles: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct User {
     pub id: i64,
     pub name: String,

@@ -1,7 +1,8 @@
 use mbs4_macros::Repository;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Series {
     #[spec(id)]
     pub id: i64,

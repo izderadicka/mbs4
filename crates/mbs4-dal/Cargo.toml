@@ -16,11 +16,17 @@ mbs4-macros = { path = "../mbs4-macros" }
 garde = { version = "0.22.0", features = ["full"] }
 time.workspace = true
 tokio.workspace = true
-utoipa = { version = "5.4.0", features = ["preserve_order", "time"] }
+utoipa = { version = "5.4.0", features = [
+    "preserve_order",
+    "time",
+], optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
 futures = "0.3.31"
+
+[features]
+openapi = ["utoipa"]
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3

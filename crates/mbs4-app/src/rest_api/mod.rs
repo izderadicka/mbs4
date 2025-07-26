@@ -11,7 +11,8 @@ pub mod language;
 pub mod series;
 pub mod source;
 
-#[derive(Debug, Clone, Validate, serde::Deserialize, utoipa::IntoParams)]
+#[derive(Debug, Clone, Validate, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[into_params(parameter_in = Query)]
 #[garde(allow_unvalidated)]
 pub struct Paging {
@@ -74,7 +75,8 @@ impl Paging {
     }
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Page<T> {
     page: u32,
     page_size: u32,
@@ -110,8 +112,8 @@ where
 macro_rules! api_read_only {
     ($entity:ty) => {
         type EntityShort = paste::paste! {[<$entity Short>]};
-        #[utoipa::path(get, path = "",
-        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>)))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "",
+        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>))))]
         pub async fn list(
             repository: EntityRepository,
             State(state): State<AppState>,
@@ -127,19 +129,19 @@ macro_rules! api_read_only {
             ))
         }
 
-        #[utoipa::path(get, path = "/all", responses((status = StatusCode::OK, description = "List all (unpaginated, sorted by id, max limit applies)", body = Vec<EntityShort>)))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/all", responses((status = StatusCode::OK, description = "List all (unpaginated, sorted by id, max limit applies)", body = Vec<EntityShort>))))]
         pub async fn list_all(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let users = repository.list_all().await?;
             Ok((StatusCode::OK, Json(users)))
         }
 
-        #[utoipa::path(get, path = "/count", responses((status = StatusCode::OK, description = "Count", body = u64)))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/count", responses((status = StatusCode::OK, description = "Count", body = u64))))]
         pub async fn count(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let count = repository.count().await?;
             Ok((StatusCode::OK, Json(count)))
         }
 
-        #[utoipa::path(get, path = "/{id}", responses((status = StatusCode::OK, description = "Get one", body = $entity)))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", responses((status = StatusCode::OK, description = "Get one", body = $entity))))]
         pub async fn get(
             Path(id): Path<i64>,
             repository: EntityRepository,
@@ -224,10 +226,14 @@ macro_rules! crud_api {
 
             crate::api_read_only!($entity);
 
-            #[derive(utoipa::OpenApi)]
+            #[cfg(feature = "openapi")]
+            #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
             #[openapi(paths(list, list_all, count, get))]
             struct ApiDocs;
-            pub fn api_docs() -> OpenApi {
+
+            #[cfg(feature = "openapi")]
+            pub fn api_docs() -> utoipa::openapi::OpenApi {
+                use utoipa::OpenApi as _;
                 ApiDocs::openapi()
             }
         }

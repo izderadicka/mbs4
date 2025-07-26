@@ -110,7 +110,8 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let base_fields = data.fields.iter().filter(|f| f.ident.is_some());
 
         let common_input_atts = quote! {
-            #[derive(Debug,  serde::Deserialize, Clone, garde::Validate, utoipa::ToSchema)]
+            #[derive(Debug,  serde::Deserialize, Clone, garde::Validate)]
+            #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         };
 
         let create_fields: Vec<_> = base_fields
@@ -166,13 +167,14 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         };
         let short_struct = quote! {
-            #[derive(Debug, Serialize, Deserialize,Clone, sqlx::FromRow, utoipa::ToSchema)]
-            pub struct #short_struct_name {
-                #(#short_fields,)*
-            }
-            #from_row_impl
+                    #[derive(Debug, Serialize, Deserialize,Clone, sqlx::FromRow)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+                    pub struct #short_struct_name {
+                        #(#short_fields,)*
+                    }
+                    #from_row_impl
 
-        };
+                };
 
         // unwrap is ok as we filter unnamed fields above
         let sortable_fields = base_fields
