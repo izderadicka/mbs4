@@ -15,8 +15,6 @@ use mbs4_app::{
 use mbs4_types::oidc::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tracing::{debug, info};
-use utoipa::openapi::OpenApi;
-use utoipa::OpenApi as _;
 
 pub async fn run(args: ServerConfig) -> Result<()> {
     let state = build_state(&args).await?;
@@ -57,11 +55,14 @@ where
     Ok(())
 }
 
+#[cfg(feature = "openapi")]
 #[derive(utoipa::OpenApi)]
 #[openapi()]
 struct HelloApi;
 
-fn api_docs() -> OpenApi {
+#[cfg(feature = "openapi")]
+fn api_docs() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
     HelloApi::openapi().nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
 }
 
