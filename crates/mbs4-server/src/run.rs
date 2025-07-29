@@ -56,12 +56,30 @@ where
 }
 
 #[cfg(feature = "openapi")]
-#[derive(utoipa::OpenApi)]
-#[openapi()]
-struct OpenApi;
-
-#[cfg(feature = "openapi")]
 fn api_docs() -> utoipa::openapi::OpenApi {
+    use utoipa::openapi::Components;
+
+    #[derive(utoipa::OpenApi)]
+    #[openapi(modifiers(&SecurityAddon), security(("bearer" = [])))]
+    struct OpenApi;
+
+    struct SecurityAddon;
+
+    impl utoipa::Modify for SecurityAddon {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+
+            if openapi.components.is_none() {
+                openapi.components = Some(Components::new());
+            }
+
+            openapi.components.as_mut().unwrap().add_security_scheme(
+                "bearer",
+                SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()),
+            );
+        }
+    }
+
     use utoipa::OpenApi as _;
     OpenApi::openapi()
         .nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
@@ -71,6 +89,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/api/series", mbs4_app::rest_api::series::api_docs())
         .nest("/api/source", mbs4_app::rest_api::source::api_docs())
         .nest("/api/author", mbs4_app::rest_api::author::api_docs())
+        .nest("/auth", mbs4_app::auth::api_docs())
 }
 
 fn main_router(state: AppState) -> Router<()> {

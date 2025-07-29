@@ -75,7 +75,18 @@ pub fn auth_router() -> axum::Router<AppState> {
         .layer(Extension(oidc::ProvidersCache::new()))
 }
 
+#[cfg(feature = "openapi")]
+pub fn api_docs() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
+    #[derive(utoipa::OpenApi)]
+    #[openapi(paths(db_login))]
+    struct ApiDocs;
+
+    ApiDocs::openapi()
+}
+
 #[derive(serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct LoginCredentials {
     email: String,
     password: String,
@@ -114,6 +125,8 @@ where
 }
 
 #[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature="openapi", into_params(parameter_in = Query))]
 pub struct DbLoginParams {
     redirect: Option<String>,
     token: Option<bool>,
@@ -133,6 +146,13 @@ impl IntoResponse for LoginResponse {
     }
 }
 
+#[cfg_attr(feature = "openapi", utoipa::path(post, path = "/login", tag = "auth", 
+params(DbLoginParams),
+request_body(description = "User credentials", content((LoginCredentials = "application/json" ),
+(LoginCredentials = "application/x-www-form-urlencoded"),
+)),
+responses((status = StatusCode::OK, description = "Success", content_type = "text/plain"),
+(status = StatusCode::SEE_OTHER, description = "Success andRedirect"))))]
 pub async fn db_login(
     state: State<AppState>,
     user_registry: mbs4_dal::user::UserRepository,
