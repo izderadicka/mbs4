@@ -48,7 +48,6 @@ paste = "1.0.15"
 
 
 [features]
-default = ["openapi"]
 openapi = ["utoipa", "utoipa-axum", "mbs4-dal/openapi"]
 
 [dev-dependencies]

@@ -13,7 +13,7 @@ pub mod source;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "openapi",into_params(parameter_in = Query))]
 #[garde(allow_unvalidated)]
 pub struct Paging {
     page: Option<u32>,
@@ -111,8 +111,9 @@ where
 #[macro_export]
 macro_rules! api_read_only {
     ($entity:ty) => {
+        #[cfg(feature = "openapi")]
         type EntityShort = paste::paste! {[<$entity Short>]};
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "",
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "", tag = stringify!($entity),
         params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>))))]
         pub async fn list(
             repository: EntityRepository,
@@ -129,19 +130,22 @@ macro_rules! api_read_only {
             ))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/all", responses((status = StatusCode::OK, description = "List all (unpaginated, sorted by id, max limit applies)", body = Vec<EntityShort>))))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/all", tag = stringify!($entity),
+        responses((status = StatusCode::OK, description = "List all (unpaginated, sorted by id, max limit applies)", body = Vec<EntityShort>))))]
         pub async fn list_all(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let users = repository.list_all().await?;
             Ok((StatusCode::OK, Json(users)))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/count", responses((status = StatusCode::OK, description = "Count", body = u64))))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/count", tag = stringify!($entity),
+        responses((status = StatusCode::OK, description = "Count", body = u64))))]
         pub async fn count(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let count = repository.count().await?;
             Ok((StatusCode::OK, Json(count)))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", responses((status = StatusCode::OK, description = "Get one", body = $entity))))]
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", tag = stringify!($entity),
+        responses((status = StatusCode::OK, description = "Get one", body = $entity))))]
         pub async fn get(
             Path(id): Path<i64>,
             repository: EntityRepository,
@@ -177,6 +181,9 @@ macro_rules! crud_api {
 
             crate::api_read_only!($entity);
 
+
+            #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = stringify!($entity),
+            responses((status = StatusCode::CREATED, description = concat!("Created ", stringify!($entity)), body = $entity))))]
             pub async fn create(
                 repository: EntityRepository,
                 Garde(Json(payload)): Garde<Json<CreateEntity>>,
@@ -186,6 +193,8 @@ macro_rules! crud_api {
                 Ok((StatusCode::CREATED, Json(record)))
             }
 
+            #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = stringify!($entity),
+            responses((status = StatusCode::OK, description = concat!("Updated ", stringify!($entity)), body = $entity))))]
             pub async fn update(
                 Path(id): Path<i64>,
                 repository: EntityRepository,
@@ -196,6 +205,7 @@ macro_rules! crud_api {
                 Ok((StatusCode::OK, Json(record)))
             }
 
+            #[cfg_attr(feature = "openapi",  utoipa::path(delete, path = "/{id}", tag = stringify!($entity)))]
             pub async fn delete(
                 Path(id): Path<i64>,
                 repository: EntityRepository,
@@ -203,6 +213,17 @@ macro_rules! crud_api {
                 repository.delete(id).await?;
 
                 Ok((StatusCode::NO_CONTENT, ()))
+            }
+
+            #[cfg(feature = "openapi")]
+            #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
+            #[openapi(paths(list, list_all, count, get, delete, update, create))]
+            struct ApiDocs;
+
+            #[cfg(feature = "openapi")]
+            pub(super) fn api_docs() -> utoipa::openapi::OpenApi {
+                use utoipa::OpenApi as _;
+                ApiDocs::openapi()
             }
         }
     };
@@ -232,10 +253,33 @@ macro_rules! crud_api {
             struct ApiDocs;
 
             #[cfg(feature = "openapi")]
-            pub fn api_docs() -> utoipa::openapi::OpenApi {
+            pub(super) fn api_docs() -> utoipa::openapi::OpenApi {
                 use utoipa::OpenApi as _;
                 ApiDocs::openapi()
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! publish_api_docs {
+    () => {
+        #[cfg(feature = "openapi")]
+        pub fn api_docs() -> utoipa::openapi::OpenApi {
+            crud_api::api_docs()
+        }
+    };
+    ($($end_point:path),+) => {
+        #[cfg(feature = "openapi")]
+        #[derive(utoipa::OpenApi)]
+        #[openapi(paths($($end_point),+))]
+        struct ModuleDocs;
+
+        #[cfg(feature = "openapi")]
+        pub fn api_docs() -> utoipa::openapi::OpenApi {
+            use utoipa::OpenApi as _;
+            let docs = ModuleDocs::openapi();
+            docs.merge_from(crud_api::api_docs())
         }
     };
 }

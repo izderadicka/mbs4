@@ -58,12 +58,19 @@ where
 #[cfg(feature = "openapi")]
 #[derive(utoipa::OpenApi)]
 #[openapi()]
-struct HelloApi;
+struct OpenApi;
 
 #[cfg(feature = "openapi")]
 fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
-    HelloApi::openapi().nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
+    OpenApi::openapi()
+        .nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
+        .nest("/api/format", mbs4_app::rest_api::format::api_docs())
+        .nest("/api/genre", mbs4_app::rest_api::genre::api_docs())
+        .nest("/api/language", mbs4_app::rest_api::language::api_docs())
+        .nest("/api/series", mbs4_app::rest_api::series::api_docs())
+        .nest("/api/source", mbs4_app::rest_api::source::api_docs())
+        .nest("/api/author", mbs4_app::rest_api::author::api_docs())
 }
 
 fn main_router(state: AppState) -> Router<()> {
@@ -75,9 +82,8 @@ fn main_router(state: AppState) -> Router<()> {
     //         time::Duration::seconds(15),
     //     ));
 
-    let docs = api_docs();
-
-    Router::new()
+    #[allow(unused_mut)]
+    let mut router = Router::new()
         .nest("/users", users_router())
         .nest("/store", store_router(state.config().upload_limit_mb))
         .nest("/api/language", mbs4_app::rest_api::language::router())
@@ -96,8 +102,16 @@ fn main_router(state: AppState) -> Router<()> {
         // static and public resources
         .route("/", get(root))
         .route("/index.html", get(root)) // TODO - change
-        .route("/health", get(health))
-        .merge(utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", docs))
+        .route("/health", get(health));
+
+    #[cfg(feature = "openapi")]
+    {
+        let docs = api_docs();
+        router = router.merge(
+            utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", docs),
+        );
+    }
+    router
 }
 
 async fn root(request: axum::extract::Request) -> impl IntoResponse {

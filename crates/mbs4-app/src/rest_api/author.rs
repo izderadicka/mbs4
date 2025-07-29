@@ -1,4 +1,5 @@
-use crate::{auth::token::RequiredRolesLayer, crud_api};
+use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs};
+#[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
 use mbs4_dal::author::{Author, AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
 use mbs4_types::claim::Role;
 
@@ -6,6 +7,7 @@ use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
+publish_api_docs!(extra_crud_api::list_ebooks);
 crud_api!(Author);
 
 mod extra_crud_api {
@@ -16,10 +18,13 @@ mod extra_crud_api {
     };
     use axum_valid::Garde;
     use http::StatusCode;
-    use mbs4_dal::ebook::EbookRepository;
+    #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
+    use mbs4_dal::ebook::{EbookRepository, EbookShort};
 
     use crate::{error::ApiResult, rest_api::Paging, state::AppState};
 
+    #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Author",
+        params(Paging), responses((status = StatusCode::OK, description = "List of Author Ebooks paginated", body = crate::rest_api::Page<EbookShort>))))]
     pub async fn list_ebooks(
         Path(author_id): Path<i64>,
         repository: EbookRepository,

@@ -1,22 +1,17 @@
+#[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
 use mbs4_dal::ebook::{Ebook, EbookRepository, EbookShort};
 use mbs4_types::claim::Role;
 
-use crate::{auth::token::RequiredRolesLayer, crud_api, state::AppState};
+use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs, state::AppState};
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 // crate::repository_from_request!(EbookRepository);
 
-#[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
-#[openapi(paths(crud_api_write::create, crud_api_write::update, crud_api_write::delete))]
-struct ModuleDocs;
-
-#[cfg(feature = "openapi")]
-pub fn api_docs() -> utoipa::openapi::OpenApi {
-    use utoipa::OpenApi as _;
-    let docs = ModuleDocs::openapi();
-    docs.merge_from(crud_api::api_docs())
-}
-
+publish_api_docs!(
+    crud_api_write::create,
+    crud_api_write::update,
+    crud_api_write::delete
+);
 crud_api!(Ebook, RO);
 
 mod crud_api_write {
@@ -27,11 +22,13 @@ mod crud_api_write {
     };
     use axum_valid::Garde;
     use http::StatusCode;
+    #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
 
     use crate::{error::ApiResult, state::AppState};
 
-    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", responses((status = StatusCode::CREATED, description = "Created", body = Ebook))))]
+    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook",
+    responses((status = StatusCode::CREATED, description = "Created Ebook", body = Ebook))))]
     pub async fn create(
         repository: EbookRepository,
         State(state): State<AppState>,
@@ -45,7 +42,8 @@ mod crud_api_write {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
-    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", responses((status = StatusCode::OK, description = "Updated", body = Ebook))))]
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Ebook",
+    responses((status = StatusCode::OK, description = "Updated Ebook", body = Ebook))))]
     pub async fn update(
         Path(id): Path<i64>,
         repository: EbookRepository,
@@ -60,7 +58,10 @@ mod crud_api_write {
         Ok((StatusCode::OK, Json(record)))
     }
 
-    #[cfg_attr(feature = "openapi", utoipa::path(delete, path = "/{id}"))]
+    #[cfg_attr(
+        feature = "openapi",
+        utoipa::path(delete, path = "/{id}", tag = "Ebook")
+    )]
     pub async fn delete(
         Path(id): Path<i64>,
         repository: EbookRepository,

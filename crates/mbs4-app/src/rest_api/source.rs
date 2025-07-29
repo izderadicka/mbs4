@@ -1,4 +1,5 @@
-use crate::{auth::token::RequiredRolesLayer, crud_api};
+use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs};
+#[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
 use mbs4_dal::source::{CreateSource, Source, SourceRepository, SourceShort, UpdateSource};
 use mbs4_types::claim::Role;
 
@@ -6,6 +7,7 @@ use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
+publish_api_docs!();
 crud_api!(Source);
 
 pub fn router() -> axum::Router<AppState> {
