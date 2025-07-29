@@ -90,6 +90,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/api/source", mbs4_app::rest_api::source::api_docs())
         .nest("/api/author", mbs4_app::rest_api::author::api_docs())
         .nest("/auth", mbs4_app::auth::api_docs())
+        .nest("/files", mbs4_app::store::rest_api::api_docs())
 }
 
 fn main_router(state: AppState) -> Router<()> {
@@ -104,7 +105,7 @@ fn main_router(state: AppState) -> Router<()> {
     #[allow(unused_mut)]
     let mut router = Router::new()
         .nest("/users", users_router())
-        .nest("/store", store_router(state.config().upload_limit_mb))
+        .nest("/files", store_router(state.config().upload_limit_mb))
         .nest("/api/language", mbs4_app::rest_api::language::router())
         .nest("/api/format", mbs4_app::rest_api::format::router())
         .nest("/api/genre", mbs4_app::rest_api::genre::router())

@@ -12,6 +12,21 @@ use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
 use super::{Store as _, ValidPath};
 
+#[cfg(feature = "openapi")]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[allow(unused)]
+struct UploadForm {
+    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    file: String,
+}
+
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(post, path = "/upload/form/{path}", tag = "File Store",
+    request_body(content = UploadForm, content_type = "multipart/form-data"),
+    params(("path"=String, Path, description = "Path to save file")))
+
+)]
 pub async fn upload(
     State(state): State<AppState>,
     Path(path): Path<String>,
@@ -48,6 +63,11 @@ pub async fn upload_direct(
     Ok((StatusCode::CREATED, Json(info)))
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(get, path = "/download/{path}", tag = "File Store",
+    params(("path"=String, Path, description = "Path to file"))),
+)]
 pub async fn download(
     State(state): State<AppState>,
     path: ValidPath,
@@ -92,4 +112,13 @@ pub fn store_router(limit_mb: usize) -> Router<AppState> {
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
     app
+}
+
+#[cfg(feature = "openapi")]
+pub fn api_docs() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
+    #[derive(utoipa::OpenApi)]
+    #[openapi(paths(download, upload))]
+    struct ApiDoc;
+    ApiDoc::openapi()
 }
