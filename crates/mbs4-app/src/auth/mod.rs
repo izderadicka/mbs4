@@ -148,8 +148,9 @@ impl IntoResponse for LoginResponse {
 
 #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/login", tag = "auth", 
 params(DbLoginParams),
-request_body(description = "User credentials", content((LoginCredentials = "application/json" ),
+request_body(description = "User credentials", content(
 (LoginCredentials = "application/x-www-form-urlencoded"),
+(LoginCredentials = "application/json" ),
 )),
 responses((status = StatusCode::OK, description = "Success", content_type = "text/plain"),
 (status = StatusCode::SEE_OTHER, description = "Success andRedirect"))))]

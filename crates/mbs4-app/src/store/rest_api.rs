@@ -1,16 +1,18 @@
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Multipart, Path, Request, State},
+    extract::{DefaultBodyLimit, Multipart, Request, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use mbs4_dal::format::FormatRepository;
 use mbs4_types::claim::Role;
+use tracing::debug;
 
 use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
-use super::{Store as _, ValidPath};
+use super::{Store as _, ValidPath, UPLOAD_PATH_PREFIX};
 
 #[cfg(feature = "openapi")]
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -20,29 +22,74 @@ struct UploadForm {
     file: String,
 }
 
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+struct UploadInfo {
+    pub final_path: String,
+    pub size: u64,
+    /// SHA256 hash
+    pub hash: String,
+    pub original_name: Option<String>,
+}
+
+impl UploadInfo {
+    fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
+        Self {
+            final_path: info.final_path,
+            size: info.size,
+            hash: info.hash,
+            original_name,
+        }
+    }
+}
+
+fn upload_path(ext: &str) -> Result<ValidPath, ApiError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let dest_path = format!("{UPLOAD_PATH_PREFIX}/{id}.{ext}");
+    let dest_path = ValidPath::new(dest_path)?;
+    Ok(dest_path)
+}
+
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/upload/form/{path}", tag = "File Store",
+    utoipa::path(post, path = "/upload/form", tag = "File Store",
     request_body(content = UploadForm, content_type = "multipart/form-data"),
-    params(("path"=String, Path, description = "Path to save file")))
-
+    responses(
+        (status = StatusCode::CREATED, description = "Created", body = UploadInfo),
+    )
+    )
 )]
-pub async fn upload(
+pub async fn upload_form(
     State(state): State<AppState>,
-    Path(path): Path<String>,
+    repository: FormatRepository,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
     if let Some(field) = multipart.next_field().await? {
         let file_name = field
             .file_name()
-            .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?;
-        let dest_path = if path.ends_with('/') {
-            path + file_name
-        } else {
-            path + "/" + file_name
-        };
-        let dest_path = ValidPath::new(dest_path)?;
+            .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?
+            .to_string();
+        let ext = std::path::Path::new(&file_name)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or_else(|| ApiError::InvalidRequest("Missing file extension".into()))?
+            .to_lowercase();
+
+        let format = repository
+            .get_by_extension(&ext)
+            .await
+            .map_err(|e| ApiError::InvalidRequest(format!("Invalid file extension, error: {e}")))?;
+        // TODO: More check?
+        let mime_type = format.mime_type;
+
+        let dest_path = upload_path(&ext)?;
+        debug!(
+            "Uploading file {} to {:?}, mime {}",
+            file_name, dest_path, mime_type
+        );
         let info = state.store().store_stream(&dest_path, field).await?;
+
+        let info = UploadInfo::from_store_info(info, Some(file_name));
 
         Ok((StatusCode::CREATED, Json(info)))
     } else {
@@ -50,14 +97,43 @@ pub async fn upload(
     }
 }
 
-#[axum::debug_handler]
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(post, path = "/upload/direct", tag = "File Store",
+    
+    request_body(
+        description = "File data of supported mime types",
+        content ((Vec<u8> = "*/*"),
+        (String = "text/plain", example = "This is just test sample for swagger")
+    )),
+    responses(
+        (status = StatusCode::CREATED, description = "Created", body = UploadInfo),
+    )
+    )
+)]
 pub async fn upload_direct(
     State(state): State<AppState>,
-    path: ValidPath,
-    response: Request,
+    repository: FormatRepository,
+    request: Request,
 ) -> Result<impl IntoResponse, ApiError> {
-    let (_parts, body) = response.into_parts();
+    let (parts, body) = request.into_parts();
     let stream = body.into_data_stream();
+
+    let mime = parts
+        .headers
+        .get("content-type")
+        .ok_or_else(|| ApiError::InvalidRequest("Missing content-type header".into()))?
+        .to_str()
+        .map_err(|e| ApiError::InvalidRequest(e.to_string()))?;
+    let format = repository
+        .get_by_mime_type(mime)
+        .await
+        .map_err(|e| ApiError::InvalidRequest(format!("Invalid mime type, error: {e}")))?;
+
+    let ext = format.extension;
+
+    let path = upload_path(&ext)?;
+    debug!("Uploading file to {:?}, mime {}", path, mime);
     let info = state.store().store_stream(&path, stream).await?;
 
     Ok((StatusCode::CREATED, Json(info)))
@@ -106,8 +182,8 @@ pub async fn download(
 
 pub fn store_router(limit_mb: usize) -> Router<AppState> {
     let app = Router::new()
-        .route("/upload/form/{*path}", post(upload))
-        .route("/upload/direct/{*path}", post(upload_direct))
+        .route("/upload/form", post(upload_form))
+        .route("/upload/direct", post(upload_direct))
         .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
@@ -118,7 +194,7 @@ pub fn store_router(limit_mb: usize) -> Router<AppState> {
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(download, upload))]
+    #[openapi(paths(download, upload_direct, upload_form))]
     struct ApiDoc;
     ApiDoc::openapi()
 }

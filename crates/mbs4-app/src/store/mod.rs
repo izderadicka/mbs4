@@ -19,6 +19,8 @@ use tracing::debug;
 
 use crate::error::ApiError;
 
+const UPLOAD_PATH_PREFIX: &str = "upload";
+
 const MAX_PATH_LEN: usize = 4095;
 const MAX_SEGMENT_LEN: usize = 255;
 const MAX_PATH_DEPTH: usize = 10;
