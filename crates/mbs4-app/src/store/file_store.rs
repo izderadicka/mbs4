@@ -48,7 +48,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 const MAX_SAME_FILES: usize = 10;
-/// This is legacy algorithm to match exitinng files
+/// This is legacy algorithm to match existing files
 /// There is also notable problem with it, that there is  possibility of race condition
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     let (base_path, ext) = rsplit_file_at_dot(path.as_os_str());
@@ -68,12 +68,17 @@ fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
         if let Some(ext) = ext {
             new_path.set_extension(ext);
         }
-        if !new_path.exists() {
+        if !new_path.exists() && !tmp_path(&new_path).exists() {
             return Ok(new_path);
         }
     }
 
     Err(StoreError::PathConflict)
+}
+
+#[inline]
+fn tmp_path(path: &Path) -> PathBuf {
+    path.with_extension("tmp")
 }
 
 fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
@@ -92,7 +97,7 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
 
             final_path
         };
-        let temp_path = res_path.with_extension("tmp");
+        let temp_path = tmp_path(&res_path);
         Ok((res_path, temp_path))
     }
 }
@@ -136,13 +141,12 @@ impl FileStore {
 
 impl Store for FileStore {
     async fn store_data(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo> {
-        let (final_path, tmp_path) = unique_path(&self.inner.root, path.as_ref()).await?;
-        fs::File::create(&tmp_path)
+        let (final_path, _tmp_path) = unique_path(&self.inner.root, path.as_ref()).await?;
+        fs::File::create(&final_path)
             .await?
             .write_all(data)
-            .or_else(|e| cleanup(&tmp_path, e))
+            .or_else(|e| cleanup(&final_path, e))
             .await?;
-        fs::rename(&tmp_path, &final_path).await?;
         let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
         let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs
@@ -212,6 +216,10 @@ impl Store for FileStore {
         let final_path = self.inner.root.join(path.as_ref());
         let meta = fs::metadata(&final_path).await?;
         Ok(meta.len())
+    }
+
+    async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()> {
+        todo!()
     }
 }
 

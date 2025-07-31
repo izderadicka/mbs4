@@ -79,6 +79,12 @@ impl AsRef<str> for ValidPath {
     }
 }
 
+impl Into<String> for ValidPath {
+    fn into(self) -> String {
+        self.0
+    }
+}
+
 impl<S> FromRequestParts<S> for ValidPath {
     type Rejection = ApiError;
 
@@ -114,4 +120,5 @@ pub trait Store {
         path: &ValidPath,
     ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError>;
     async fn size(&self, path: &ValidPath) -> StoreResult<u64>;
+    async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()>;
 }
