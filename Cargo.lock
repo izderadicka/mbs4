@@ -2262,6 +2262,7 @@ dependencies = [
  "tower-cookies",
  "tower-sessions",
  "tracing",
+ "tracing-test",
  "url",
  "utoipa",
  "utoipa-axum",

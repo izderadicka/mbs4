@@ -50,6 +50,7 @@ fn hex(bytes: &[u8]) -> String {
 const MAX_SAME_FILES: usize = 10;
 /// This is legacy algorithm to match existing files
 /// There is also notable problem with it, that there is  possibility of race condition
+/// This is compensated later by using lock
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     let (base_path, ext) = rsplit_file_at_dot(path.as_os_str());
     let new_path = if ext.is_some() && base_path.is_some() {
@@ -68,7 +69,7 @@ fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
         if let Some(ext) = ext {
             new_path.set_extension(ext);
         }
-        if !new_path.exists() && !tmp_path(&new_path).exists() {
+        if !new_path.exists() {
             return Ok(new_path);
         }
     }
@@ -76,12 +77,34 @@ fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     Err(StoreError::PathConflict)
 }
 
-#[inline]
-fn tmp_path(path: &Path) -> PathBuf {
-    path.with_extension("tmp")
+async fn tmp_path(root: &Path, path: &Path) -> StoreResult<PathBuf> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let tmp_ext = format!("{id}.tmp");
+    let tmp_path = path.with_extension(&tmp_ext);
+    let tmp_path = root.join(tmp_path);
+    if let Some(parent) = tmp_path.parent() {
+        let meta = fs::metadata(parent).await;
+        match meta {
+            Ok(meta) => {
+                if !meta.is_dir() {
+                    error!("Parent is not a directory: {parent:?}");
+                    return Err(StoreError::InvalidPath);
+                }
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    fs::create_dir_all(parent).await?;
+                } else {
+                    error!("Failed to stat parent: {parent:?}: {e}");
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    Ok(tmp_path)
 }
 
-fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
+fn unique_path_sync(final_path: PathBuf) -> StoreResult<PathBuf> {
     if final_path.is_dir() {
         Err(StoreError::InvalidPath)
     } else {
@@ -97,12 +120,11 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<(PathBuf, PathBuf)> {
 
             final_path
         };
-        let temp_path = tmp_path(&res_path);
-        Ok((res_path, temp_path))
+        Ok(res_path)
     }
 }
 
-async fn unique_path(root: &Path, path: &str) -> StoreResult<(PathBuf, PathBuf)> {
+async fn unique_path(root: &Path, path: &str) -> StoreResult<PathBuf> {
     let path = root.join(path);
     spawn_blocking(|| unique_path_sync(path)).await?
 }
@@ -118,6 +140,7 @@ async fn cleanup<E: Display>(path: &Path, error: E) -> Result<(), E> {
 
 struct FileStoreInner {
     root: PathBuf,
+    lock: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone)]
@@ -128,7 +151,10 @@ pub struct FileStore {
 impl FileStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
-            inner: Arc::new(FileStoreInner { root: root.into() }),
+            inner: Arc::new(FileStoreInner {
+                root: root.into(),
+                lock: tokio::sync::Mutex::new(()),
+            }),
         }
     }
 
@@ -141,9 +167,13 @@ impl FileStore {
 
 impl Store for FileStore {
     async fn store_data(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo> {
-        let (final_path, _tmp_path) = unique_path(&self.inner.root, path.as_ref()).await?;
-        fs::File::create(&final_path)
-            .await?
+        let (final_path, mut new_file) = {
+            let _lock = self.inner.lock.lock().await;
+            let final_path = unique_path(&self.inner.root, path.as_ref()).await?;
+            let new_file = fs::File::create(&final_path).await?;
+            (final_path, new_file)
+        };
+        new_file
             .write_all(data)
             .or_else(|e| cleanup(&final_path, e))
             .await?;
@@ -163,8 +193,10 @@ impl Store for FileStore {
         S: Stream<Item = Result<Bytes, E>>,
         E: Into<StoreError>,
     {
-        let (final_path, tmp_path) = unique_path(&self.inner.root, path.as_ref()).await?;
-        let mut file = fs::File::create(&tmp_path).await?;
+        let tmp_path = tmp_path(&self.inner.root, Path::new(path.as_ref())).await?;
+        let mut file = fs::File::create(&tmp_path)
+            .await
+            .inspect_err(|e| error!("Failed to tmp file {tmp_path:?}: {e}"))?;
         let mut size = 0;
         pin_mut!(stream);
         let mut digester = Sha256::new();
@@ -184,8 +216,13 @@ impl Store for FileStore {
             }
         }
         file.flush().await?;
+        let final_path = {
+            let _lock = self.inner.lock.lock().await;
+            let final_path = unique_path(&self.inner.root, path.as_ref()).await?;
+            fs::rename(&tmp_path, &final_path).await?;
+            final_path
+        };
         debug!("Stored {size} bytes to {tmp_path:?} and will move to {final_path:?}");
-        fs::rename(&tmp_path, &final_path).await?;
         let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();
         let final_path = final_path.to_str().unwrap().to_string();
@@ -218,8 +255,23 @@ impl Store for FileStore {
         Ok(meta.len())
     }
 
-    async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()> {
-        todo!()
+    async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath> {
+        let full_path = self.inner.root.join(from_path.as_ref());
+        if !fs::metadata(&full_path).await?.is_file() {
+            error!("Path {full_path:?} is not a file");
+            return Err(StoreError::InvalidPath);
+        }
+
+        let final_path = {
+            let _lock = self.inner.lock.lock().await;
+            let final_path = unique_path(&self.inner.root, to_path.as_ref()).await?;
+            fs::rename(&full_path, &final_path).await?;
+            final_path
+        };
+        debug!("Renamed to {final_path:?}");
+        let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
+        let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs and path was created from string
+        Ok(ValidPath(final_path))
     }
 }
 
@@ -275,6 +327,7 @@ mod tests {
         })
     }
 
+    #[tracing_test::traced_test]
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_stream() {
         let tmp_dir = tempfile::tempdir().unwrap();

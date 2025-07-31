@@ -163,8 +163,7 @@ pub async fn download(
         http::header::CONTENT_LENGTH,
         size.to_string().parse().unwrap(), // safe - number is ASCII
     );
-    if let Some(file_name) = path
-        .as_ref()
+    if let Some(file_name) = path.as_ref()
         .split('/')
         .last()
         .filter(|s| s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()))
