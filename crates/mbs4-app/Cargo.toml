@@ -49,7 +49,7 @@ uuid = { version = "1.17.0", features = ["v4"] }
 
 
 [features]
-openapi = ["utoipa", "utoipa-axum", "mbs4-dal/openapi"]
+openapi = ["utoipa", "utoipa-axum", "mbs4-dal/openapi", "mbs4-search/openapi"]
 
 [dev-dependencies]
 rand = "0.9.0"

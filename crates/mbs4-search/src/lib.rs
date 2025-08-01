@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchItem {
     pub score: f32,
     pub doc: BookResult,
@@ -62,17 +63,19 @@ pub trait Searcher {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Author {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AuthorSummary {
     pub id: u64,
     pub name: String,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookResult {
     title: String,
     series: String,
     series_id: Option<i64>,
-    authors: Vec<Author>,
+    authors: Vec<AuthorSummary>,
     id: i64,
 }
 

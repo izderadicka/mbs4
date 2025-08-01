@@ -1,4 +1,4 @@
-use crate::{Author, BookResult, IndexingJob};
+use crate::{AuthorSummary, BookResult, IndexingJob};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
@@ -289,7 +289,7 @@ impl SqlSearcher {
             let authors = author
                 .into_iter()
                 .zip(author_id.into_iter())
-                .map(|(name, id)| Author {
+                .map(|(name, id)| AuthorSummary {
                     id: u64::try_from(id).unwrap(), // as we control id as and must be always positive we can unwrap
                     name,
                 })

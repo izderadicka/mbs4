@@ -63,6 +63,8 @@ struct SearchInner {
 }
 
 #[derive(Debug, Clone, Validate, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[into_params(parameter_in = Query)]
 pub struct SearchQuery {
     #[garde(length(max = 255))]
     query: String,
@@ -70,6 +72,8 @@ pub struct SearchQuery {
     num_results: Option<usize>,
 }
 
+#[cfg_attr(feature = "openapi", utoipa::path(get, path = "", tag = "Search", params(SearchQuery), 
+responses((status = StatusCode::OK, description = "Search", body = Vec<mbs4_search::SearchItem>))))]
 pub async fn search(
     Garde(Query(query)): Garde<Query<SearchQuery>>,
     State(state): State<AppState>,
@@ -81,4 +85,12 @@ pub async fn search(
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new().route("/", axum::routing::get(search))
+}
+
+pub fn api_docs() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
+    #[derive(utoipa::OpenApi)]
+    #[openapi(paths(search))]
+    struct ApiDocs;
+    ApiDocs::openapi()
 }
