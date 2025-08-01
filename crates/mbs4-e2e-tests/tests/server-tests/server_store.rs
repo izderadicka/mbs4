@@ -1,4 +1,4 @@
-use mbs4_app::store::rest_api::UploadInfo;
+use mbs4_app::store::rest_api::{RenameResult, UploadInfo};
 use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, random_text_file};
 use reqwest::{
     Body,
@@ -65,17 +65,30 @@ async fn test_store() {
     let info2: UploadInfo = response.json().await.unwrap();
     assert_eq!(info2.size, FILE_SIZE);
     assert!(info2.final_path.ends_with("txt"));
+    let move_upload = async |path| {
+        let url = base_url.join("files/move/upload").unwrap();
+        let body = serde_json::json!({
+        "from_path": path,
+        "to_path": "tmp/my_test.txt"});
+        let response = client.post(url).json(&body).send().await.unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        response.json::<RenameResult>().await.unwrap()
+    };
+
+    let res = move_upload(info.final_path).await;
+    assert_eq!("tmp/my_test.txt", res.final_path);
+    let res = move_upload(info2.final_path).await;
+    assert_eq!("tmp/my_test(1).txt", res.final_path);
 
     let original = tokio::fs::read(test_file_path).await.unwrap();
-
-    // for sufix in ["", "(1)"] {
-    //     let path = format!("files/download/tmp/my_test{sufix}.txt");
-    //     let url = base_url.join(&path).unwrap();
-    //     let response = client.get(url).send().await.unwrap();
-    //     assert_eq!(response.status().as_u16(), 200);
-    //     let size = response.content_length().unwrap();
-    //     assert_eq!(size, FILE_SIZE);
-    //     let body = response.bytes().await.unwrap();
-    //     assert_eq!(body, original);
-    // }
+    for sufix in ["", "(1)"] {
+        let path = format!("files/download/tmp/my_test{sufix}.txt");
+        let url = base_url.join(&path).unwrap();
+        let response = client.get(url).send().await.unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        let size = response.content_length().unwrap();
+        assert_eq!(size, FILE_SIZE);
+        let body = response.bytes().await.unwrap();
+        assert_eq!(body, original);
+    }
 }

@@ -203,10 +203,10 @@ pub struct RenameBody {
     to_path: String,
 }
 
-#[derive(serde::Serialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameResult {
-    new_path: String
+    pub final_path: String
 }
 
 #[cfg_attr(
@@ -229,7 +229,7 @@ pub async fn move_upload(
     let new_path = state.store().rename(&from_path, &to_path).await?;
 
     // safe - we set same prefix above
-    Ok((StatusCode::OK, Json(RenameResult { new_path: new_path.without_prefix(StorePrefix::Books).unwrap().into() })))
+    Ok((StatusCode::OK, Json(RenameResult { final_path: new_path.without_prefix(StorePrefix::Books).unwrap().into() })))
 }
 
 pub fn store_router(limit_mb: usize) -> Router<AppState> {
