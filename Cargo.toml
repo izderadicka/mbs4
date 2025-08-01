@@ -11,3 +11,6 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing = { version = "0.1.41", features = ["async-await"] }
 time = { version = "0.3", features = ["serde-human-readable", "local-offset"] }
 anyhow = "1.0.96"
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

@@ -177,9 +177,10 @@ impl Store for FileStore {
             .write_all(data)
             .or_else(|e| cleanup(&final_path, e))
             .await?;
+        new_file.flush().await?;
         let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
-        let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs
+        let final_path = ValidPath::new(final_path.to_str().unwrap()).unwrap(); // this is save as we assume utf-8 fs and also result is ValidPath
         let size = data.len() as u64;
         Ok(StoreInfo {
             final_path,
@@ -225,7 +226,7 @@ impl Store for FileStore {
         debug!("Stored {size} bytes to {tmp_path:?} and will move to {final_path:?}");
         let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();
-        let final_path = final_path.to_str().unwrap().to_string();
+        let final_path = ValidPath::new(final_path.to_str().unwrap()).unwrap(); // dtto as above - safe by design
         Ok(StoreInfo {
             final_path,
             size,
@@ -294,17 +295,15 @@ mod tests {
             tokio::spawn(async move { store2.store_data(&validated_path2, content).await });
         let res = handle.await.unwrap().unwrap();
         assert_eq!(res.size, 12);
-        assert_eq!(res.final_path, "usarna/kulisatna.txt");
-        assert!(store.inner.root.join("usarna/kulisatna.txt").exists());
-        assert_eq!(
-            fs::read(store.inner.root.join("usarna/kulisatna.txt"))
-                .await
-                .unwrap(),
-            content
-        );
+        assert_eq!(res.final_path.as_ref(), "usarna/kulisatna.txt");
+        let res_path = store.inner.root.join("usarna/kulisatna.txt");
+        assert!(res_path.exists());
+
+        assert_eq!(fs::read(res_path).await.unwrap(), content);
         let res2 = store.store_data(&validated_path, content).await.unwrap();
-        assert_eq!(res2.final_path, "usarna/kulisatna(1).txt");
+        assert_eq!(res2.final_path.as_ref(), "usarna/kulisatna(1).txt");
         assert!(store.inner.root.join("usarna/kulisatna(1).txt").exists());
+
         assert_eq!(
             fs::read(store.inner.root.join("usarna/kulisatna(1).txt"))
                 .await
@@ -336,7 +335,7 @@ mod tests {
         let store = FileStore::new(tmp_dir.path());
         let validated_path = ValidPath::new("binarni/data").unwrap();
         let res = store.store_stream(&validated_path, chunks).await.unwrap();
-        assert_eq!(res.final_path, "binarni/data");
+        assert_eq!(res.final_path.as_ref(), "binarni/data");
         assert_eq!(res.size, 10240);
         let file_path = store.inner.root.join("binarni/data");
         assert!(file_path.exists());
@@ -363,5 +362,37 @@ mod tests {
         assert_eq!(data.len(), size);
         let original = fs::read(tmp_dir.path().join("binarni/data")).await.unwrap();
         assert_eq!(data, original);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn test_rename() {
+        let size_kb: u8 = 5;
+        let size = size_kb as usize * 1024;
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let chunks = data_generator(size_kb);
+        let original_path = ValidPath::new("binarni/data").unwrap();
+        let store = FileStore::new(tmp_dir.path());
+        let _res = store.store_stream(&original_path, chunks).await.unwrap();
+        let renamed_path = ValidPath::new("finalni/data.bin").unwrap();
+        let res = store.rename(&original_path, &renamed_path).await.unwrap();
+        assert_eq!(res.as_ref(), "finalni/data.bin");
+
+        let mut stream = store.load_data(&renamed_path).await.unwrap();
+        let mut data = Vec::with_capacity(size); // 5MB
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            data.extend_from_slice(&chunk);
+        }
+        assert_eq!(data.len(), size);
+        let original = fs::read(tmp_dir.path().join("finalni/data.bin"))
+            .await
+            .unwrap();
+        assert_eq!(data, original);
+
+        let res = store.load_data(&original_path).await;
+        assert!(res.is_err());
+        if let Err(err) = res {
+            assert!(matches!(err, StoreError::NotFound(_)));
+        }
     }
 }

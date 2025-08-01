@@ -10,7 +10,7 @@ use mbs4_dal::format::FormatRepository;
 use mbs4_types::claim::Role;
 use tracing::debug;
 
-use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::StorePrefix};
 
 use super::{Store as _, ValidPath, UPLOAD_PATH_PREFIX};
 
@@ -22,9 +22,9 @@ struct UploadForm {
     file: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-struct UploadInfo {
+pub struct UploadInfo {
     pub final_path: String,
     pub size: u64,
     /// SHA256 hash
@@ -35,7 +35,7 @@ struct UploadInfo {
 impl UploadInfo {
     fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
         Self {
-            final_path: info.final_path,
+            final_path: info.final_path.into(),
             size: info.size,
             hash: info.hash,
             original_name,
@@ -45,8 +45,8 @@ impl UploadInfo {
 
 fn upload_path(ext: &str) -> Result<ValidPath, ApiError> {
     let id = uuid::Uuid::new_v4().to_string();
-    let dest_path = format!("{UPLOAD_PATH_PREFIX}/{id}.{ext}");
-    let dest_path = ValidPath::new(dest_path)?;
+    let dest_path = format!("{id}.{ext}");
+    let dest_path = ValidPath::new(dest_path)?.with_prefix(StorePrefix::Upload);
     Ok(dest_path)
 }
 
@@ -135,6 +135,7 @@ pub async fn upload_direct(
     let path = upload_path(&ext)?;
     debug!("Uploading file to {:?}, mime {}", path, mime);
     let info = state.store().store_stream(&path, stream).await?;
+    let info = UploadInfo::from_store_info(info, None);
 
     Ok((StatusCode::CREATED, Json(info)))
 }
@@ -177,6 +178,45 @@ pub async fn download(
     }
 
     Ok((StatusCode::OK, headers, body))
+}
+
+#[derive(serde::Deserialize, Debug, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RenameBody {
+    #[garde(length(min = 1, max = 4096))]
+    from_path: String,
+    #[garde(length(min = 1, max = 4096))]
+    to_path: String,
+}
+
+#[derive(serde::Serialize, Debug)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RenameResult {
+    new_path: String
+}
+
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(post, path = "/rename", tag = "File Store",
+    request_body = RenameBody,
+    responses(
+        (status = StatusCode::OK, description = "OK", body = RenameResult),
+    )
+    )
+)]
+pub async fn rename(
+    State(state): State<AppState>,
+    Json(body): Json<RenameBody>,
+    
+) -> Result<impl IntoResponse, ApiError> {
+    if !body.from_path.starts_with(UPLOAD_PATH_PREFIX) {
+
+    }
+    let from_path = ValidPath::new(body.from_path)?;
+    let to_path = ValidPath::new(body.to_path)?;
+    let new_path = state.store().rename(&from_path, &to_path).await?;
+
+    Ok((StatusCode::OK, Json(RenameResult { new_path: new_path.into() })))
 }
 
 pub fn store_router(limit_mb: usize) -> Router<AppState> {

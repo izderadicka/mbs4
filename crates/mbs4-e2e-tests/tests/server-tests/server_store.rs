@@ -1,4 +1,4 @@
-use mbs4_app::store::StoreInfo;
+use mbs4_app::store::rest_api::UploadInfo;
 use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, random_text_file};
 use reqwest::{
     Body,
@@ -34,7 +34,7 @@ async fn test_store() {
 
     let response = client.post(url).multipart(form).send().await.unwrap();
     assert_eq!(response.status().as_u16(), 201);
-    let info: StoreInfo = response.json().await.unwrap();
+    let info: UploadInfo = response.json().await.unwrap();
     assert_eq!(info.size, FILE_SIZE);
     assert_eq!(info.final_path, "tmp/my_test.txt");
 
@@ -50,7 +50,7 @@ async fn test_store() {
         .await
         .unwrap();
     assert_eq!(response.status().as_u16(), 201);
-    let info: StoreInfo = response.json().await.unwrap();
+    let info: UploadInfo = response.json().await.unwrap();
     assert_eq!(info.size, FILE_SIZE);
     assert_eq!(info.final_path, "tmp/my_test(1).txt");
 

@@ -27,6 +27,3 @@ futures = "0.3.31"
 
 [features]
 openapi = ["utoipa"]
-
-[profile.dev.package.sqlx-macros]
-opt-level = 3
