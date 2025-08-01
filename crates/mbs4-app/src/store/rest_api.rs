@@ -10,9 +10,9 @@ use mbs4_dal::format::FormatRepository;
 use mbs4_types::claim::Role;
 use tracing::debug;
 
-use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::StorePrefix};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::{Store, StorePrefix}};
 
-use super::{Store as _, ValidPath, UPLOAD_PATH_PREFIX};
+use super::{ValidPath};
 
 #[cfg(feature = "openapi")]
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -35,7 +35,8 @@ pub struct UploadInfo {
 impl UploadInfo {
     fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
         Self {
-            final_path: info.final_path.into(),
+            // safe due to logic -  always used with this prefix
+            final_path: info.final_path.without_prefix(StorePrefix::Upload).unwrap().into(),
             size: info.size,
             hash: info.hash,
             original_name,
@@ -148,18 +149,31 @@ pub async fn upload_direct(
 pub async fn download(
     State(state): State<AppState>,
     path: ValidPath,
+    repository: FormatRepository,
 ) -> Result<impl IntoResponse, ApiError> {
+    let path = path.with_prefix(StorePrefix::Books);
     let store = state.store();
     let data = store.load_data(&path).await?;
     let size = store.size(&path).await?;
     let body = Body::from_stream(data);
     let mut headers = axum::http::HeaderMap::new();
-    let content_type = new_mime_guess::from_path(path.as_ref()).first_or_octet_stream();
+    
+    let ext = std::path::Path::new(path.as_ref())
+        .extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase());
+
+    let mut content_type = None;
+    if let Some(ext) = ext {
+        content_type =  repository.get_by_extension(&ext).await.ok().map(|f| f.mime_type);
+    }
+
+        // .and_then(|s| repository.get_by_extension(&s).await.ok()).map(|f| f.mime_type).unwrap_or_else(|| "application/octet-stream".to_string());
+    let mime = content_type.as_deref().unwrap_or("application/octet-stream");
 
     headers.insert(
         http::header::CONTENT_TYPE,
-        content_type.as_ref().parse().unwrap(), // safe as MIME is ASCII
+        mime.parse().unwrap(), // safe as MIME is ASCII
     );
+
     headers.insert(
         http::header::CONTENT_LENGTH,
         size.to_string().parse().unwrap(), // safe - number is ASCII
@@ -197,32 +211,32 @@ pub struct RenameResult {
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/rename", tag = "File Store",
+    utoipa::path(post, path = "/move/upload", tag = "File Store",
     request_body = RenameBody,
     responses(
         (status = StatusCode::OK, description = "OK", body = RenameResult),
     )
     )
 )]
-pub async fn rename(
+pub async fn move_upload(
     State(state): State<AppState>,
     Json(body): Json<RenameBody>,
     
 ) -> Result<impl IntoResponse, ApiError> {
-    if !body.from_path.starts_with(UPLOAD_PATH_PREFIX) {
-
-    }
-    let from_path = ValidPath::new(body.from_path)?;
-    let to_path = ValidPath::new(body.to_path)?;
+   
+    let from_path = ValidPath::new(body.from_path)?.with_prefix(StorePrefix::Upload);
+    let to_path = ValidPath::new(body.to_path)?.with_prefix(StorePrefix::Books);
     let new_path = state.store().rename(&from_path, &to_path).await?;
 
-    Ok((StatusCode::OK, Json(RenameResult { new_path: new_path.into() })))
+    // safe - we set same prefix above
+    Ok((StatusCode::OK, Json(RenameResult { new_path: new_path.without_prefix(StorePrefix::Books).unwrap().into() })))
 }
 
 pub fn store_router(limit_mb: usize) -> Router<AppState> {
     let app = Router::new()
         .route("/upload/form", post(upload_form))
         .route("/upload/direct", post(upload_direct))
+        .route("/move/upload", post(move_upload))
         .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));

@@ -28,6 +28,6 @@ futures = "0.3.31"
 garde = "0.22.0"
 time.workspace = true
 [dev-dependencies]
-tracing-test = { version = "0.2.5", features = [] }
+# tracing-test = { version = "0.2.5", features = [] }
 # For detailed logs use this feature
-# tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
+tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
