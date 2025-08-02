@@ -8,6 +8,8 @@ pub struct EbookMetadata {
     pub genres: Vec<String>,
     pub language: Option<String>,
     pub series: Option<Series>,
+    pub cover_file: Option<String>,
+    pub comments: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,6 +39,7 @@ lazy_static! {
     static ref SERIES_RE: Regex = build_regex(r"^Series\s*:\s*(.+)");
     static ref LANGUAGES_RE: Regex = build_regex(r"^Languages\s*:\s*(.+)");
     static ref SERIES_INDEX_RE: Regex = Regex::new(r"^(.*) #(\d+)$").unwrap();
+    static ref COMMENTS_RE: Regex = build_regex(r"^Comments\s*:\s*(.+)");
     static ref BRACKETS_RE: Regex = Regex::new(r"\[[^\]]+\]").unwrap();
 }
 
@@ -46,6 +49,7 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
     let mut genres = Vec::new();
     let mut language = None;
     let mut series = None;
+    let mut comments = None;
 
     // Title
     if let Some(caps) = TITLE_RE.captures(data) {
@@ -94,12 +98,22 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
         }
     }
 
+    // Comments
+    if let Some(caps) = COMMENTS_RE.captures(data) {
+        let comments_str = caps[1].trim().to_string();
+        if comments_str.len() > 3 {
+            comments = Some(comments_str);
+        }
+    }
+
     EbookMetadata {
         title,
         authors,
         genres,
         language,
         series,
+        cover_file: None,
+        comments,
     }
 }
 
@@ -184,5 +198,6 @@ Comments            : Sbírka dvanácti apokalyptických scénářů, v nichž c
         assert_eq!(metadata.genres.len(), 2);
         assert_eq!(metadata.language, Some("ces".to_string()));
         assert!(metadata.series.is_none());
+        assert!(metadata.comments.unwrap().len() > 80);
     }
 }

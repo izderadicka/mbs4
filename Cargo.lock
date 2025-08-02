@@ -2297,6 +2297,7 @@ dependencies = [
  "lazy_static",
  "regex",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
