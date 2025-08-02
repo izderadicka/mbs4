@@ -154,6 +154,7 @@ pub trait Store {
     ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError>;
     async fn size(&self, path: &ValidPath) -> StoreResult<u64>;
     async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath>;
+    fn local_path(&self, path: &ValidPath) -> std::path::PathBuf;
 }
 
 #[cfg(test)]

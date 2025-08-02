@@ -274,6 +274,10 @@ impl Store for FileStore {
         let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs and path was created from string
         Ok(ValidPath(final_path))
     }
+
+    fn local_path(&self, path: &ValidPath) -> std::path::PathBuf {
+        self.inner.root.join(path.as_ref())
+    }
 }
 
 #[cfg(test)]

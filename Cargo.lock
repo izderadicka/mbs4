@@ -2244,6 +2244,7 @@ dependencies = [
  "headers",
  "http",
  "mbs4-auth",
+ "mbs4-calibre",
  "mbs4-dal",
  "mbs4-search",
  "mbs4-types",

@@ -15,6 +15,7 @@ mbs4-types = { path = "../mbs4-types" }
 mbs4-auth = { path = "../mbs4-auth" }
 mbs4-dal = { path = "../mbs4-dal" }
 mbs4-search = { path = "../mbs4-search" }
+mbs4-calibre = { path = "../mbs4-calibre" }
 time = "0.3.37"
 tower-sessions = "0.14.0"
 url = "2.5.4"

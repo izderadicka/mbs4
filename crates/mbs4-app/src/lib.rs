@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod ebook_format;
 pub mod error;
 pub mod rest_api;
 pub mod search;
