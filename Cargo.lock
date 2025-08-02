@@ -2290,6 +2290,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbs4-calibre"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "regex",
+ "tokio",
+]
+
+[[package]]
 name = "mbs4-dal"
 version = "0.1.0"
 dependencies = [
