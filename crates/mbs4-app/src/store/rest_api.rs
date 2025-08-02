@@ -10,9 +10,14 @@ use mbs4_dal::format::FormatRepository;
 use mbs4_types::claim::Role;
 use tracing::debug;
 
-use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::{Store, StorePrefix}};
+use crate::{
+    auth::token::RequiredRolesLayer,
+    error::ApiError,
+    state::AppState,
+    store::{Store, StorePrefix},
+};
 
-use super::{ValidPath};
+use super::ValidPath;
 
 #[cfg(feature = "openapi")]
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -36,7 +41,11 @@ impl UploadInfo {
     fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
         Self {
             // safe due to logic -  always used with this prefix
-            final_path: info.final_path.without_prefix(StorePrefix::Upload).unwrap().into(),
+            final_path: info
+                .final_path
+                .without_prefix(StorePrefix::Upload)
+                .unwrap()
+                .into(),
             size: info.size,
             hash: info.hash,
             original_name,
@@ -101,7 +110,6 @@ pub async fn upload_form(
 #[cfg_attr(
     feature = "openapi",
     utoipa::path(post, path = "/upload/direct", tag = "File Store",
-    
     request_body(
         description = "File data of supported mime types",
         content ((Vec<u8> = "*/*"),
@@ -157,17 +165,25 @@ pub async fn download(
     let size = store.size(&path).await?;
     let body = Body::from_stream(data);
     let mut headers = axum::http::HeaderMap::new();
-    
+
     let ext = std::path::Path::new(path.as_ref())
-        .extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase());
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase());
 
     let mut content_type = None;
     if let Some(ext) = ext {
-        content_type =  repository.get_by_extension(&ext).await.ok().map(|f| f.mime_type);
+        content_type = repository
+            .get_by_extension(&ext)
+            .await
+            .ok()
+            .map(|f| f.mime_type);
     }
 
-        // .and_then(|s| repository.get_by_extension(&s).await.ok()).map(|f| f.mime_type).unwrap_or_else(|| "application/octet-stream".to_string());
-    let mime = content_type.as_deref().unwrap_or("application/octet-stream");
+    // .and_then(|s| repository.get_by_extension(&s).await.ok()).map(|f| f.mime_type).unwrap_or_else(|| "application/octet-stream".to_string());
+    let mime = content_type
+        .as_deref()
+        .unwrap_or("application/octet-stream");
 
     headers.insert(
         http::header::CONTENT_TYPE,
@@ -178,7 +194,8 @@ pub async fn download(
         http::header::CONTENT_LENGTH,
         size.to_string().parse().unwrap(), // safe - number is ASCII
     );
-    if let Some(file_name) = path.as_ref()
+    if let Some(file_name) = path
+        .as_ref()
         .split('/')
         .last()
         .filter(|s| s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()))
@@ -206,7 +223,7 @@ pub struct RenameBody {
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameResult {
-    pub final_path: String
+    pub final_path: String,
 }
 
 #[cfg_attr(
@@ -221,15 +238,18 @@ pub struct RenameResult {
 pub async fn move_upload(
     State(state): State<AppState>,
     Json(body): Json<RenameBody>,
-    
 ) -> Result<impl IntoResponse, ApiError> {
-   
     let from_path = ValidPath::new(body.from_path)?.with_prefix(StorePrefix::Upload);
     let to_path = ValidPath::new(body.to_path)?.with_prefix(StorePrefix::Books);
     let new_path = state.store().rename(&from_path, &to_path).await?;
 
     // safe - we set same prefix above
-    Ok((StatusCode::OK, Json(RenameResult { final_path: new_path.without_prefix(StorePrefix::Books).unwrap().into() })))
+    Ok((
+        StatusCode::OK,
+        Json(RenameResult {
+            final_path: new_path.without_prefix(StorePrefix::Books).unwrap().into(),
+        }),
+    ))
 }
 
 pub fn store_router(limit_mb: usize) -> Router<AppState> {
