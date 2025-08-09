@@ -5,28 +5,28 @@ edition = "2021"
 rust-version = "1.85"
 
 [dependencies]
-anyhow.workspace = true
-axum.workspace = true
-tokio.workspace = true
-tracing.workspace = true
-serde.workspace = true
+anyhow = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
 http = "1.2.0"
 mbs4-types = { path = "../mbs4-types" }
 mbs4-auth = { path = "../mbs4-auth" }
 mbs4-dal = { path = "../mbs4-dal" }
 mbs4-search = { path = "../mbs4-search" }
-time = "0.3.37"
-tower-sessions = "0.14.0"
-url = "2.5.4"
-serde_json.workspace = true
+time = { workspace = true }
+tower-sessions = { workspace = true }
+url = { workspace = true }
+serde_json = { workspace = true }
 
-thiserror = "2.0.11"
-futures = "0.3.31"
+thiserror = { workspace = true }
+futures = { workspace = true }
 cookie = "0.18.1"
-tower-cookies = "0.11.0"
+tower-cookies = { workspace = true }
 headers = "0.4.0"
 axum-extra = { version = "0.10.0", features = ["typed-header"] }
-tower = "0.5.2"
+tower = { workspace = true }
 bytes = "1.10.1"
 sha2 = "0.10.8"
 base16ct = "0.2.0"
@@ -37,7 +37,7 @@ axum-valid = { version = "0.23.0", default-features = false, features = [
     "basic",
     "full_garde",
 ] }
-garde = "0.22.0"
+garde = { workspace = true }
 utoipa = { version = "5.4.0", features = [
     "axum_extras",
     "preserve_order",
@@ -47,7 +47,7 @@ utoipa-axum = { version = "0.2.0", optional = true }
 paste = "1.0.15"
 uuid = { version = "1.17.0", features = ["v4"] }
 libc = "0.2.174"
-tempfile = "3.18.0"
+tempfile = { workspace = true }
 
 
 [features]

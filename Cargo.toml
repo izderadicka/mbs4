@@ -11,6 +11,16 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing = { version = "0.1.41", features = ["async-await"] }
 time = { version = "0.3", features = ["serde-human-readable", "local-offset"] }
 anyhow = "1.0.96"
+tower-sessions = {version = "0.14.0"}
+url = {version = "2.5.4"}
+thiserror = {version = "2.0.11"}
+futures = {version = "0.3.31"}
+tower-cookies = {version = "0.11.0"}
+tower = {version = "0.5.2"}
+garde = {version = "0.22.0"}
+tempfile = {version = "3.18.0"}
+rand = {version = "0.9.0"}
 
+[workspace.dev-dependencies]
 [profile.dev.package.sqlx-macros]
 opt-level = 3

@@ -12,9 +12,9 @@ serde = { workspace = true, features = ["derive"] }
 trybuild = { version = "1.0.49", features = ["diff"] }
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
 mbs4-dal = { path = "../mbs4-dal" }
-tracing.workspace = true
+tracing = { workspace = true }
 futures = "0.3.31"
-time.workspace = true
+time = { workspace = true }
 utoipa = { version = "5.4.0", features = ["time", "preserve_order"] }
 
 [dependencies]

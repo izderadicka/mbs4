@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde.workspace = true
-tokio.workspace = true
-url = "2.5.4"
+serde = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
 openidconnect = "4.0.0"
 reqwest = "0.12.12"
-anyhow.workspace = true
-tracing.workspace = true
+anyhow = { workspace = true }
+tracing = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
 jsonwebtoken = "9.3.1"
 hmac = "0.12.1"
