@@ -70,6 +70,13 @@ fn validate_path(path: &str) -> StoreResult<()> {
     }
 }
 
+pub fn upload_path(ext: &str) -> StoreResult<ValidPath> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let dest_path = format!("{id}.{ext}");
+    let dest_path = ValidPath::new(dest_path)?.with_prefix(StorePrefix::Upload);
+    Ok(dest_path)
+}
+
 /// relative path, utf8, validated not to escape root and use . segments and some special chars
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidPath(String);
@@ -148,6 +155,12 @@ pub trait Store {
     where
         S: Stream<Item = Result<Bytes, E>>,
         E: Into<StoreError>;
+    async fn import_file(
+        &self,
+        path: &std::path::Path,
+        final_path: &ValidPath,
+        move_file: bool,
+    ) -> StoreResult<ValidPath>;
     async fn load_data(
         &self,
         path: &ValidPath,

@@ -14,7 +14,7 @@ use crate::{
     auth::token::RequiredRolesLayer,
     error::ApiError,
     state::AppState,
-    store::{Store, StorePrefix},
+    store::{upload_path, Store, StorePrefix},
 };
 
 use super::ValidPath;
@@ -51,13 +51,6 @@ impl UploadInfo {
             original_name,
         }
     }
-}
-
-fn upload_path(ext: &str) -> Result<ValidPath, ApiError> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let dest_path = format!("{id}.{ext}");
-    let dest_path = ValidPath::new(dest_path)?.with_prefix(StorePrefix::Upload);
-    Ok(dest_path)
 }
 
 #[cfg_attr(

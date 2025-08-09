@@ -8,7 +8,8 @@ use std::{
 use bytes::Bytes;
 use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use sha2::{Digest, Sha256};
-use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
+use tempfile::NamedTempFile;
+use tokio::{fs, io, io::AsyncWriteExt as _, task::spawn_blocking};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
@@ -158,10 +159,47 @@ impl FileStore {
         }
     }
 
-    fn relative_path(&self, path: &impl AsRef<Path>) -> Result<PathBuf, StripPrefixError> {
-        path.as_ref()
-            .strip_prefix(&self.inner.root)
-            .map(|p| p.to_path_buf())
+    fn relative_path(&self, path: &impl AsRef<Path>) -> Result<ValidPath, StripPrefixError> {
+        let relative_path = path.as_ref().strip_prefix(&self.inner.root)?; // this is safe as we used root to create path
+        let final_path = relative_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs and path was created from string
+        Ok(ValidPath(final_path)) // as input was ValidPath we expect ValidPath
+    }
+
+    async fn copy_file(
+        &self,
+        src: &Path,
+        to_path: &ValidPath,
+        remove_src: bool,
+    ) -> StoreResult<PathBuf> {
+        let dst_dir = self.inner.root.clone();
+        let tmp = spawn_blocking(move || NamedTempFile::new_in(dst_dir)).await??; // propagate join errors
+
+        // copy bytes
+        let mut in_f = fs::File::open(src).await?;
+        // reopen the temp path with tokio so we can write async
+        let tmp_path = tmp.path();
+        let mut out_f = fs::OpenOptions::new().write(true).open(tmp_path).await?;
+        io::copy(&mut in_f, &mut out_f).await?;
+        out_f.sync_all().await?;
+
+        // persist atomically (blocking; wrap again)
+        let final_path = {
+            let final_path = unique_path(&self.inner.root, to_path.as_ref()).await?;
+            spawn_blocking({
+                let tmp = tmp;
+                let dst = final_path.clone();
+                move || tmp.persist(dst).map(|_| ())
+            })
+            .await?
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.error))?;
+            final_path
+        };
+
+        if remove_src {
+            fs::remove_file(src).await?
+        };
+
+        Ok(final_path)
     }
 }
 
@@ -180,7 +218,6 @@ impl Store for FileStore {
         new_file.flush().await?;
         let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
-        let final_path = ValidPath::new(final_path.to_str().unwrap()).unwrap(); // this is save as we assume utf-8 fs and also result is ValidPath
         let size = data.len() as u64;
         Ok(StoreInfo {
             final_path,
@@ -226,7 +263,6 @@ impl Store for FileStore {
         debug!("Stored {size} bytes to {tmp_path:?} and will move to {final_path:?}");
         let digest = digester.finalize();
         let final_path = self.relative_path(&final_path).unwrap();
-        let final_path = ValidPath::new(final_path.to_str().unwrap()).unwrap(); // dtto as above - safe by design
         Ok(StoreInfo {
             final_path,
             size,
@@ -271,8 +307,45 @@ impl Store for FileStore {
         };
         debug!("Renamed to {final_path:?}");
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
-        let final_path = final_path.to_str().unwrap().to_string(); // this is save as we assume utf-8 fs and path was created from string
-        Ok(ValidPath(final_path))
+        Ok(final_path)
+    }
+
+    async fn import_file(
+        &self,
+        path: &std::path::Path,
+        to_path: &ValidPath,
+        move_file: bool,
+    ) -> StoreResult<ValidPath> {
+        let mut final_path = None;
+        if move_file {
+            let _lock = self.inner.lock.lock().await;
+            let dest_path = unique_path(&self.inner.root, to_path.as_ref()).await?;
+            match fs::rename(path, &dest_path).await {
+                Ok(()) => {
+                    debug!("Moved file to {dest_path:?}");
+                    final_path = Some(dest_path)
+                }
+                Err(e) => {
+                    let is_exdev = e.raw_os_error() == Some(libc::EXDEV);
+                    if !is_exdev {
+                        return Err(e.into());
+                    } else {
+                        debug!("destination is on different mount, copying file");
+                    }
+                }
+            }
+        }
+
+        if !move_file || final_path.is_none() {
+            final_path = Some(self.copy_file(path, to_path, move_file).await?);
+        }
+
+        if let Some(final_path) = final_path {
+            let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
+            Ok(final_path)
+        } else {
+            unreachable!("Should have path or return earlier")
+        }
     }
 }
 
@@ -394,5 +467,59 @@ mod tests {
         if let Err(err) = res {
             assert!(matches!(err, StoreError::NotFound(_)));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn test_import() {
+        let size_kb: u8 = 5;
+        let size = size_kb as usize * 1024;
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let chunks = data_generator(size_kb);
+        tokio::pin! {
+        let reader = tokio_util::io::StreamReader::new(
+            chunks.map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+        );
+        }
+        let tmp_dir2 = tempfile::tempdir().unwrap();
+        let external_file = tmp_dir.path().join("test_data");
+
+        let mut f = fs::File::create(&external_file).await.unwrap();
+        io::copy(&mut reader, &mut f).await.unwrap();
+
+        let store = FileStore::new(tmp_dir2.path());
+        let to_path = ValidPath::new("upload/data.bin").unwrap();
+        let name = store
+            .import_file(&external_file, &to_path, false)
+            .await
+            .unwrap();
+        assert_eq!("upload/data.bin", name.as_ref());
+
+        async fn load_data(store: &FileStore, to_path: &ValidPath) -> Vec<u8> {
+            let mut stream = store.load_data(&to_path).await.unwrap();
+
+            let mut data: Vec<u8> = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.unwrap();
+                data.extend_from_slice(&chunk);
+            }
+
+            data
+        }
+
+        let data = load_data(&store, &to_path).await;
+
+        assert_eq!(data.len(), size);
+        let original = fs::read(tmp_dir.path().join("test_data")).await.unwrap();
+        assert_eq!(data, original);
+
+        let name = store
+            .import_file(&external_file, &to_path, true)
+            .await
+            .unwrap();
+        assert_eq!("upload/data(1).bin", name.as_ref());
+
+        let data = load_data(&store, &ValidPath::new("upload/data(1).bin").unwrap()).await;
+        assert_eq!(data.len(), size);
+        assert_eq!(data, original);
     }
 }

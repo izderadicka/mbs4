@@ -64,7 +64,7 @@ struct SearchInner {
 
 #[derive(Debug, Clone, Validate, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "openapi",into_params(parameter_in = Query))]
 pub struct SearchQuery {
     #[garde(length(max = 255))]
     query: String,
@@ -87,6 +87,7 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new().route("/", axum::routing::get(search))
 }
 
+#[cfg(feature = "openapi")]
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
