@@ -30,7 +30,7 @@ pub enum ApiError {
     #[error("Internal error: {0}")]
     InternalError(String),
     #[error("Store error: {0}")]
-    StoreError(#[from] crate::store::error::StoreError),
+    StoreError(#[from] mbs4_store::error::StoreError),
     #[error("Invalid path: {0}")]
     InvalidPath(#[from] PathRejection),
     #[error("Invalid query: {0}")]
@@ -122,7 +122,7 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
             }
             ApiError::StoreError(error) => {
-                use crate::store::error::StoreError;
+                use mbs4_store::error::StoreError;
                 match error {
                     StoreError::InvalidPath => {
                         tracing::debug!("Invalid path: {error}");

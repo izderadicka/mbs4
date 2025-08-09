@@ -6,16 +6,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use futures::TryStreamExt as _;
 use mbs4_dal::format::FormatRepository;
+use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
 use mbs4_types::claim::Role;
 use tracing::debug;
 
-use crate::{
-    auth::token::RequiredRolesLayer,
-    error::ApiError,
-    state::AppState,
-    store::{upload_path, Store, StorePrefix},
-};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
 use super::ValidPath;
 
@@ -38,7 +35,7 @@ pub struct UploadInfo {
 }
 
 impl UploadInfo {
-    fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
+    fn from_store_info(info: StoreInfo, original_name: Option<String>) -> Self {
         Self {
             // safe due to logic -  always used with this prefix
             final_path: info
@@ -90,7 +87,10 @@ pub async fn upload_form(
             "Uploading file {} to {:?}, mime {}",
             file_name, dest_path, mime_type
         );
-        let info = state.store().store_stream(&dest_path, field).await?;
+        let stream = field.map_err(|e| {
+            StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
+        });
+        let info = state.store().store_stream(&dest_path, stream).await?;
 
         let info = UploadInfo::from_store_info(info, Some(file_name));
 
@@ -136,6 +136,8 @@ pub async fn upload_direct(
 
     let path = upload_path(&ext)?;
     debug!("Uploading file to {:?}, mime {}", path, mime);
+    let stream =
+        stream.map_err(|e| StoreError::StreamError(format!("Error reading request body: {e}")));
     let info = state.store().store_stream(&path, stream).await?;
     let info = UploadInfo::from_store_info(info, None);
 

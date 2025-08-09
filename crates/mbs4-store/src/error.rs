@@ -12,4 +12,6 @@ pub enum StoreError {
     TaskJoinError(#[from] tokio::task::JoinError),
     #[error("Not found: {0:?}")]
     NotFound(String),
+    #[error("Input Stream error: {0}")]
+    StreamError(String),
 }

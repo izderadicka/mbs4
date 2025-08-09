@@ -3,10 +3,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{error::Result, search::Search, store::file_store::FileStore};
+use crate::{error::Result, search::Search};
 use axum::extract::FromRef;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
+use mbs4_store::file_store::FileStore;
 use mbs4_types::oidc::OIDCConfig;
 use url::Url;
 
