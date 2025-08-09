@@ -53,7 +53,5 @@ tempfile = { workspace = true }
 openapi = ["utoipa", "mbs4-dal/openapi", "mbs4-search/openapi"]
 
 [dev-dependencies]
-rand = "0.9.0"
+rand = { workspace = true }
 tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
-
-tempfile = { workspace = true }

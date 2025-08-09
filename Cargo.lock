@@ -2251,6 +2251,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbs4-store"
+version = "0.1.0"
+dependencies = [
+ "base16ct",
+ "bytes",
+ "futures",
+ "libc",
+ "rand 0.9.2",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-test",
+ "uuid",
+]
+
+[[package]]
 name = "mbs4-types"
 version = "0.1.0"
 dependencies = [
