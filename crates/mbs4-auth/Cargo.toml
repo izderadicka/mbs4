@@ -8,15 +8,15 @@ serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 openidconnect = "4.0.0"
-reqwest = "0.12.12"
+reqwest = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
 jsonwebtoken = "9.3.1"
 hmac = "0.12.1"
-sha2 = "0.10.9"
+sha2 = { workspace = true }
 base64 = "0.22.1"
-rand = "0.9.1"
+rand = { workspace = true }
 
 [dev-dependencies]
 tracing-test = "0.2.5"

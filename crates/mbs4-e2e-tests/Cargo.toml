@@ -14,20 +14,21 @@ mbs4-types = { path = "../mbs4-types", features = ["e2e-tests"] }
 tempfile = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
-reqwest = { version = "0.12.12", features = [
+reqwest = { workspace = true, features = [
     "json",
     "cookies",
     "multipart",
     "stream",
 ] }
 mbs4-dal = { path = "../mbs4-dal" }
-sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
+sqlx = { workspace = true }
 serde_json = { workspace = true }
-tokio-util = { version = "0.7.14", features = ["io"] }
+tokio-util = { workspace = true, features = ["io"] }
 futures = { workspace = true }
 garde = { workspace = true }
 time = { workspace = true }
+
 [dev-dependencies]
 # tracing-test = { version = "0.2.5", features = [] }
 # For detailed logs use this feature
-tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
+tracing-test = { workspace = true, features = ["no-env-filter"] }

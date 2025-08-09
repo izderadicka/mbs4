@@ -7,9 +7,9 @@ edition = "2021"
 serde = { workspace = true }
 anyhow = { workspace = true }
 config = "0.15.8"
-garde = { version = "0.22.0", features = ["full"] }
+garde = { workspace = true, features = ["full"] }
 unicode-normalization = "0.1.24"
-phf = { version = "0.11.3", features = ["macros"] }
+phf = { version = "0.12", features = ["macros"] }
 
 [dev-dependencies]
 fake = { version = "4.2.0", features = ["email_address"] }
