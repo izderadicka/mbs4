@@ -8,29 +8,29 @@ name = "mbs4"
 path = "src/main.rs"
 
 [dependencies]
-axum.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-time = "0.3.37"
-tokio.workspace = true
-tower-sessions = "0.14.0"
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tower-sessions = { workspace = true }
 tracing-subscriber = "0.3.19"
 mbs4-auth = { path = "../mbs4-auth" }
-clap = { version = "4.5.30", features = ["derive", "env"] }
-anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+anyhow = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
 mbs4-app = { path = "../mbs4-app" }
 mbs4-dal = { path = "../mbs4-dal" }
-url = "2.5.4"
+url = { workspace = true }
 dirs = "6.0.0"
-rand = "0.9.0"
+rand = { workspace = true }
 humantime = "2.1.0"
-tower-cookies = "0.11.0"
-tower = "0.5.2"
-futures = "0.3.31"
+tower-cookies = { workspace = true }
+tower = { workspace = true }
+futures = { workspace = true }
 tower-http = { version = "0.6.6", features = ["cors"] }
-utoipa = { version = "5.4.0", features = [
+utoipa = { workspace = true, features = [
     "axum_extras",
     "preserve_order",
     "time",

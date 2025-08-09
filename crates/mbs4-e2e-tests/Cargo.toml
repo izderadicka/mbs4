@@ -4,30 +4,31 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio.workspace = true
-axum.workspace = true
-anyhow.workspace = true
-serde.workspace = true
+tokio = { workspace = true }
+axum = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
 mbs4-server = { path = "../mbs4-server" }
 mbs4-app = { path = "../mbs4-app" }
 mbs4-types = { path = "../mbs4-types", features = ["e2e-tests"] }
-tempfile = "3.18.0"
-rand = "0.9.0"
-tracing.workspace = true
-reqwest = { version = "0.12.12", features = [
+tempfile = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true, features = [
     "json",
     "cookies",
     "multipart",
     "stream",
 ] }
 mbs4-dal = { path = "../mbs4-dal" }
-sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
-serde_json.workspace = true
-tokio-util = { version = "0.7.14", features = ["io"] }
-futures = "0.3.31"
-garde = "0.22.0"
-time.workspace = true
+sqlx = { workspace = true }
+serde_json = { workspace = true }
+tokio-util = { workspace = true, features = ["io"] }
+futures = { workspace = true }
+garde = { workspace = true }
+time = { workspace = true }
+
 [dev-dependencies]
 # tracing-test = { version = "0.2.5", features = [] }
 # For detailed logs use this feature
-tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
+tracing-test = { workspace = true, features = ["no-env-filter"] }

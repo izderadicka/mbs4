@@ -5,25 +5,23 @@ edition = "2024"
 
 [dependencies]
 argon2 = { version = "0.5.3", features = ["std"] }
-futures = "0.3.31"
-sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-thiserror = "2.0.11"
+futures = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
 mbs4-macros = { path = "../mbs4-macros" }
-garde = { version = "0.22.0", features = ["full"] }
-time.workspace = true
-tokio.workspace = true
-utoipa = { version = "5.4.0", features = [
+garde = { workspace = true, features = ["full"] }
+time = { workspace = true }
+tokio = { workspace = true }
+utoipa = { workspace = true, features = [
     "preserve_order",
     "time",
 ], optional = true }
 
 [dev-dependencies]
-tokio.workspace = true
-futures = "0.3.31"
 
 [features]
 openapi = ["utoipa"]

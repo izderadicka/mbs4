@@ -1,5 +1,3 @@
-use axum::extract::rejection::PathRejection;
-
 pub type StoreResult<T> = std::result::Result<T, StoreError>;
 
 #[derive(thiserror::Error, Debug)]
@@ -18,6 +16,4 @@ pub enum StoreError {
     AxumError(#[from] axum::Error),
     #[error("Not found: {0:?}")]
     NotFound(String),
-    #[error("Rejected path: {0:?}")]
-    RejectedPath(#[from] PathRejection),
 }

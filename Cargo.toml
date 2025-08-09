@@ -11,6 +11,24 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing = { version = "0.1.41", features = ["async-await"] }
 time = { version = "0.3", features = ["serde-human-readable", "local-offset"] }
 anyhow = "1.0.96"
+tower-sessions = { version = "0.14.0" }
+url = { version = "2.5.4" }
+thiserror = { version = "2.0.11" }
+futures = { version = "0.3.31" }
+tower-cookies = { version = "0.11.0" }
+tower = { version = "0.5.2" }
+garde = { version = "0.22.0" }
+tempfile = { version = "3.18.0" }
+rand = { version = "0.9.0" }
+utoipa = { version = "5.4.0" }
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite", "time"] }
+tokio-util = { version = "0.7.14", features = ["io"] }
+reqwest = "0.12.12"
+sha2 = "0.10.9"
+clap = { version = "4.4.6", features = ["derive"] }
+
+# dev-dependencies
+tracing-test = { version = "0.2.5" }
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
