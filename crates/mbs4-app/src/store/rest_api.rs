@@ -165,9 +165,9 @@ pub async fn download(
         .map(|s| s.to_lowercase());
 
     let mut content_type = None;
-    if let Some(ext) = ext {
+    if let Some(ext) = ext.as_ref() {
         content_type = repository
-            .get_by_extension(&ext)
+            .get_by_extension(ext)
             .await
             .ok()
             .map(|f| f.mime_type);
@@ -175,8 +175,11 @@ pub async fn download(
 
     // .and_then(|s| repository.get_by_extension(&s).await.ok()).map(|f| f.mime_type).unwrap_or_else(|| "application/octet-stream".to_string());
     let mime = content_type
-        .as_deref()
-        .unwrap_or("application/octet-stream");
+        .or_else(|| {
+            ext.as_ref()
+                .and_then(|ext| new_mime_guess::from_ext(ext).first().map(|m| m.to_string()))
+        })
+        .unwrap_or_else(|| "application/octet-stream".to_string());
 
     headers.insert(
         http::header::CONTENT_TYPE,
