@@ -60,7 +60,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::openapi::Components;
 
     #[derive(utoipa::OpenApi)]
-    #[openapi(modifiers(&SecurityAddon), security(("bearer" = [])))]
+    #[openapi(modifiers(&SecurityAddon), security(("bearer" = [])), info(license(name="MIT", identifier="MIT")))]
     struct OpenApi;
 
     struct SecurityAddon;
