@@ -52,7 +52,7 @@ impl UploadInfo {
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/upload/form", tag = "File Store",
+    utoipa::path(post, path = "/upload/form", tag = "File Store", operation_id = "uploadForm",
     request_body(content = UploadForm, content_type = "multipart/form-data"),
     responses(
         (status = StatusCode::CREATED, description = "Created", body = UploadInfo),
@@ -102,7 +102,7 @@ pub async fn upload_form(
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/upload/direct", tag = "File Store",
+    utoipa::path(post, path = "/upload/direct", tag = "File Store", operation_id = "uploadDirect",
     request_body(
         description = "File data of supported mime types",
         content ((Vec<u8> = "*/*"),
@@ -146,7 +146,7 @@ pub async fn upload_direct(
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(get, path = "/download/{path}", tag = "File Store",
+    utoipa::path(get, path = "/download/{path}", tag = "File Store", operation_id = "download",
     params(("path"=String, Path, description = "Path to file"))),
 )]
 pub async fn download(
@@ -226,7 +226,7 @@ pub struct RenameResult {
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/move/upload", tag = "File Store",
+    utoipa::path(post, path = "/move/upload", tag = "File Store", operation_id = "moveUpload",
     request_body = RenameBody,
     responses(
         (status = StatusCode::OK, description = "OK", body = RenameResult),

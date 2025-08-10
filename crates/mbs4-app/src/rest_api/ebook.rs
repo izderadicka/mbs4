@@ -27,7 +27,7 @@ mod crud_api_write {
 
     use crate::{error::ApiResult, state::AppState};
 
-    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook",
+    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook", operation_id = "createEbook",
     responses((status = StatusCode::CREATED, description = "Created Ebook", body = Ebook))))]
     pub async fn create(
         repository: EbookRepository,
@@ -42,7 +42,7 @@ mod crud_api_write {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
-    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Ebook",
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Ebook", operation_id = "updateEbook",
     responses((status = StatusCode::OK, description = "Updated Ebook", body = Ebook))))]
     pub async fn update(
         Path(id): Path<i64>,
@@ -60,7 +60,7 @@ mod crud_api_write {
 
     #[cfg_attr(
         feature = "openapi",
-        utoipa::path(delete, path = "/{id}", tag = "Ebook")
+        utoipa::path(delete, path = "/{id}", tag = "Ebook", operation_id = "deleteEbook",)
     )]
     pub async fn delete(
         Path(id): Path<i64>,

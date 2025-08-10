@@ -113,7 +113,7 @@ macro_rules! api_read_only {
     ($entity:ty) => {
         #[cfg(feature = "openapi")]
         type EntityShort = paste::paste! {[<$entity Short>]};
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "", tag = stringify!($entity),
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "", tag = stringify!($entity), operation_id = concat!("list", stringify!($entity)),
         params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>))))]
         pub async fn list(
             repository: EntityRepository,
@@ -130,21 +130,21 @@ macro_rules! api_read_only {
             ))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/all", tag = stringify!($entity),
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/all", tag = stringify!($entity), operation_id = concat!("listAll", stringify!($entity)),
         responses((status = StatusCode::OK, description = "List all (unpaginated, sorted by id, max limit applies)", body = Vec<EntityShort>))))]
         pub async fn list_all(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let users = repository.list_all().await?;
             Ok((StatusCode::OK, Json(users)))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/count", tag = stringify!($entity),
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/count", tag = stringify!($entity), operation_id = concat!("count", stringify!($entity)),
         responses((status = StatusCode::OK, description = "Count", body = u64))))]
         pub async fn count(repository: EntityRepository) -> ApiResult<impl IntoResponse> {
             let count = repository.count().await?;
             Ok((StatusCode::OK, Json(count)))
         }
 
-        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", tag = stringify!($entity),
+        #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", tag = stringify!($entity), operation_id = concat!("get", stringify!($entity)),
         responses((status = StatusCode::OK, description = "Get one", body = $entity))))]
         pub async fn get(
             Path(id): Path<i64>,
@@ -182,7 +182,7 @@ macro_rules! crud_api {
             crate::api_read_only!($entity);
 
 
-            #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = stringify!($entity),
+            #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = stringify!($entity), operation_id = concat!("create", stringify!($entity)),
             responses((status = StatusCode::CREATED, description = concat!("Created ", stringify!($entity)), body = $entity))))]
             pub async fn create(
                 repository: EntityRepository,
@@ -193,7 +193,7 @@ macro_rules! crud_api {
                 Ok((StatusCode::CREATED, Json(record)))
             }
 
-            #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = stringify!($entity),
+            #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = stringify!($entity), operation_id = concat!("update", stringify!($entity)),
             responses((status = StatusCode::OK, description = concat!("Updated ", stringify!($entity)), body = $entity))))]
             pub async fn update(
                 Path(id): Path<i64>,
@@ -205,7 +205,7 @@ macro_rules! crud_api {
                 Ok((StatusCode::OK, Json(record)))
             }
 
-            #[cfg_attr(feature = "openapi",  utoipa::path(delete, path = "/{id}", tag = stringify!($entity)))]
+            #[cfg_attr(feature = "openapi",  utoipa::path(delete, path = "/{id}", tag = stringify!($entity), operation_id = concat!("delete", stringify!($entity))))]
             pub async fn delete(
                 Path(id): Path<i64>,
                 repository: EntityRepository,
