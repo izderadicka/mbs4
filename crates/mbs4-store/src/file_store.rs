@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{pin_mut, Stream, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
+use futures::{Stream, StreamExt as _, TryFutureExt as _, TryStreamExt as _, pin_mut};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use tokio::{fs, io, io::AsyncWriteExt as _, task::spawn_blocking};
@@ -14,8 +14,8 @@ use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
 use super::{
-    error::{StoreError, StoreResult},
     Store, StoreInfo, ValidPath,
+    error::{StoreError, StoreResult},
 };
 
 //from std
