@@ -20,7 +20,7 @@ use super::ValidPath;
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[allow(unused)]
 struct UploadForm {
-    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    #[schema(value_type = String, format = Binary, content_media_type = "application/octet-stream")]
     file: String,
 }
 

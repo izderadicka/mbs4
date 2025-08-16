@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod error;
+pub mod events;
 pub mod rest_api;
 pub mod search;
 pub mod state;
