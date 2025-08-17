@@ -5,13 +5,9 @@ use crate::error::Result;
 use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
 use futures::FutureExt;
+use mbs4_app::auth::{auth_router, token::TokenLayer};
 use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
-use mbs4_app::store::store_router;
-use mbs4_app::{
-    auth::{auth_router, token::TokenLayer},
-    user::users_router,
-};
 use mbs4_types::oidc::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tracing::{debug, info};
@@ -84,6 +80,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
     OpenApi::openapi()
         .nest("/api/ebook", mbs4_app::rest_api::ebook::api_docs())
         .nest("/api/format", mbs4_app::rest_api::format::api_docs())
+        .nest("/api/convert", mbs4_app::ebook_format::api_docs())
         .nest("/api/genre", mbs4_app::rest_api::genre::api_docs())
         .nest("/api/language", mbs4_app::rest_api::language::api_docs())
         .nest("/api/series", mbs4_app::rest_api::series::api_docs())
@@ -105,17 +102,21 @@ fn main_router(state: AppState) -> Router<()> {
 
     #[allow(unused_mut)]
     let mut router = Router::new()
-        .nest("/users", users_router())
-        .nest("/files", store_router(state.config().upload_limit_mb))
+        .nest("/users", mbs4_app::user::router())
+        .nest(
+            "/files",
+            mbs4_app::store::router(state.config().upload_limit_mb),
+        )
         .nest("/api/language", mbs4_app::rest_api::language::router())
         .nest("/api/format", mbs4_app::rest_api::format::router())
+        .nest("/api/convert", mbs4_app::ebook_format::router())
         .nest("/api/genre", mbs4_app::rest_api::genre::router())
         .nest("/api/series", mbs4_app::rest_api::series::router())
         .nest("/api/source", mbs4_app::rest_api::source::router())
         .nest("/api/author", mbs4_app::rest_api::author::router())
         .nest("/api/ebook", mbs4_app::rest_api::ebook::router())
         .nest("/search", mbs4_app::search::router())
-        .nest("/events", mbs4_app::events::events_router())
+        .nest("/events", mbs4_app::events::router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())

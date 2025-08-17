@@ -100,7 +100,7 @@ impl EventHub {
         EventHub { sender }
     }
 
-    pub async fn send(&self, msg: EventMessage) {
+    pub fn send(&self, msg: EventMessage) {
         if let Err(e) = self.sender.send(msg) {
             debug!("Nowhere send event: {e}");
         };

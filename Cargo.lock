@@ -2143,6 +2143,7 @@ dependencies = [
  "anyhow",
  "lazy_static",
  "regex",
+ "serde",
  "tokio",
  "uuid",
 ]

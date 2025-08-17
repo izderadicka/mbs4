@@ -348,8 +348,8 @@ impl Store for FileStore {
         }
     }
 
-    fn local_path(&self, path: &ValidPath) -> std::path::PathBuf {
-        self.inner.root.join(path.as_ref())
+    fn local_path(&self, path: &ValidPath) -> Option<std::path::PathBuf> {
+        Some(self.inner.root.join(path.as_ref()))
     }
 }
 

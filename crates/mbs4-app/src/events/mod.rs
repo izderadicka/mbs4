@@ -43,6 +43,13 @@ impl EventMessage {
             data,
         }
     }
+
+    pub fn message<T>(id: impl ToString, data: T) -> Self
+    where
+        T: serde::Serialize,
+    {
+        Self::new(id, EventType::Message, data)
+    }
 }
 
 async fn sse_handler(
@@ -61,6 +68,6 @@ async fn sse_handler(
     )
 }
 
-pub fn events_router() -> Router<AppState> {
+pub fn router() -> Router<AppState> {
     Router::new().route("/", get(sse_handler))
 }

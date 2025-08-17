@@ -1,6 +1,7 @@
 use std::process::Stdio;
 
-use crate::meta::{EbookMetadata, parse_metadata};
+pub use crate::meta::EbookMetadata;
+use crate::meta::parse_metadata;
 
 pub mod meta;
 

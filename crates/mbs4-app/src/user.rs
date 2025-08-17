@@ -39,7 +39,7 @@ async fn delete_user(
     Ok((StatusCode::NO_CONTENT, ()))
 }
 
-pub fn users_router() -> axum::Router<AppState> {
+pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(create_user).get(list_users))
         .route("/{id}", delete(delete_user))

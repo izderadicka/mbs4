@@ -24,13 +24,17 @@ struct UploadForm {
     file: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug, garde::Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadInfo {
+    #[garde(length(min = 1, max = 255))]
     pub final_path: String,
+    #[garde(range(min = 1))]
     pub size: u64,
     /// SHA256 hash
+    #[garde(length(min = 64, max = 64))]
     pub hash: String,
+    #[garde(length(min = 1, max = 255))]
     pub original_name: Option<String>,
 }
 
@@ -250,7 +254,7 @@ pub async fn move_upload(
     ))
 }
 
-pub fn store_router(limit_mb: usize) -> Router<AppState> {
+pub fn router(limit_mb: usize) -> Router<AppState> {
     let app = Router::new()
         .route("/upload/form", post(upload_form))
         .route("/upload/direct", post(upload_direct))

@@ -9,7 +9,7 @@ use http::request::Parts;
 
 pub mod rest_api;
 use mbs4_store::ValidPath;
-pub use rest_api::store_router;
+pub use rest_api::router;
 
 use crate::{error::ApiError, state::AppState};
 
