@@ -1,11 +1,11 @@
 use axum::{extract::State, response::IntoResponse, routing::post, Json};
 use axum_valid::Garde;
 use http::StatusCode;
+use mbs4_store::ValidPath;
 use mbs4_types::claim::Role;
 
 use crate::{
-    auth::token::RequiredRolesLayer, error::ApiError, events::EventMessage, state::AppState,
-    store::rest_api::UploadInfo,
+    auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::rest_api::UploadInfo,
 };
 
 pub mod convertor;
@@ -43,12 +43,16 @@ pub async fn get_ebook_meta(
     State(state): State<AppState>,
     Garde(Json(payload)): Garde<Json<UploadInfo>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let event = EventMessage::message("test", payload.clone());
-    state.events().send(event);
+    let to_path = ValidPath::new(payload.final_path)?.with_prefix(mbs4_store::StorePrefix::Upload);
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    state
+        .convertor()
+        .extract_meta(operation_id.clone(), to_path)
+        .await;
     Ok((
         StatusCode::OK,
         Json(OperationTicket {
-            id: "test".to_string(),
+            id: operation_id,
             created: time::OffsetDateTime::now_utc(),
         }),
     ))
