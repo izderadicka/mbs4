@@ -21,7 +21,7 @@ use time::OffsetDateTime;
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
 use tower_sessions::Session;
-use tracing::{debug, error, field::debug};
+use tracing::{debug, error, field::debug, trace};
 
 use super::{SESSION_USER_KEY, TOKEN_COOKIE_NAME};
 
@@ -149,7 +149,7 @@ where
                 .map(|header| header.0.token().to_string());
 
             if token.is_none() {
-                debug!("No token found in headers");
+                trace!("No token found in headers");
                 let Some(cookies) = request.extensions().get::<Cookies>().cloned() else {
                     tracing::error!(
                         "missing cookies request extension, is cookie middleware enabled?"
@@ -205,7 +205,7 @@ impl FromRequestParts<AppState> for ApiClaim {
             .map(|h| h.0.token().to_string());
 
         if header_token.is_none() {
-            debug!("No token found in headers");
+            trace!("No token found in headers");
             let cookies = parts.extract::<Cookies>().await.map_err(|e| {
                 error!("Cannot get cookies: {}", e.1);
                 e.0

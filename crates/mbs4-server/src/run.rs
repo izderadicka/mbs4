@@ -60,7 +60,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::openapi::Components;
 
     #[derive(utoipa::OpenApi)]
-    #[openapi(modifiers(&SecurityAddon), security(("bearer" = [])))]
+    #[openapi(modifiers(&SecurityAddon), security(("bearer" = [])), info(license(name="MIT", identifier="MIT")))]
     struct OpenApi;
 
     struct SecurityAddon;
@@ -115,6 +115,7 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/api/author", mbs4_app::rest_api::author::router())
         .nest("/api/ebook", mbs4_app::rest_api::ebook::router())
         .nest("/search", mbs4_app::search::router())
+        .nest("/events", mbs4_app::events::events_router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())

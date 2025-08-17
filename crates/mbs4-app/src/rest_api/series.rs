@@ -23,7 +23,7 @@ mod extra_crud_api {
 
     use crate::{error::ApiResult, rest_api::Paging, state::AppState};
 
-    #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Series",
+    #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Series", operation_id = "listSeriesEbook",
         params(Paging), responses((status = StatusCode::OK, description = "List of Series Ebooks paginated", body = crate::rest_api::Page<EbookShort>))))]
     pub async fn list_ebooks(
         Path(author_id): Path<i64>,

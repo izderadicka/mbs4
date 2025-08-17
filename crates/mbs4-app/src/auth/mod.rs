@@ -147,6 +147,7 @@ impl IntoResponse for LoginResponse {
 }
 
 #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/login", tag = "auth", 
+operation_id = "loginLocally",
 params(DbLoginParams),
 request_body(description = "User credentials", content(
 (LoginCredentials = "application/x-www-form-urlencoded"),

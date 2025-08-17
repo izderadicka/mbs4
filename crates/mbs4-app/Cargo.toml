@@ -16,6 +16,7 @@ mbs4-auth = { path = "../mbs4-auth" }
 mbs4-dal = { path = "../mbs4-dal" }
 mbs4-search = { path = "../mbs4-search" }
 mbs4-calibre = { path = "../mbs4-calibre" }
+mbs4-store = { path = "../mbs4-store" }
 time = { workspace = true }
 tower-sessions = { workspace = true }
 url = { workspace = true }
@@ -28,10 +29,6 @@ tower-cookies = { workspace = true }
 headers = "0.4.0"
 axum-extra = { version = "0.10.0", features = ["typed-header"] }
 tower = { workspace = true }
-bytes = "1.10.1"
-base16ct = "0.2.0"
-sha2 = { workspace = true }
-tokio-util = { workspace = true, features = ["io"] }
 new_mime_guess = "4.0.4"
 axum-valid = { version = "0.23.0", default-features = false, features = [
     "garde",
@@ -45,16 +42,14 @@ utoipa = { workspace = true, features = [
     "time",
 ], optional = true }
 paste = "1.0.15"
-uuid = { version = "1.17.0", features = ["v4"] }
-libc = "0.2.174"
-tempfile = { workspace = true }
+tokio-stream = { version = "0.1.17", features = ["sync"] }
+# uuid = { version = "1.17.0", features = ["v4"] }
+# tempfile = { workspace = true }
 
 
 [features]
 openapi = ["utoipa", "mbs4-dal/openapi", "mbs4-search/openapi"]
 
 [dev-dependencies]
-rand = "0.9.0"
+rand = { workspace = true }
 tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
-
-tempfile = { workspace = true }

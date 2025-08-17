@@ -6,16 +6,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use futures::TryStreamExt as _;
 use mbs4_dal::format::FormatRepository;
+use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
 use mbs4_types::claim::Role;
 use tracing::debug;
 
-use crate::{
-    auth::token::RequiredRolesLayer,
-    error::ApiError,
-    state::AppState,
-    store::{upload_path, Store, StorePrefix},
-};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
 
 use super::ValidPath;
 
@@ -23,7 +20,7 @@ use super::ValidPath;
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[allow(unused)]
 struct UploadForm {
-    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    #[schema(value_type = String, format = Binary, content_media_type = "application/octet-stream")]
     file: String,
 }
 
@@ -38,7 +35,7 @@ pub struct UploadInfo {
 }
 
 impl UploadInfo {
-    fn from_store_info(info: super::StoreInfo, original_name: Option<String>) -> Self {
+    fn from_store_info(info: StoreInfo, original_name: Option<String>) -> Self {
         Self {
             // safe due to logic -  always used with this prefix
             final_path: info
@@ -55,7 +52,7 @@ impl UploadInfo {
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/upload/form", tag = "File Store",
+    utoipa::path(post, path = "/upload/form", tag = "File Store", operation_id = "uploadForm",
     request_body(content = UploadForm, content_type = "multipart/form-data"),
     responses(
         (status = StatusCode::CREATED, description = "Created", body = UploadInfo),
@@ -90,7 +87,10 @@ pub async fn upload_form(
             "Uploading file {} to {:?}, mime {}",
             file_name, dest_path, mime_type
         );
-        let info = state.store().store_stream(&dest_path, field).await?;
+        let stream = field.map_err(|e| {
+            StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
+        });
+        let info = state.store().store_stream(&dest_path, stream).await?;
 
         let info = UploadInfo::from_store_info(info, Some(file_name));
 
@@ -102,7 +102,7 @@ pub async fn upload_form(
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/upload/direct", tag = "File Store",
+    utoipa::path(post, path = "/upload/direct", tag = "File Store", operation_id = "uploadDirect",
     request_body(
         description = "File data of supported mime types",
         content ((Vec<u8> = "*/*"),
@@ -136,6 +136,8 @@ pub async fn upload_direct(
 
     let path = upload_path(&ext)?;
     debug!("Uploading file to {:?}, mime {}", path, mime);
+    let stream =
+        stream.map_err(|e| StoreError::StreamError(format!("Error reading request body: {e}")));
     let info = state.store().store_stream(&path, stream).await?;
     let info = UploadInfo::from_store_info(info, None);
 
@@ -144,7 +146,7 @@ pub async fn upload_direct(
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(get, path = "/download/{path}", tag = "File Store",
+    utoipa::path(get, path = "/download/{path}", tag = "File Store", operation_id = "download",
     params(("path"=String, Path, description = "Path to file"))),
 )]
 pub async fn download(
@@ -224,7 +226,7 @@ pub struct RenameResult {
 
 #[cfg_attr(
     feature = "openapi",
-    utoipa::path(post, path = "/move/upload", tag = "File Store",
+    utoipa::path(post, path = "/move/upload", tag = "File Store", operation_id = "moveUpload",
     request_body = RenameBody,
     responses(
         (status = StatusCode::OK, description = "OK", body = RenameResult),
