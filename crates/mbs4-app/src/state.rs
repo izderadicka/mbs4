@@ -3,12 +3,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{error::Result, search::Search};
+use crate::{error::Result, events::EventMessage, search::Search};
 use axum::extract::FromRef;
+use futures::Stream;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
 use mbs4_store::file_store::FileStore;
 use mbs4_types::oidc::OIDCConfig;
+use tokio_stream::StreamExt;
+use tracing::{debug, error};
 use url::Url;
 
 #[derive(Clone)]
@@ -26,6 +29,7 @@ impl AppState {
     ) -> Self {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
+        let events = EventHub::new();
         AppState {
             state: Arc::new(AppStateInner {
                 oidc_providers_config: oidc_config,
@@ -35,6 +39,7 @@ impl AppState {
                 store,
                 tokens,
                 search,
+                events,
             }),
         }
     }
@@ -73,6 +78,48 @@ impl AppState {
     pub fn search(&self) -> &Search {
         &self.state.search
     }
+
+    pub fn events(&self) -> &EventHub {
+        &self.state.events
+    }
+}
+
+pub struct EventHub {
+    sender: tokio::sync::broadcast::Sender<EventMessage>,
+}
+
+impl EventHub {
+    pub fn new() -> Self {
+        let (sender, mut receiver) = tokio::sync::broadcast::channel(1024);
+        #[cfg(debug_assertions)]
+        tokio::spawn(async move {
+            while let Ok(msg) = receiver.recv().await {
+                debug!("Event: {msg:?}");
+            }
+        });
+        EventHub { sender }
+    }
+
+    pub async fn send(&self, msg: EventMessage) {
+        if let Err(e) = self.sender.send(msg) {
+            debug!("Nowhere send event: {e}");
+        };
+    }
+
+    pub fn sender(&self) -> tokio::sync::broadcast::Sender<EventMessage> {
+        self.sender.clone()
+    }
+
+    pub fn receiver(&self) -> tokio::sync::broadcast::Receiver<EventMessage> {
+        self.sender.subscribe()
+    }
+
+    pub fn receiver_stream(&self) -> impl Stream<Item = EventMessage> {
+        tokio_stream::wrappers::BroadcastStream::new(self.receiver()).filter_map(|r| {
+            r.inspect_err(|e| error!("EventHub receiver lags: {e}"))
+                .ok()
+        })
+    }
 }
 
 struct AppStateInner {
@@ -84,6 +131,7 @@ struct AppStateInner {
     #[allow(dead_code)]
     state: RwLock<AppStateVolatile>,
     search: Search,
+    events: EventHub,
 }
 
 pub struct AppConfig {

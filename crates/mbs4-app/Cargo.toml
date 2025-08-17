@@ -41,7 +41,7 @@ utoipa = { workspace = true, features = [
     "time",
 ], optional = true }
 paste = "1.0.15"
-tokio-stream = "0.1.17"
+tokio-stream = { version = "0.1.17", features = ["sync"] }
 # uuid = { version = "1.17.0", features = ["v4"] }
 # tempfile = { workspace = true }
 
