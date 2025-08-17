@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{error::Result, events::EventMessage, search::Search};
+use crate::{
+    ebook_format::convertor::Convertor, error::Result, events::EventMessage, search::Search,
+};
 use axum::extract::FromRef;
 use futures::Stream;
 use mbs4_auth::token::TokenManager;
@@ -30,6 +32,7 @@ impl AppState {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
         let events = EventHub::new();
+        let convertor = Convertor::new(events.sender(), store.clone());
         AppState {
             state: Arc::new(AppStateInner {
                 oidc_providers_config: oidc_config,
@@ -40,6 +43,7 @@ impl AppState {
                 tokens,
                 search,
                 events,
+                convertor,
             }),
         }
     }
@@ -81,6 +85,10 @@ impl AppState {
 
     pub fn events(&self) -> &EventHub {
         &self.state.events
+    }
+
+    pub fn convertor(&self) -> &Convertor {
+        &self.state.convertor
     }
 }
 
@@ -132,6 +140,7 @@ struct AppStateInner {
     state: RwLock<AppStateVolatile>,
     search: Search,
     events: EventHub,
+    convertor: Convertor,
 }
 
 pub struct AppConfig {

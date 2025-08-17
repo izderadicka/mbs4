@@ -8,6 +8,8 @@ use crate::{
     store::rest_api::UploadInfo,
 };
 
+pub mod convertor;
+
 #[derive(Debug, serde::Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OperationTicket {
@@ -22,7 +24,6 @@ pub struct MetaResult {
     pub success: bool,
     pub error: Option<String>,
     pub metadata: Option<mbs4_calibre::EbookMetadata>,
-    pub cover_file: Option<String>,
 }
 
 #[cfg_attr(
