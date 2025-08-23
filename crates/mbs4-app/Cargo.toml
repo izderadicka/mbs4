@@ -44,6 +44,7 @@ utoipa = { workspace = true, features = [
 paste = "1.0.15"
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 uuid = { workspace = true }
+num_cpus = "1.17.0"
 # tempfile = { workspace = true }
 
 
