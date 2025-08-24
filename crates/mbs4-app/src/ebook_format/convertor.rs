@@ -70,13 +70,13 @@ impl Convertor {
         tokio::spawn(async move {
             while let Some(job) = job_receiver.recv().await {
                 let permit = CONVERSION_LIMITS.acquire().await.unwrap(); // Safe - we never close
+                let inner = inner.clone();
                 match job {
                     ConversionJob::ExtractMetadata {
                         operation_id,
                         file_path,
                         extract_cover,
                     } => {
-                        let inner = inner.clone();
                         tokio::spawn(async move {
                             inner
                                 .extract_meta(operation_id, file_path, extract_cover)

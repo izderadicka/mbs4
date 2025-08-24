@@ -17,14 +17,20 @@ pub struct OperationTicket {
     pub created: time::OffsetDateTime,
 }
 
-#[derive(Debug, serde::Serialize)]
-pub struct MetaResult {
-    pub operation_id: String,
-    pub created: time::OffsetDateTime,
-    pub success: bool,
-    pub error: Option<String>,
-    pub metadata: Option<mbs4_calibre::EbookMetadata>,
+macro_rules! result_struct {
+    ($name:ident, $field:ident, $field_type:ty) => {
+        #[derive(Debug, serde::Serialize)]
+        pub struct $name {
+            pub operation_id: String,
+            pub created: time::OffsetDateTime,
+            pub success: bool,
+            pub error: Option<String>,
+            pub $field: Option<$field_type>,
+        }
+    };
 }
+
+result_struct!(MetaResult, metadata, mbs4_calibre::EbookMetadata);
 
 #[cfg_attr(
     feature = "openapi",
