@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mbs4_dal::{author::Author, ebook::Ebook, genre::Genre, language::Language, series::Series};
+use mbs4_dal::ebook::Ebook;
 use mbs4_e2e_tests::{
     TestUser, extend_url, launch_env, prepare_env,
     rest::{create_author, create_genre, create_language, create_series},

@@ -1,11 +1,9 @@
 use mbs4_dal::author::Author;
-use mbs4_e2e_tests::{TestUser, admin_token, extend_url, launch_env, now, prepare_env};
+use mbs4_e2e_tests::{
+    TestUser, admin_token, extend_url, launch_env, now, prepare_env, rest::create_author,
+};
 use tracing::info;
 use tracing_test::traced_test;
-
-fn create_author(last_name: &str, first_name: Option<&str>) -> serde_json::Value {
-    serde_json::json!({"first_name": first_name, "last_name": last_name})
-}
 
 #[tokio::test]
 #[traced_test]
@@ -16,20 +14,9 @@ async fn test_authors() {
 
     let (client, state) = launch_env(args, TestUser::TrustedUser).await.unwrap();
 
-    let api_url = base_url.join("api/author").unwrap();
-
-    let author = create_author("Usak", Some("Kulisak"));
-    let response = client
-        .post(api_url.clone())
-        .json(&author)
-        .send()
+    let new_author: Author = create_author(&client, &base_url, "Usak", Some("Kulisak"))
         .await
         .unwrap();
-    info!("Response: {:#?}", response);
-    assert!(response.status().is_success());
-    assert!(response.status().as_u16() == 201);
-
-    let new_author: Author = response.json().await.unwrap();
 
     assert_eq!(1, new_author.version);
     let time_diff = now() - new_author.created;
@@ -37,6 +24,8 @@ async fn test_authors() {
 
     let id = new_author.id;
     info!("ID: {}", id);
+
+    let api_url = base_url.join("api/author").unwrap();
 
     let record_url = extend_url(&api_url, id);
 

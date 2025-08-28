@@ -15,6 +15,7 @@ pub async fn create_author(
 
     let response = client.post(api_url.clone()).json(&payload).send().await?;
     assert!(response.status().is_success());
+    assert!(response.status().as_u16() == 201);
 
     let new_author: Author = response.json().await?;
 
@@ -59,6 +60,7 @@ pub async fn create_language(
 
     let response = client.post(api_url.clone()).json(&payload).send().await?;
     assert!(response.status().is_success());
+    assert!(response.status().as_u16() == 201);
 
     let new_language: Language = response.json().await?;
     Ok(new_language)

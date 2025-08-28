@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use mbs4_dal::language::Language;
-use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env};
+use mbs4_e2e_tests::{TestUser, extend_url, launch_env, prepare_env, rest::create_language};
 use serde_json::json;
 use tracing::info;
 use tracing_test::traced_test;
@@ -106,11 +106,9 @@ async fn test_languages() {
         ("Russian", "ru"),
     ];
     for (name, code) in langs.iter() {
-        let l = json!({"name":name,"code":code});
-        let response = client.post(api_url.clone()).json(&l).send().await.unwrap();
-        info!("Response: {:#?}", response);
-        assert!(response.status().is_success());
-        assert!(response.status().as_u16() == 201);
+        let _lang = create_language(&client, &base_url, name, code)
+            .await
+            .unwrap();
     }
 
     let response = client.get(api_url.clone()).send().await.unwrap();
