@@ -5,3 +5,4 @@ mod server_auth;
 mod server_health;
 mod server_store;
 mod server_users;
+mod upload_ebook;

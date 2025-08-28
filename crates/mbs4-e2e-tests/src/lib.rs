@@ -14,6 +14,8 @@ use tempfile::TempDir;
 use tokio::io::AsyncWriteExt as _;
 use tracing::debug;
 
+pub mod rest;
+
 pub async fn test_port(port: u16) -> Result<()> {
     let retries = 3;
     let mut wait_ms = 100;
