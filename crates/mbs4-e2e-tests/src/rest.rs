@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mbs4_dal::{author::Author, genre::Genre, language::Language, series::Series};
+use mbs4_dal::{author::Author, format::Format, genre::Genre, language::Language, series::Series};
 use reqwest::Url;
 use serde_json::json;
 use tracing::info;
@@ -64,4 +64,22 @@ pub async fn create_language(
 
     let new_language: Language = response.json().await?;
     Ok(new_language)
+}
+
+pub async fn create_format(
+    client: &reqwest::Client,
+    base_url: &Url,
+    name: &str,
+    mime_type: &str,
+    extension: &str,
+) -> Result<Format> {
+    let payload = json!({"name": name, "mime_type": mime_type, "extension": extension});
+    let api_url = base_url.join("api/format").unwrap();
+
+    let response = client.post(api_url.clone()).json(&payload).send().await?;
+    assert!(response.status().is_success());
+    assert!(response.status().as_u16() == 201);
+
+    let new_format: Format = response.json().await?;
+    Ok(new_format)
 }
