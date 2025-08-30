@@ -2,7 +2,7 @@ use std::vec;
 
 use crate::{
     Batch, ChosenRow, Error, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
-    language::LanguageShort, series::SeriesShort,
+    language::LanguageShort, now, series::SeriesShort,
 };
 use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
@@ -598,9 +598,7 @@ where
             .ebook_base_dir()
             .ok_or_else(|| Error::InvalidEntity("Cannot construct base dir".to_string()))?;
 
-        let now = time::OffsetDateTime::now_utc();
-        let now = time::PrimitiveDateTime::new(now.date(), now.time());
-
+        let now = now();
         let query = "INSERT INTO ebook (title, description, base_dir, series_id, series_index, language_id, version, created_by, created, modified) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
 
@@ -642,8 +640,6 @@ where
         }
 
         let mut transaction = self.executor.begin().await?;
-        let now = time::OffsetDateTime::now_utc();
-        let now = time::PrimitiveDateTime::new(now.date(), now.time());
 
         let sql = "UPDATE ebook SET title = ?, description = ?, series_id = ?, series_index = ?, language_id = ?, modified = ?, version = version + 1 WHERE id = ? AND version = ?";
         let num_update = sqlx::query(sql)
@@ -652,7 +648,7 @@ where
             .bind(payload.series_id)
             .bind(payload.series_index)
             .bind(payload.language_id)
-            .bind(now)
+            .bind(now())
             .bind(id)
             .bind(payload.version)
             .execute(&mut *transaction)
@@ -690,6 +686,27 @@ where
         } else {
             Ok(())
         }
+    }
+
+    pub async fn update_cover(
+        &self,
+        id: i64,
+        cover: Option<String>,
+        ebook_version: i64,
+    ) -> crate::error::Result<Ebook> {
+        let sql = "UPDATE ebook SET cover = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?";
+        let res = sqlx::query(sql)
+            .bind(cover)
+            .bind(now())
+            .bind(id)
+            .bind(ebook_version)
+            .execute(&self.executor)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Err(Error::RecordNotFound("Ebook".to_string()));
+        }
+        let ebook = self.get(id).await?;
+        Ok(ebook)
     }
 }
 

@@ -19,12 +19,24 @@ pub struct EbookFileInfo {
     pub quality: Option<f32>,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookCoverInfo {
+    #[garde(length(min = 1, max = 255))]
+    pub cover_file: Option<String>,
+    #[garde(range(min = 0))]
+    pub ebook_id: i64,
+    #[garde(range(min = 1))]
+    pub ebook_version: i64,
+}
+
 publish_api_docs!(
     crud_api_extra::create,
     crud_api_extra::update,
     crud_api_extra::delete,
     crud_api_extra::ebook_sources,
-    crud_api_extra::create_source_for_upload
+    crud_api_extra::create_source_for_upload,
+    crud_api_extra::update_ebook_cover
 );
 crud_api!(Ebook, RO);
 
@@ -47,7 +59,7 @@ mod crud_api_extra {
 
     use crate::{
         error::{ApiError, ApiResult},
-        rest_api::ebook::EbookFileInfo,
+        rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
         state::AppState,
     };
 
@@ -149,6 +161,45 @@ responses((status = StatusCode::OK, description = "List Ebook Sources", body = V
         let sources = source_repo.list_for_ebook(id).await?;
         Ok((StatusCode::OK, Json(sources)))
     }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(put, path = "/{id}/cover", tag = "Ebook", operation_id = "updateEbookCover",
+    responses((status = StatusCode::OK, description = "Updated Ebook Cover", body = Ebook))))]
+    pub async fn update_ebook_cover(
+        Path(id): Path<i64>,
+        repository: EbookRepository,
+        State(state): State<AppState>,
+        Garde(Json(payload)): Garde<Json<EbookCoverInfo>>,
+    ) -> ApiResult<impl IntoResponse> {
+        if id != payload.ebook_id {
+            return Err(ApiError::UnprocessableRequest("Ebook id mismatch".into()));
+        }
+
+        let record = match &payload.cover_file {
+            Some(cover) => {
+                let ext = file_ext(cover).ok_or_else(|| {
+                    ApiError::UnprocessableRequest("Upload path without extension".into())
+                })?;
+
+                let ebook = repository.get(id).await?;
+                let from_path = ValidPath::new(cover)?.with_prefix(StorePrefix::Upload);
+                let to_path = format!("{}/cover.{}", ebook.base_dir, ext);
+                let to_path = ValidPath::new(to_path)?.with_prefix(StorePrefix::Books);
+                let new_path = state.store().rename(&from_path, &to_path).await?;
+                let new_path = new_path.without_prefix(StorePrefix::Books).unwrap();
+
+                repository
+                    .update_cover(id, Some(new_path.into()), payload.ebook_version)
+                    .await?
+            }
+            None => {
+                repository
+                    .update_cover(id, None, payload.ebook_version)
+                    .await?
+            }
+        };
+
+        Ok((StatusCode::OK, Json(record)))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
@@ -161,6 +212,7 @@ pub fn router() -> axum::Router<AppState> {
             "/{id}/source",
             post(crud_api_extra::create_source_for_upload),
         )
+        .route("/{id}/cover", put(crud_api_extra::update_ebook_cover))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/", get(crud_api::list))
         .route("/count", get(crud_api::count))

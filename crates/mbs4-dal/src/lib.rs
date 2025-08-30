@@ -135,3 +135,8 @@ where
 {
     fn from_row_prefixed(row: &'r R) -> Result<Self, sqlx::Error>;
 }
+
+pub(crate) fn now() -> time::PrimitiveDateTime {
+    let now = time::OffsetDateTime::now_utc();
+    time::PrimitiveDateTime::new(now.date(), now.time())
+}

@@ -1,7 +1,13 @@
 use futures::StreamExt;
-use mbs4_app::{rest_api::ebook::EbookFileInfo, store::rest_api::UploadInfo};
+use mbs4_app::{
+    rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
+    store::rest_api::UploadInfo,
+};
 use mbs4_calibre::meta::EbookMetadata;
-use mbs4_dal::{ebook::CreateEbook, source::Source};
+use mbs4_dal::{
+    ebook::{CreateEbook, Ebook},
+    source::Source,
+};
 use mbs4_e2e_tests::{
     TestUser, launch_env, prepare_env,
     rest::{create_author, create_ebook, create_format, create_genre, create_language},
@@ -229,9 +235,56 @@ async fn test_upload() {
     assert_eq!(new_ebook.id, source.ebook_id);
     // Update ebook cover
 
-    // 6.GET ebook
+    let cover_url = base_url
+        .join(&format!("api/ebook/{}/cover", new_ebook.id))
+        .unwrap();
+    let cover_info = EbookCoverInfo {
+        cover_file: meta.cover_file,
+        ebook_id: new_ebook.id,
+        ebook_version: new_ebook.version,
+    };
+
+    let res = client
+        .put(cover_url.clone())
+        .json(&cover_info)
+        .send()
+        .await
+        .unwrap();
+    info!("Response: {:?}", res);
+    assert!(res.status().is_success());
+    assert!(res.status().as_u16() == 200);
+
+    let updated_ebook: Ebook = res.json().await.unwrap();
+    assert_eq!(updated_ebook.id, new_ebook.id);
+    assert_eq!(updated_ebook.version, new_ebook.version + 1);
+    assert!(
+        updated_ebook
+            .cover
+            .as_ref()
+            .unwrap()
+            .starts_with(&ebook_dir)
+    );
+    assert!(updated_ebook.cover.as_ref().unwrap().ends_with(".jpg"));
+
+    // 6. check files
 
     // Download cover
+
+    let cover_download_url = base_url
+        .join(&format!("files/download/{}", updated_ebook.cover.unwrap()))
+        .unwrap();
+
+    let res = client.get(cover_download_url).send().await.unwrap();
+    assert!(res.status().is_success());
+    let mut stream = res.bytes_stream();
+
+    let mut size = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.unwrap();
+        size = size + chunk.len() as u64;
+    }
+
+    assert!(size > 1000);
 
     // Download ebook from source
     let res = client.get(source_url).send().await.unwrap();

@@ -122,7 +122,13 @@ impl ConvertorInner {
                         Ok(import_path)
                     }
                     match import_cover(&self.store, &cover_file).await {
-                        Ok(path) => meta.cover_file = Some(path.into()),
+                        Ok(path) => {
+                            meta.cover_file = Some(
+                                path.without_prefix(mbs4_store::StorePrefix::Upload)
+                                    .unwrap() // save as we created on this prefix above
+                                    .into(),
+                            )
+                        }
                         Err(e) => error!("Error when processing cover: {e}"),
                     }
                 }
