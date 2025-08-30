@@ -20,13 +20,15 @@ pub struct EbookFileInfo {
 }
 
 publish_api_docs!(
-    crud_api_write::create,
-    crud_api_write::update,
-    crud_api_write::delete
+    crud_api_extra::create,
+    crud_api_extra::update,
+    crud_api_extra::delete,
+    crud_api_extra::ebook_sources,
+    crud_api_extra::create_source_for_upload
 );
 crud_api!(Ebook, RO);
 
-mod crud_api_write {
+mod crud_api_extra {
     use axum::{
         extract::{Path, State},
         response::IntoResponse,
@@ -137,20 +139,31 @@ mod crud_api_write {
         let source = source_repo.create(new_source).await?;
         Ok((StatusCode::CREATED, Json(source)))
     }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(get, path = "/{id}/source", tag = "Ebook", operation_id = "listEbookSources",
+responses((status = StatusCode::OK, description = "List Ebook Sources", body = Vec<Source>))))]
+    pub async fn ebook_sources(
+        Path(id): Path<i64>,
+        source_repo: source::SourceRepository,
+    ) -> ApiResult<impl IntoResponse> {
+        let sources = source_repo.list_for_ebook(id).await?;
+        Ok((StatusCode::OK, Json(sources)))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
-        .route("/{id}", delete(crud_api_write::delete))
+        .route("/{id}", delete(crud_api_extra::delete))
         .layer(RequiredRolesLayer::new([Role::Admin]))
-        .route("/", post(crud_api_write::create))
-        .route("/{id}", put(crud_api_write::update))
+        .route("/", post(crud_api_extra::create))
+        .route("/{id}", put(crud_api_extra::update))
         .route(
             "/{id}/source",
-            post(crud_api_write::create_source_for_upload),
+            post(crud_api_extra::create_source_for_upload),
         )
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/", get(crud_api::list))
         .route("/count", get(crud_api::count))
         .route("/{id}", get(crud_api::get))
+        .route("/{id}/source", get(crud_api_extra::ebook_sources))
 }

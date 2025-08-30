@@ -14,7 +14,7 @@ sha2 = { workspace = true }
 tokio-util = { workspace = true, features = ["io"] }
 libc = "0.2.174"
 tempfile = { workspace = true }
-base16ct = "0.2.0"
+base16ct = { workspace = true }
 
 [dev-dependencies]
 tracing-test = { version = "0.2.5", features = ["no-env-filter"] }

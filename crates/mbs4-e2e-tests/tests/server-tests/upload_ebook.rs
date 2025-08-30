@@ -8,6 +8,7 @@ use mbs4_e2e_tests::{
 };
 use reqwest::{Url, multipart};
 use serde_json::{Map, Value};
+use sha2::Digest;
 use tracing::{debug, info};
 use tracing_test::traced_test;
 
@@ -199,18 +200,18 @@ async fn test_upload() {
 
     // Create source
 
-    let create_source_url = base_url
+    let source_url = base_url
         .join(&format!("api/ebook/{}/source", new_ebook.id))
         .unwrap();
     let ebook_file_info = EbookFileInfo {
         uploaded_file: upload_info.final_path,
         size: upload_info.size,
-        hash: upload_info.hash,
+        hash: upload_info.hash.clone(),
         quality: None,
     };
 
     let res = client
-        .post(create_source_url)
+        .post(source_url.clone())
         .json(&ebook_file_info)
         .send()
         .await
@@ -233,6 +234,34 @@ async fn test_upload() {
     // Download cover
 
     // Download ebook from source
+    let res = client.get(source_url).send().await.unwrap();
+    assert!(res.status().is_success());
+
+    let sources: Vec<Source> = res.json().await.unwrap();
+    assert_eq!(sources.len(), 1);
+
+    let file_location = &sources[0].location;
+    let download_url = base_url
+        .join(&format!("files/download/{}", file_location))
+        .unwrap();
+
+    let res = client.get(download_url).send().await.unwrap();
+    assert!(res.status().is_success());
+    let mut stream = res.bytes_stream();
+
+    let mut size = 0;
+    let mut digester = sha2::Sha256::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.unwrap();
+        size = size + chunk.len() as u64;
+        digester.update(&chunk);
+    }
+
+    let hash = digester.finalize();
+    let hash = base16ct::lower::encode_string(hash.as_slice());
+
+    assert_eq!(upload_info.size, size);
+    assert_eq!(upload_info.hash, hash);
 
     // Check files have same size and hash
 }

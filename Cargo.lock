@@ -2181,6 +2181,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base16ct",
  "futures",
  "garde",
  "mbs4-app",
@@ -2192,6 +2193,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tempfile",
  "time",

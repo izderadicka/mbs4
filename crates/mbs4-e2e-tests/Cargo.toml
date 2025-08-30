@@ -28,6 +28,8 @@ tokio-util = { workspace = true, features = ["io"] }
 futures = { workspace = true }
 garde = { workspace = true }
 time = { workspace = true }
+sha2 = { workspace = true }
+base16ct = { workspace = true }
 
 [dev-dependencies]
 # tracing-test = { version = "0.2.5", features = [] }

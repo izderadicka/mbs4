@@ -26,3 +26,19 @@ pub struct Source {
     #[spec(modified)]
     pub modified: time::PrimitiveDateTime,
 }
+
+impl<'c, E> SourceRepositoryImpl<E>
+where
+    for<'a> &'a E: sqlx::Executor<'c, Database = crate::ChosenDB>
+        + sqlx::Acquire<'c, Database = crate::ChosenDB>,
+{
+    pub async fn list_for_ebook(&self, ebook_id: i64) -> crate::error::Result<Vec<Source>> {
+        let res = sqlx::query_as(
+            "SELECT * FROM source WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000",
+        )
+        .bind(ebook_id)
+        .fetch_all(&self.executor)
+        .await?;
+        Ok(res)
+    }
+}
