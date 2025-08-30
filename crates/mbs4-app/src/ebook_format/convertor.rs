@@ -5,6 +5,7 @@ use std::{
 
 use crate::{ebook_format::MetaResult, events::EventMessage};
 use mbs4_store::{file_store::FileStore, upload_path, Store, ValidPath};
+use mbs4_types::utils::file_ext;
 use tracing::error;
 
 pub enum ConversionJob {
@@ -112,11 +113,9 @@ impl ConvertorInner {
                         cover_file: &str,
                     ) -> anyhow::Result<ValidPath> {
                         let cover_path = Path::new(&cover_file);
-                        let ext = cover_path
-                            .extension()
-                            .and_then(|ext| ext.to_str())
+                        let ext = file_ext(cover_path)
                             .ok_or_else(|| anyhow::anyhow!("Invalid extension"))?;
-                        let to_path = upload_path(ext)?;
+                        let to_path = upload_path(&ext)?;
                         let import_path = store
                             .import_file(Path::new(&cover_file), &to_path, true)
                             .await?;

@@ -9,7 +9,7 @@ use axum::{
 use futures::TryStreamExt as _;
 use mbs4_dal::format::FormatRepository;
 use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
-use mbs4_types::claim::Role;
+use mbs4_types::{claim::Role, utils::file_ext};
 use tracing::debug;
 
 use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
@@ -73,16 +73,12 @@ pub async fn upload_form(
             .file_name()
             .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?
             .to_string();
-        let ext = std::path::Path::new(&file_name)
-            .extension()
-            .and_then(std::ffi::OsStr::to_str)
-            .ok_or_else(|| ApiError::InvalidRequest("Missing file extension".into()))?
-            .to_lowercase();
+        let ext = file_ext(&file_name)
+            .ok_or_else(|| ApiError::UnprocessableRequest("Missing file extension".into()))?;
 
-        let format = repository
-            .get_by_extension(&ext)
-            .await
-            .map_err(|e| ApiError::InvalidRequest(format!("Invalid file extension, error: {e}")))?;
+        let format = repository.get_by_extension(&ext).await.map_err(|e| {
+            ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
+        })?;
         // TODO: More check?
         let mime_type = format.mime_type;
 
@@ -134,7 +130,7 @@ pub async fn upload_direct(
     let format = repository
         .get_by_mime_type(mime)
         .await
-        .map_err(|e| ApiError::InvalidRequest(format!("Invalid mime type, error: {e}")))?;
+        .map_err(|e| ApiError::UnprocessableRequest(format!("Invalid mime type, error: {e}")))?;
 
     let ext = format.extension;
 
@@ -165,10 +161,7 @@ pub async fn download(
     let body = Body::from_stream(data);
     let mut headers = axum::http::HeaderMap::new();
 
-    let ext = std::path::Path::new(path.as_ref())
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_lowercase());
+    let ext = file_ext(path.as_ref());
 
     let mut content_type = None;
     if let Some(ext) = ext.as_ref() {

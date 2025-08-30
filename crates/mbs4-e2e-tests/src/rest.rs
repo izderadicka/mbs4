@@ -1,5 +1,7 @@
 use anyhow::Result;
-use mbs4_dal::{author::Author, format::Format, genre::Genre, language::Language, series::Series};
+use mbs4_dal::{
+    author::Author, ebook::Ebook, format::Format, genre::Genre, language::Language, series::Series,
+};
 use reqwest::Url;
 use serde_json::json;
 use tracing::info;
@@ -82,4 +84,26 @@ pub async fn create_format(
 
     let new_format: Format = response.json().await?;
     Ok(new_format)
+}
+
+pub async fn create_ebook<T>(client: &reqwest::Client, base_url: &Url, payload: &T) -> Result<Ebook>
+where
+    T: serde::Serialize,
+{
+    let api_url = base_url.join("api/ebook").unwrap();
+
+    let response = client
+        .post(api_url.clone())
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    info!("Response: {:#?}", response);
+    assert!(response.status().is_success());
+    assert!(response.status().as_u16() == 201);
+    let body = response.text().await.unwrap();
+    info!("Response body: {:#?}", body);
+    let new_ebook: Ebook = serde_json::from_str(&body).unwrap();
+
+    Ok(new_ebook)
 }

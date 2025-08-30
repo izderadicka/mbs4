@@ -35,7 +35,32 @@ pub struct Ebook {
     pub modified: time::PrimitiveDateTime,
 }
 
-#[derive(Debug, Deserialize, Clone, garde::Validate)]
+impl Ebook {
+    pub fn naming_meta(&self) -> mbs4_types::utils::naming::Ebook<'_> {
+        use mbs4_types::utils::naming::Author;
+        mbs4_types::utils::naming::Ebook {
+            title: &self.title,
+            authors: self
+                .authors
+                .as_ref()
+                .map(|authors| {
+                    authors
+                        .iter()
+                        .map(|author| Author {
+                            first_name: author.first_name.as_ref().map(|s| s.as_str()),
+                            last_name: author.last_name.as_str(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| vec![]),
+            language_code: self.language.code.as_str(),
+            series_name: self.series.as_ref().map(|s| s.title.as_str()),
+            series_index: self.series_index,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, garde::Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[garde(allow_unvalidated)]
 pub struct CreateEbook {
@@ -571,7 +596,7 @@ where
 
         let base_dir = book_meta
             .ebook_base_dir()
-            .ok_or_else(|| Error::InvalidEntity("Cannot constuct base dir".to_string()))?;
+            .ok_or_else(|| Error::InvalidEntity("Cannot construct base dir".to_string()))?;
 
         let now = time::OffsetDateTime::now_utc();
         let now = time::PrimitiveDateTime::new(now.date(), now.time());

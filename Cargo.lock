@@ -2184,6 +2184,7 @@ dependencies = [
  "futures",
  "garde",
  "mbs4-app",
+ "mbs4-calibre",
  "mbs4-dal",
  "mbs4-server",
  "mbs4-types",

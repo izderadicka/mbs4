@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct EbookMetadata {
     pub title: Option<String>,
     pub authors: Vec<Author>,
@@ -12,13 +12,13 @@ pub struct EbookMetadata {
     pub comments: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Author {
     pub first_name: Option<String>,
     pub last_name: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Series {
     pub title: String,
     pub index: i32,

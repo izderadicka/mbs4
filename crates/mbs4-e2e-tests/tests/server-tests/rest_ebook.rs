@@ -2,7 +2,7 @@ use anyhow::Result;
 use mbs4_dal::ebook::Ebook;
 use mbs4_e2e_tests::{
     TestUser, extend_url, launch_env, prepare_env,
-    rest::{create_author, create_genre, create_language, create_series},
+    rest::{create_author, create_ebook, create_genre, create_language, create_series},
 };
 use reqwest::Url;
 use serde_json::json;
@@ -66,20 +66,7 @@ async fn test_ebook() {
             "language_id": lang.id,
     });
 
-    let api_url = base_url.join("api/ebook").unwrap();
-
-    let response = client
-        .post(api_url.clone())
-        .json(&payload)
-        .send()
-        .await
-        .unwrap();
-    info!("Response: {:#?}", response);
-    assert!(response.status().is_success());
-    assert!(response.status().as_u16() == 201);
-    let body = response.text().await.unwrap();
-    info!("Response body: {:#?}", body);
-    let new_ebook: Ebook = serde_json::from_str(&body).unwrap();
+    let new_ebook = create_ebook(&client, &base_url, &payload).await.unwrap();
     assert_eq!(new_ebook.title, "Dune");
     assert_eq!(new_ebook.authors.unwrap().len(), 2);
     assert_eq!(new_ebook.genres.unwrap().len(), 3);
@@ -111,6 +98,7 @@ async fn test_ebook() {
             "version": new_ebook.version
     });
 
+    let api_url = base_url.join("api/ebook").unwrap();
     let ebook_url = extend_url(&api_url, new_ebook.id);
 
     let response = client

@@ -1,6 +1,11 @@
 use futures::StreamExt;
-use mbs4_app::{ebook_format::OperationTicket, store::rest_api::UploadInfo};
-use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, rest::create_format};
+use mbs4_app::{rest_api::ebook::EbookFileInfo, store::rest_api::UploadInfo};
+use mbs4_calibre::meta::EbookMetadata;
+use mbs4_dal::{ebook::CreateEbook, source::Source};
+use mbs4_e2e_tests::{
+    TestUser, launch_env, prepare_env,
+    rest::{create_author, create_ebook, create_format, create_genre, create_language},
+};
 use reqwest::{Url, multipart};
 use serde_json::{Map, Value};
 use tracing::{debug, info};
@@ -25,7 +30,7 @@ fn catch_event(
     sse_url: Url,
     operation_id: String,
 ) -> Result<tokio::sync::oneshot::Receiver<Value>, anyhow::Error> {
-    let (mut sender, receiver) = tokio::sync::oneshot::channel();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
 
     tokio::spawn(async move {
         let res = client
@@ -130,30 +135,97 @@ async fn test_upload() {
     let sse_url = base_url.join("events").unwrap();
     let receiver = catch_event(client.clone(), sse_url, ticket_id.to_string()).unwrap();
 
+    let meta;
     match tokio::time::timeout(std::time::Duration::from_secs(10), receiver).await {
         Ok(res) => {
             let res = res.unwrap();
-            info!("Event response: {:#?}", res);
+            meta = res["metadata"].clone();
         }
         Err(_) => {
             panic!("Event timeout");
         }
     }
+    info!("Meta: {:#?}", meta);
+
+    let meta: EbookMetadata = serde_json::from_value(meta).unwrap();
 
     // ### transaction ?
     // 4. create ebook - use metadata
     // 4.1. create author
+    let mut authors = Vec::new();
+    for author in meta.authors {
+        let new_author = create_author(
+            &client,
+            &base_url,
+            &author.last_name,
+            author.first_name.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        authors.push(new_author.id);
+    }
+
     // 4.2. create genre
+    let mut genres = Vec::new();
+    for genre in meta.genres {
+        let new_genre = create_genre(&client, &base_url, &genre).await.unwrap();
+        genres.push(new_genre.id);
+    }
     // 4.3. create language
-    // 4.4. create series?
+    let eng_lang = create_language(&client, &base_url, "English", "en")
+        .await
+        .unwrap();
+    let eng_lang_id = eng_lang.id;
+    // 4.4. create series? Not in metadata
 
     // 4.5. create ebook itself
 
+    let new_ebook = CreateEbook {
+        title: meta.title.unwrap(),
+        description: meta.comments,
+        series_id: None,
+        series_index: None,
+        language_id: eng_lang_id,
+        authors: Some(authors),
+        genres: Some(genres),
+        created_by: Some("test".to_string()),
+    };
+
+    let new_ebook = create_ebook(&client, &base_url, &new_ebook).await.unwrap();
+
     // 5. Create source
-    // Create format
-    // Move upload  file to destination
-    // Move cover to source
+    let ebook_dir = new_ebook.base_dir;
+
     // Create source
+
+    let create_source_url = base_url
+        .join(&format!("api/ebook/{}/source", new_ebook.id))
+        .unwrap();
+    let ebook_file_info = EbookFileInfo {
+        uploaded_file: upload_info.final_path,
+        size: upload_info.size,
+        hash: upload_info.hash,
+        quality: None,
+    };
+
+    let res = client
+        .post(create_source_url)
+        .json(&ebook_file_info)
+        .send()
+        .await
+        .unwrap();
+    info!("Response: {:?}", res);
+    assert!(res.status().is_success());
+    assert!(res.status().as_u16() == 201);
+
+    let source: Source = res.json().await.unwrap();
+
+    info!("Source: {:#?} and ebook_dir: {}", source, ebook_dir);
+
+    assert!(source.location.starts_with(&ebook_dir));
+    assert!(source.location.ends_with(".epub"));
+    assert_eq!(new_ebook.id, source.ebook_id);
     // Update ebook cover
 
     // 6.GET ebook

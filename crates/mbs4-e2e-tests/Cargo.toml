@@ -11,6 +11,7 @@ serde = { workspace = true }
 mbs4-server = { path = "../mbs4-server" }
 mbs4-app = { path = "../mbs4-app" }
 mbs4-types = { path = "../mbs4-types", features = ["e2e-tests"] }
+mbs4-calibre = { path = "../mbs4-calibre" }
 tempfile = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }

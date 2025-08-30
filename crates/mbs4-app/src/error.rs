@@ -27,6 +27,8 @@ pub enum ApiError {
     MultipartError(#[from] MultipartError),
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
+    #[error("Unprocessable request: {0}")]
+    UnprocessableRequest(String),
     #[error("Internal error: {0}")]
     InternalError(String),
     #[error("Store error: {0}")]
@@ -116,6 +118,10 @@ impl IntoResponse for ApiError {
             ApiError::InvalidRequest(msg) => {
                 tracing::debug!("Invalid request: {msg}");
                 (StatusCode::BAD_REQUEST, msg.into())
+            }
+            ApiError::UnprocessableRequest(msg) => {
+                tracing::debug!("Unprocessable request: {msg}");
+                (StatusCode::UNPROCESSABLE_ENTITY, msg.into())
             }
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {msg}");
