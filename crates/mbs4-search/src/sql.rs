@@ -273,14 +273,17 @@ impl SqlSearcher {
             let title: String = row.get(0);
             let series: String = row.get(1);
             let series_id: Option<i64> = row.get(2);
+
             let author: Vec<String> = row
                 .get::<String, _>(3)
                 .split(LIST_SEP)
+                .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
             let author_id: Vec<i64> = row
                 .get::<String, _>(4)
                 .split(LIST_SEP)
+                .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<i64>())
                 .collect::<Result<_, _>>()?;
             let id: i64 = row.get(5);
