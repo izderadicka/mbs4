@@ -9,17 +9,17 @@ use tracing::error;
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
 const CREATE_INDEX_QUERY: &str = "
-CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, series TEXT, series_id INTEGER, author TEXT, author_id TEXT);
-CREATE VIRTUAL TABLE idx USING fts5(title, series, series_id UNINDEXED, author, author_id UNINDEXED,content=docs, content_rowid=id );
+CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, series TEXT, series_index TEXT, series_id INTEGER, author TEXT, author_id TEXT);
+CREATE VIRTUAL TABLE idx USING fts5(title, series, series_index, series_id UNINDEXED, author, author_id UNINDEXED,content=docs, content_rowid=id );
 CREATE TRIGGER after_insert AFTER INSERT ON docs BEGIN
-    INSERT INTO idx(rowid, title, series, series_id, author, author_id) VALUES (new.id, new.title, new.series, new.series_id, new.author, new.author_id);
+    INSERT INTO idx(rowid, title, series, series_index, series_id, author, author_id) VALUES (new.id, new.title, new.series, new.series_index, new.series_id, new.author, new.author_id);
     END;
 CREATE TRIGGER after_delete AFTER DELETE ON docs BEGIN
-    INSERT INTO idx(idx, rowid, title, series, series_id, author, author_id) VALUES('delete', old.id, old.title, old.series, old.series_id, old.author, old.author_id);
+    INSERT INTO idx(idx, rowid, title, series, series_index, series_id, author, author_id) VALUES('delete', old.id, old.title, old.series, old.series_index, old.series_id, old.author, old.author_id);
     END;
 CREATE TRIGGER after_update AFTER UPDATE ON docs BEGIN
-    INSERT INTO idx(idx, rowid, title, series, series_id, author, author_id) VALUES('delete', old.id, old.title, old.series, old.series_id, old.author, old.author_id);
-    INSERT INTO idx(rowid, title, series, series_id, author, author_id) VALUES (new.id, new.title, new.series, new.series_id, new.author, new.author_id);
+    INSERT INTO idx(idx, rowid, title, series, series_index, series_id, author, author_id) VALUES('delete', old.id, old.title, old.series, old.series_index, old.series_id, old.author, old.author_id);
+    INSERT INTO idx(rowid, title, series, series_index, series_id, author, author_id) VALUES (new.id, new.title, new.series, new.series_index, new.series_id, new.author, new.author_id);
     END;
 ";
 
@@ -103,6 +103,10 @@ impl SqlIndexerRunner {
         for ebook in items {
             let title = ebook.title;
             let series = ebook.series.clone().map(|s| s.title).unwrap_or_default();
+            let series_index = ebook
+                .series_index
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             let series_id = ebook.series.map(|s| s.id);
             let author = ebook
                 .authors
@@ -130,9 +134,10 @@ impl SqlIndexerRunner {
                 .unwrap_or_default();
             let id = ebook.id.to_string();
             if update {
-                sqlx::query("UPDATE docs SET title = ?1, series = ?2, series_id = ?3, author = ?4, author_id = ?5 WHERE id = ?6")
+                sqlx::query("UPDATE docs SET title = ?1, series = ?2, series_index = ?3, series_id = ?4, author = ?5, author_id = ?6 WHERE id = ?7")
                     .bind(&title)
                     .bind(&series)
+                    .bind(series_index)
                     .bind(series_id)
                     .bind(&author)
                     .bind(&author_id)
@@ -140,9 +145,10 @@ impl SqlIndexerRunner {
                     .execute(&mut *transaction)
                     .await?;
             } else {
-                sqlx::query("INSERT INTO docs (title, series, series_id, author, author_id, id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+                sqlx::query("INSERT INTO docs (title, series, series_index, series_id, author, author_id, id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
                 .bind(&title)
                 .bind(&series)
+                .bind(series_index)
                 .bind(series_id)
                 .bind(&author)
                 .bind(&author_id)
@@ -263,7 +269,7 @@ impl SqlSearcher {
     ) -> Result<Vec<crate::SearchItem>> {
         let query: String = query.into();
 
-        let mut rows = sqlx::query("SELECT title, series, series_id, author, author_id, rowid, rank FROM idx WHERE idx MATCH ? order by rank LIMIT ?")
+        let mut rows = sqlx::query("SELECT title, series, series_index, series_id, author, author_id, rowid, rank FROM idx WHERE idx MATCH ? order by rank LIMIT ?")
         .bind(query)
         .bind(num_results as i64)
         .fetch(&self.pool);
@@ -272,22 +278,23 @@ impl SqlSearcher {
         while let Some(row) = rows.try_next().await? {
             let title: String = row.get(0);
             let series: String = row.get(1);
-            let series_id: Option<i64> = row.get(2);
+            let series_index: String = row.get(2);
+            let series_id: Option<i64> = row.get(3);
 
             let author: Vec<String> = row
-                .get::<String, _>(3)
+                .get::<String, _>(4)
                 .split(LIST_SEP)
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
             let author_id: Vec<i64> = row
-                .get::<String, _>(4)
+                .get::<String, _>(5)
                 .split(LIST_SEP)
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<i64>())
                 .collect::<Result<_, _>>()?;
-            let id: i64 = row.get(5);
-            let rank: f32 = row.get(6);
+            let id: i64 = row.get(6);
+            let rank: f32 = row.get(7);
 
             let authors = author
                 .into_iter()
@@ -301,6 +308,7 @@ impl SqlSearcher {
             let res = BookResult {
                 title,
                 series,
+                series_index,
                 series_id,
                 authors,
                 id,

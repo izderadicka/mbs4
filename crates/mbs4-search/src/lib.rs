@@ -74,6 +74,7 @@ pub struct AuthorSummary {
 pub struct BookResult {
     title: String,
     series: String,
+    series_index: String,
     series_id: Option<i64>,
     authors: Vec<AuthorSummary>,
     id: i64,
