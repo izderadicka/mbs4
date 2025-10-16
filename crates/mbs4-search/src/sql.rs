@@ -1,4 +1,4 @@
-use crate::{AuthorSummary, BookResult, IndexingJob};
+use crate::{AuthorSummary, BookResult, IndexingJob, SearchTarget};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
@@ -316,7 +316,7 @@ impl SqlSearcher {
 
             results.push(crate::SearchItem {
                 score: -rank,
-                doc: res,
+                doc: crate::FoundDoc::Ebook(res),
             });
         }
 
@@ -325,12 +325,15 @@ impl SqlSearcher {
 }
 
 impl Searcher for SqlSearcher {
-    fn search(&self, query: &str, num_results: usize) -> crate::SearchResult {
+    fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> crate::SearchResult {
         let (res, sender) = crate::SearchResult::new();
         let searcher = self.clone();
         let query = query.to_string();
         tokio::spawn(async move {
-            let res = searcher.search_async(&query, num_results).await;
+            let res = match what {
+                SearchTarget::Ebook => searcher.search_async(&query, num_results).await,
+                _ => todo!("Not implemented yet"),
+            };
             if let Err(ref e) = res {
                 error!("Search failed: {e}");
             }

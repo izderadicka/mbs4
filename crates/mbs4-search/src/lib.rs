@@ -1,17 +1,54 @@
 pub mod sql;
 
-use std::task::Poll;
+use std::{fmt::Display, str::FromStr, task::Poll};
 
 pub use anyhow::Result;
 use mbs4_dal::ebook::Ebook;
 use pin_project_lite::pin_project;
 use serde::Serialize;
 
+#[derive(Debug, Clone)]
+pub enum SearchTarget {
+    Ebook,
+    Series,
+    Author,
+}
+
+impl FromStr for SearchTarget {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ebook" => Ok(SearchTarget::Ebook),
+            "series" => Ok(SearchTarget::Series),
+            "author" => Ok(SearchTarget::Author),
+            _ => Err(anyhow::anyhow!("Invalid search target: {}", s)),
+        }
+    }
+}
+
+impl Display for SearchTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SearchTarget::Ebook => write!(f, "ebook"),
+            SearchTarget::Series => write!(f, "series"),
+            SearchTarget::Author => write!(f, "author"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum FoundDoc {
+    Ebook(BookResult),
+    Series(SeriesResult),
+    Author(AuthorResult),
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchItem {
     pub score: f32,
-    pub doc: BookResult,
+    pub doc: FoundDoc,
 }
 
 pin_project!(
@@ -59,7 +96,7 @@ pub trait Indexer {
 }
 
 pub trait Searcher {
-    fn search(&self, query: &str, num_results: usize) -> SearchResult;
+    fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> SearchResult;
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +115,21 @@ pub struct BookResult {
     series_id: Option<i64>,
     authors: Vec<AuthorSummary>,
     id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeriesResult {
+    title: String,
+    id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AuthorResult {
+    id: u64,
+    first_name: Option<String>,
+    last_name: String,
 }
 
 enum IndexingJob {

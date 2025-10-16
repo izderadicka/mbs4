@@ -79,7 +79,9 @@ async fn test_ebook() {
 
     let found = search(&client, &base_url, "Dune").await.unwrap();
     assert_eq!(found.len(), 1);
-    let found_ebook = found.get(0).unwrap()["doc"].as_object().unwrap();
+    let found_ebook = found.get(0).unwrap()["doc"].as_object().unwrap()["Ebook"]
+        .as_object()
+        .unwrap();
     assert_eq!(found_ebook["title"].as_str().unwrap(), "Dune");
     assert_eq!(found_ebook["authors"].as_array().unwrap().len(), 2);
 

@@ -15,6 +15,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tracing::info;
 
+pub use mbs4_search::SearchTarget;
+
 #[derive(Clone)]
 pub struct Search {
     inner: Arc<SearchInner>,
@@ -42,8 +44,8 @@ impl Search {
         })
     }
 
-    pub fn search(&self, query: &str, num_results: usize) -> SearchResult {
-        self.inner.searcher.search(query, num_results)
+    pub fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> SearchResult {
+        self.inner.searcher.search(query, what, num_results)
     }
 
     pub fn index_book(&self, book: mbs4_dal::ebook::Ebook, update: bool) -> Result<()> {
@@ -68,6 +70,8 @@ struct SearchInner {
 pub struct SearchQuery {
     #[garde(length(max = 255))]
     query: String,
+    #[garde(length(max = 16, min = 1))]
+    what: Option<String>,
     #[garde(range(min = 1, max = 1000))]
     num_results: Option<usize>,
 }
@@ -79,7 +83,14 @@ pub async fn search(
     State(state): State<AppState>,
 ) -> ApiResult<impl IntoResponse> {
     let num_results = query.num_results.unwrap_or(10);
-    let res = state.search().search(&query.query, num_results).await?;
+    let what: SearchTarget = query
+        .what
+        .unwrap_or_else(|| String::from("ebook"))
+        .parse()?;
+    let res = state
+        .search()
+        .search(&query.query, what, num_results)
+        .await?;
     Ok((StatusCode::OK, Json(res)))
 }
 

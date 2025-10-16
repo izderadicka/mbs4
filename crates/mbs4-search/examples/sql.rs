@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser as _;
 use mbs4_dal;
-use mbs4_search::{SearchItem, Searcher as _, sql};
+use mbs4_search::{SearchItem, SearchTarget, Searcher as _, sql};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -21,6 +21,8 @@ enum Command {
     Search {
         #[arg(short, long)]
         query: String,
+        #[arg(short, long, default_value_t = SearchTarget::Ebook)]
+        what: SearchTarget,
     },
 }
 
@@ -29,8 +31,12 @@ async fn fill_index(indexer: sql::SqlIndexer, db_path: &str) -> Result<()> {
     sql::initial_index_fill(indexer, pool).await
 }
 
-async fn search(searcher: sql::SqlSearcher, query: &str) -> Result<Vec<SearchItem>> {
-    searcher.search(query, 10).await
+async fn search(
+    searcher: sql::SqlSearcher,
+    query: &str,
+    what: SearchTarget,
+) -> Result<Vec<SearchItem>> {
+    searcher.search(query, what, 10).await
 }
 
 #[tokio::main]
@@ -42,9 +48,9 @@ async fn main() -> anyhow::Result<()> {
 
     match args.command {
         Command::FillIndex { database_path } => fill_index(indexer, &database_path).await?,
-        Command::Search { query } => {
+        Command::Search { query, what } => {
             let start = std::time::Instant::now();
-            let res = search(searcher, &query).await?;
+            let res = search(searcher, &query, what).await?;
             let enlapsed = start.elapsed();
             println!("Results: {:#?}", res);
             println!("Enlapsed: {} ms", enlapsed.as_millis());
