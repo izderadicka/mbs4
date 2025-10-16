@@ -10,7 +10,7 @@ use axum::{
 use axum_valid::Garde;
 use garde::Validate;
 use http::StatusCode;
-use mbs4_search::SearchResult;
+use mbs4_search::{ItemToIndex, SearchResult};
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::info;
@@ -49,12 +49,15 @@ impl Search {
     }
 
     pub fn index_book(&self, book: mbs4_dal::ebook::Ebook, update: bool) -> Result<()> {
-        let _res = self.inner.indexer.index(vec![book], update)?;
+        let _res = self
+            .inner
+            .indexer
+            .index(vec![ItemToIndex::Ebook(book)], update)?;
         Ok(())
     }
 
     pub fn delete_book(&self, id: i64) -> Result<()> {
-        let _res = self.inner.indexer.delete(vec![id])?;
+        let _res = self.inner.indexer.delete(vec![id], SearchTarget::Ebook)?;
         Ok(())
     }
 }

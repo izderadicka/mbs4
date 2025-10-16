@@ -1,4 +1,4 @@
-use crate::{AuthorSummary, BookResult, IndexingJob, SearchTarget};
+use crate::{AuthorSummary, BookResult, IndexingJob, ItemToIndex, SearchTarget};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
@@ -71,7 +71,12 @@ pub async fn initial_index_fill(indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Re
         let mut page_params = params.clone();
         page_params.offset = page_no * PAGE_SIZE;
         let page = repository.list_ids(page_params).await?;
-        let ebooks = repository.map_ids_to_ebooks(&page.rows).await?;
+        let ebooks = repository
+            .map_ids_to_ebooks(&page.rows)
+            .await?
+            .into_iter()
+            .map(|b| ItemToIndex::Ebook(b))
+            .collect();
 
         let res = indexer.index(ebooks, false)?;
         res.await??;
@@ -94,47 +99,46 @@ struct SqlIndexerRunner {
 const LIST_SEP: &str = "; ";
 
 impl SqlIndexerRunner {
-    async fn index_batch(
+    async fn index_ebook(
         &mut self,
-        items: Vec<mbs4_dal::ebook::Ebook>,
+        transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
+        ebook: mbs4_dal::ebook::Ebook,
         update: bool,
     ) -> Result<()> {
-        let mut transaction = self.pool.begin().await?;
-        for ebook in items {
-            let title = ebook.title;
-            let series = ebook.series.clone().map(|s| s.title).unwrap_or_default();
-            let series_index = ebook
-                .series_index
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            let series_id = ebook.series.map(|s| s.id);
-            let author = ebook
-                .authors
-                .clone()
-                .map(|authors| {
-                    authors
-                        .into_iter()
-                        .map(|a| match a.first_name {
-                            Some(first_name) => format!("{} {}", first_name, a.last_name),
-                            None => a.last_name,
-                        })
-                        .collect::<Vec<_>>()
-                        .join(LIST_SEP)
-                })
-                .unwrap_or_default();
-            let author_id = ebook
-                .authors
-                .map(|authors| {
-                    authors
-                        .iter()
-                        .map(|a| a.id.to_string())
-                        .collect::<Vec<_>>()
-                        .join(LIST_SEP)
-                })
-                .unwrap_or_default();
-            let id = ebook.id.to_string();
-            if update {
-                sqlx::query("UPDATE docs SET title = ?1, series = ?2, series_index = ?3, series_id = ?4, author = ?5, author_id = ?6 WHERE id = ?7")
+        let title = ebook.title;
+        let series = ebook.series.clone().map(|s| s.title).unwrap_or_default();
+        let series_index = ebook
+            .series_index
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let series_id = ebook.series.map(|s| s.id);
+        let author = ebook
+            .authors
+            .clone()
+            .map(|authors| {
+                authors
+                    .into_iter()
+                    .map(|a| match a.first_name {
+                        Some(first_name) => format!("{} {}", first_name, a.last_name),
+                        None => a.last_name,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(LIST_SEP)
+            })
+            .unwrap_or_default();
+        let author_id = ebook
+            .authors
+            .map(|authors| {
+                authors
+                    .iter()
+                    .map(|a| a.id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(LIST_SEP)
+            })
+            .unwrap_or_default();
+        let id = ebook.id.to_string();
+        if update {
+            sqlx::query("UPDATE docs SET title = ?1, series = ?2, series_index = ?3, series_id = ?4, author = ?5, author_id = ?6 WHERE id = ?7")
                     .bind(&title)
                     .bind(&series)
                     .bind(series_index)
@@ -142,10 +146,10 @@ impl SqlIndexerRunner {
                     .bind(&author)
                     .bind(&author_id)
                     .bind(&id)
-                    .execute(&mut *transaction)
+                    .execute(&mut **transaction)
                     .await?;
-            } else {
-                sqlx::query("INSERT INTO docs (title, series, series_index, series_id, author, author_id, id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
+        } else {
+            sqlx::query("INSERT INTO docs (title, series, series_index, series_id, author, author_id, id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
                 .bind(&title)
                 .bind(&series)
                 .bind(series_index)
@@ -153,21 +157,61 @@ impl SqlIndexerRunner {
                 .bind(&author)
                 .bind(&author_id)
                 .bind(&id)
-                .execute(&mut *transaction)
+                .execute(&mut **transaction)
                 .await?;
+        }
+        Ok(())
+    }
+
+    async fn index_series(
+        &mut self,
+        transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
+        series: mbs4_dal::series::Series,
+        update: bool,
+    ) -> Result<()> {
+        todo!("Not yet implemented - index series")
+    }
+
+    async fn index_author(
+        &mut self,
+        transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
+        author: mbs4_dal::author::Author,
+        update: bool,
+    ) -> Result<()> {
+        todo!("Not yet implemented - index author")
+    }
+
+    async fn index_batch(&mut self, items: Vec<ItemToIndex>, update: bool) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        for item in items {
+            match item {
+                ItemToIndex::Ebook(ebook) => {
+                    self.index_ebook(&mut transaction, ebook, update).await?
+                }
+                ItemToIndex::Series(series) => {
+                    self.index_series(&mut transaction, series, update).await?
+                }
+                ItemToIndex::Author(author) => {
+                    self.index_author(&mut transaction, author, update).await?
+                }
             }
         }
         transaction.commit().await?;
         Ok(())
     }
 
-    async fn delete_batch(&mut self, items: Vec<i64>) -> Result<()> {
+    async fn delete_batch(&mut self, items: Vec<i64>, what: SearchTarget) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
         for id in items {
-            sqlx::query("DELETE FROM docs WHERE id = ?")
-                .bind(id)
-                .execute(&mut *transaction)
-                .await?;
+            match what {
+                SearchTarget::Ebook => {
+                    sqlx::query("DELETE FROM docs WHERE id = ?")
+                        .bind(id)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
+                _ => todo!("Not yet implemented"),
+            }
         }
         transaction.commit().await?;
         Ok(())
@@ -195,8 +239,8 @@ impl SqlIndexerRunner {
                         error!("Failed to send indexing result");
                     }
                 }
-                IndexingJob::Delete { ids, sender } => {
-                    let res = self.delete_batch(ids).await;
+                IndexingJob::Delete { ids, sender, what } => {
+                    let res = self.delete_batch(ids, what).await;
                     if let Err(ref e) = res {
                         error!("Indexing failed: {e}");
                     }
@@ -232,7 +276,7 @@ impl SqlIndexer {
 }
 
 impl Indexer for SqlIndexer {
-    fn index(&self, items: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> IndexerResult {
+    fn index(&self, items: Vec<ItemToIndex>, update: bool) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.queue.try_send(IndexingJob::Add {
             items,
@@ -243,9 +287,10 @@ impl Indexer for SqlIndexer {
         Ok(receiver)
     }
 
-    fn delete(&self, ids: Vec<i64>) -> IndexerResult {
+    fn delete(&self, ids: Vec<i64>, what: SearchTarget) -> IndexerResult {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.queue.try_send(IndexingJob::Delete { ids, sender })?;
+        self.queue
+            .try_send(IndexingJob::Delete { ids, sender, what })?;
         Ok(receiver)
     }
 

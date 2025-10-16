@@ -89,9 +89,15 @@ impl Future for SearchResult {
 
 pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
 
+pub enum ItemToIndex {
+    Ebook(Ebook),
+    Series(mbs4_dal::series::Series),
+    Author(mbs4_dal::author::Author),
+}
+
 pub trait Indexer {
-    fn index(&self, items: Vec<Ebook>, update: bool) -> IndexerResult;
-    fn delete(&self, id: Vec<i64>) -> IndexerResult;
+    fn index(&self, items: Vec<ItemToIndex>, update: bool) -> IndexerResult;
+    fn delete(&self, id: Vec<i64>, what: SearchTarget) -> IndexerResult;
     fn reset(&self) -> IndexerResult;
 }
 
@@ -135,12 +141,13 @@ pub struct AuthorResult {
 enum IndexingJob {
     Stop,
     Add {
-        items: Vec<Ebook>,
+        items: Vec<ItemToIndex>,
         update: bool,
         sender: tokio::sync::oneshot::Sender<Result<()>>,
     },
     Delete {
         ids: Vec<i64>,
+        what: SearchTarget,
         sender: tokio::sync::oneshot::Sender<Result<()>>,
     },
     Reset {
