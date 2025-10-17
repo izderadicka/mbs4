@@ -39,9 +39,23 @@ impl Display for SearchTarget {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum FoundDoc {
-    Ebook(BookResult),
-    Series(SeriesResult),
-    Author(AuthorResult),
+    Ebook {
+        title: String,
+        series: String,
+        series_index: String,
+        series_id: Option<i64>,
+        authors: Vec<AuthorSummary>,
+        id: i64,
+    },
+    Series {
+        title: String,
+        id: i64,
+    },
+    Author {
+        id: i64,
+        first_name: Option<String>,
+        last_name: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -91,8 +105,8 @@ pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
 
 pub enum ItemToIndex {
     Ebook(Ebook),
-    Series(mbs4_dal::series::Series),
-    Author(mbs4_dal::author::Author),
+    Series(mbs4_dal::series::SeriesShort),
+    Author(mbs4_dal::author::AuthorShort),
 }
 
 pub trait Indexer {
@@ -110,32 +124,6 @@ pub trait Searcher {
 pub struct AuthorSummary {
     pub id: u64,
     pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BookResult {
-    title: String,
-    series: String,
-    series_index: String,
-    series_id: Option<i64>,
-    authors: Vec<AuthorSummary>,
-    id: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SeriesResult {
-    title: String,
-    id: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AuthorResult {
-    id: u64,
-    first_name: Option<String>,
-    last_name: String,
 }
 
 enum IndexingJob {

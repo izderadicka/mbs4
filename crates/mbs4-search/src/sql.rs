@@ -1,4 +1,4 @@
-use crate::{AuthorSummary, BookResult, IndexingJob, ItemToIndex, SearchTarget};
+use crate::{AuthorSummary, IndexingJob, ItemToIndex, SearchItem, SearchTarget};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
@@ -8,7 +8,7 @@ use tracing::error;
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
-const CREATE_INDEX_QUERY: &str = "
+const CREATE_INDEX_QUERY: &str = r#"
 CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, series TEXT, series_index TEXT, series_id INTEGER, author TEXT, author_id TEXT);
 CREATE VIRTUAL TABLE idx USING fts5(title, series, series_index, series_id UNINDEXED, author, author_id UNINDEXED,content=docs, content_rowid=id );
 CREATE TRIGGER after_insert AFTER INSERT ON docs BEGIN
@@ -21,7 +21,9 @@ CREATE TRIGGER after_update AFTER UPDATE ON docs BEGIN
     INSERT INTO idx(idx, rowid, title, series, series_index, series_id, author, author_id) VALUES('delete', old.id, old.title, old.series, old.series_index, old.series_id, old.author, old.author_id);
     INSERT INTO idx(rowid, title, series, series_index, series_id, author, author_id) VALUES (new.id, new.title, new.series, new.series_index, new.series_id, new.author, new.author_id);
     END;
-";
+CREATE VIRTUAL TABLE idx_series USING fts5(title, tokenize="trigram remove_diacritics 1");
+CREATE VIRTUAL TABLE idx_author USING fts5(first_name, last_name, tokenize="trigram remove_diacritics 1");
+"#;
 
 pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlIndexer, SqlSearcher)> {
     let db_path = index_db_path.as_ref();
@@ -57,6 +59,60 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
 }
 
 pub async fn initial_index_fill(indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
+    index_fill_ebook(&indexer, pool.clone()).await?;
+    index_fill_series(&indexer, pool.clone()).await?;
+    index_fill_author(&indexer, pool).await?;
+    Ok(())
+}
+
+macro_rules! index_fill {
+    ($fname:ident, $repo:ty, $item:path) => {
+        async fn $fname(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
+            let repository = <$repo>::new(pool);
+            const PAGE_SIZE: i64 = 1000;
+            let mut page_no = 0;
+            let params = mbs4_dal::ListingParams {
+                limit: PAGE_SIZE,
+                offset: 0,
+                order: Some(vec![mbs4_dal::Order::Asc("id".to_string())]),
+            };
+
+            let mut indexed = 0;
+            loop {
+                let mut page_params = params.clone();
+                page_params.offset = page_no * PAGE_SIZE;
+                let page = repository.list(page_params).await?;
+                let page_size = page.rows.len();
+                let items = page.rows.into_iter().map(|s| $item(s)).collect();
+
+                let res = indexer.index(items, false)?;
+                res.await??;
+                indexed += page_size;
+                page_no += 1;
+
+                if indexed >= page.total as usize {
+                    break;
+                }
+            }
+
+            Ok(())
+        }
+    };
+}
+
+index_fill!(
+    index_fill_series,
+    mbs4_dal::series::SeriesRepository,
+    ItemToIndex::Series
+);
+
+index_fill!(
+    index_fill_author,
+    mbs4_dal::author::AuthorRepository,
+    ItemToIndex::Author
+);
+
+async fn index_fill_ebook(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
     let repository = mbs4_dal::ebook::EbookRepository::new(pool);
     const PAGE_SIZE: i64 = 1000;
     let mut page_no = 0;
@@ -166,19 +222,47 @@ impl SqlIndexerRunner {
     async fn index_series(
         &mut self,
         transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
-        series: mbs4_dal::series::Series,
+        series: mbs4_dal::series::SeriesShort,
         update: bool,
     ) -> Result<()> {
-        todo!("Not yet implemented - index series")
+        if update {
+            sqlx::query("UPDATE idx_series SET title = ?1 WHERE rowid = ?2")
+                .bind(&series.title)
+                .bind(series.id)
+                .execute(&mut **transaction)
+                .await?;
+        } else {
+            sqlx::query("INSERT INTO idx_series (title, rowid) VALUES (?1, ?2)")
+                .bind(&series.title)
+                .bind(series.id)
+                .execute(&mut **transaction)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn index_author(
         &mut self,
         transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
-        author: mbs4_dal::author::Author,
+        author: mbs4_dal::author::AuthorShort,
         update: bool,
     ) -> Result<()> {
-        todo!("Not yet implemented - index author")
+        if update {
+            sqlx::query("UPDATE idx_author SET fist_name = ?1, last_name = ?2 WHERE rowid = ?3")
+                .bind(&author.first_name)
+                .bind(&author.last_name)
+                .bind(author.id)
+                .execute(&mut **transaction)
+                .await?;
+        } else {
+            sqlx::query("INSERT INTO idx_author (fist_name, last_name, rowid) VALUES (?1, ?2, ?3)")
+                .bind(&author.first_name)
+                .bind(&author.last_name)
+                .bind(author.id)
+                .execute(&mut **transaction)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn index_batch(&mut self, items: Vec<ItemToIndex>, update: bool) -> Result<()> {
@@ -202,16 +286,16 @@ impl SqlIndexerRunner {
 
     async fn delete_batch(&mut self, items: Vec<i64>, what: SearchTarget) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
+        let query = match what {
+            SearchTarget::Ebook => "DELETE FROM docs WHERE id = ?",
+            SearchTarget::Author => "DELETE FROM idx_author WHERE rowid = ?",
+            SearchTarget::Series => "DELETE FROM idx_series WHERE rowid = ?",
+        };
         for id in items {
-            match what {
-                SearchTarget::Ebook => {
-                    sqlx::query("DELETE FROM docs WHERE id = ?")
-                        .bind(id)
-                        .execute(&mut *transaction)
-                        .await?;
-                }
-                _ => todo!("Not yet implemented"),
-            }
+            sqlx::query(query)
+                .bind(id)
+                .execute(&mut *transaction)
+                .await?;
         }
         transaction.commit().await?;
         Ok(())
@@ -220,6 +304,12 @@ impl SqlIndexerRunner {
     async fn reset_index(&mut self) -> Result<()> {
         // TODO - if slow consider drop and recreate tables
         sqlx::query("DELETE FROM docs").execute(&self.pool).await?;
+        sqlx::query("DELETE FROM idx_series")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM idx_author")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -307,11 +397,62 @@ pub struct SqlSearcher {
 }
 
 impl SqlSearcher {
-    async fn search_async(
-        &self,
-        query: &str,
-        num_results: usize,
-    ) -> Result<Vec<crate::SearchItem>> {
+    async fn search_series(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
+        let mut rows = sqlx::query(
+            "SELECT title, rowid, rank FROM series_idx WHERE series_idx MATCH ? order by rank LIMIT ?",
+        )
+        .bind(query)
+        .bind(num_results as i64)
+        .fetch(&self.pool);
+
+        let mut results = Vec::new();
+
+        while let Some(row) = rows.try_next().await? {
+            let title: String = row.get(0);
+            let id: i64 = row.get(1);
+            let rank: f32 = row.get(2);
+            let item = SearchItem {
+                score: -rank,
+                doc: crate::FoundDoc::Series { title, id },
+            };
+
+            results.push(item);
+        }
+
+        Ok(results)
+    }
+
+    async fn search_author(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
+        let mut rows = sqlx::query(
+            "SELECT first_name, last_name,rowid, rank FROM author_idx WHERE author_idx MATCH ? order by rank LIMIT ?",
+        )
+        .bind(query)
+        .bind(num_results as i64)
+        .fetch(&self.pool);
+
+        let mut results = Vec::new();
+
+        while let Some(row) = rows.try_next().await? {
+            let first_name: Option<String> = row.get(0);
+            let last_name: String = row.get(1);
+            let id: i64 = row.get(2);
+            let rank: f32 = row.get(3);
+            let item = SearchItem {
+                score: -rank,
+                doc: crate::FoundDoc::Author {
+                    first_name,
+                    last_name,
+                    id,
+                },
+            };
+
+            results.push(item);
+        }
+
+        Ok(results)
+    }
+
+    async fn search_ebook(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
         let query: String = query.into();
 
         let mut rows = sqlx::query("SELECT title, series, series_index, series_id, author, author_id, rowid, rank FROM idx WHERE idx MATCH ? order by rank LIMIT ?")
@@ -350,7 +491,7 @@ impl SqlSearcher {
                 })
                 .collect::<Vec<_>>();
 
-            let res = BookResult {
+            let doc = crate::FoundDoc::Ebook {
                 title,
                 series,
                 series_index,
@@ -359,10 +500,7 @@ impl SqlSearcher {
                 id,
             };
 
-            results.push(crate::SearchItem {
-                score: -rank,
-                doc: crate::FoundDoc::Ebook(res),
-            });
+            results.push(crate::SearchItem { score: -rank, doc });
         }
 
         Ok(results)
@@ -376,8 +514,9 @@ impl Searcher for SqlSearcher {
         let query = query.to_string();
         tokio::spawn(async move {
             let res = match what {
-                SearchTarget::Ebook => searcher.search_async(&query, num_results).await,
-                _ => todo!("Not implemented yet"),
+                SearchTarget::Ebook => searcher.search_ebook(&query, num_results).await,
+                SearchTarget::Series => searcher.search_series(&query, num_results).await,
+                SearchTarget::Author => searcher.search_author(&query, num_results).await,
             };
             if let Err(ref e) = res {
                 error!("Search failed: {e}");
