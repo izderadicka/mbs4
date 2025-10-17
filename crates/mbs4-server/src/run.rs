@@ -18,7 +18,9 @@ pub async fn run(args: ServerConfig) -> Result<()> {
 }
 
 pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
-    let shutdown = tokio::signal::ctrl_c().map(|_| ());
+    let shutdown = tokio::signal::ctrl_c()
+        .map(|_| info!("Got SIGINT to shutdown"))
+        .boxed();
     run_graceful_with_state(args, state, shutdown).await
 }
 

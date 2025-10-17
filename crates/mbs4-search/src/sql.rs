@@ -1,7 +1,9 @@
-use crate::{AuthorSummary, IndexingJob, ItemToIndex, SearchItem, SearchTarget};
+use crate::{AuthorSummary, EbookDoc, IndexingJob, ItemToIndex, SearchItem, SearchTarget};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
+use mbs4_dal::author::AuthorShort;
+use mbs4_dal::series::SeriesShort;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
 use tracing::{error, info};
@@ -431,7 +433,7 @@ impl SqlSearcher {
             let rank: f32 = row.get(2);
             let item = SearchItem {
                 score: -rank,
-                doc: crate::FoundDoc::Series { title, id },
+                doc: crate::FoundDoc::Series(SeriesShort { id, title }),
             };
 
             results.push(item);
@@ -457,11 +459,11 @@ impl SqlSearcher {
             let rank: f32 = row.get(3);
             let item = SearchItem {
                 score: -rank,
-                doc: crate::FoundDoc::Author {
+                doc: crate::FoundDoc::Author(AuthorShort {
                     first_name,
                     last_name,
                     id,
-                },
+                }),
             };
 
             results.push(item);
@@ -509,14 +511,14 @@ impl SqlSearcher {
                 })
                 .collect::<Vec<_>>();
 
-            let doc = crate::FoundDoc::Ebook {
+            let doc = crate::FoundDoc::Ebook(EbookDoc {
                 title,
                 series,
                 series_index,
                 series_id,
                 authors,
                 id,
-            };
+            });
 
             results.push(crate::SearchItem { score: -rank, doc });
         }

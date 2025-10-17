@@ -3,7 +3,7 @@ pub mod sql;
 use std::{fmt::Display, str::FromStr, task::Poll};
 
 pub use anyhow::Result;
-use mbs4_dal::ebook::Ebook;
+use mbs4_dal::{author::AuthorShort, ebook::Ebook, series::SeriesShort};
 use pin_project_lite::pin_project;
 use serde::Serialize;
 
@@ -38,24 +38,21 @@ impl Display for SearchTarget {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookDoc {
+    title: String,
+    series: String,
+    series_index: String,
+    series_id: Option<i64>,
+    authors: Vec<AuthorSummary>,
+    id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum FoundDoc {
-    Ebook {
-        title: String,
-        series: String,
-        series_index: String,
-        series_id: Option<i64>,
-        authors: Vec<AuthorSummary>,
-        id: i64,
-    },
-    Series {
-        title: String,
-        id: i64,
-    },
-    Author {
-        id: i64,
-        first_name: Option<String>,
-        last_name: String,
-    },
+    Ebook(EbookDoc),
+    Series(SeriesShort),
+    Author(AuthorShort),
 }
 
 #[derive(Debug, Serialize)]
