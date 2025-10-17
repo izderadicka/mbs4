@@ -5,7 +5,7 @@ use mbs4_search::{SearchItem, SearchTarget, Searcher as _, sql};
 
 #[derive(clap::Parser)]
 struct Args {
-    #[arg(long, default_value_t = String::from("test.db"), help = "Index db file path")]
+    #[arg(long, default_value_t = String::from("./test-data/index-test.db"), help = "Index db file path")]
     index_db: String,
 
     #[command(subcommand)]
@@ -15,7 +15,7 @@ struct Args {
 #[derive(clap::Subcommand)]
 enum Command {
     FillIndex {
-        #[arg(short, long, default_value_t = String::from("../../test-data/mbs4.db"))]
+        #[arg(short, long, default_value_t = String::from("./test-data/mbs4.db"))]
         database_path: String,
     },
     Search {

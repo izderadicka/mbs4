@@ -4,7 +4,7 @@ use anyhow::Context;
 use futures::TryStreamExt as _;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
-use tracing::error;
+use tracing::{error, info};
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
@@ -35,6 +35,7 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
             .ok_or_else(|| anyhow::anyhow!("Invalid path"))?
     );
     if !db_existed {
+        info!("Fulltext index does not exist at {db_url}. Creating it now.");
         sqlx::Sqlite::create_database(&db_url).await?;
     }
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -59,9 +60,24 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
 }
 
 pub async fn initial_index_fill(indexer: SqlIndexer, pool: mbs4_dal::Pool) -> Result<()> {
+    let mut start = std::time::Instant::now();
     index_fill_ebook(&indexer, pool.clone()).await?;
+    info!(
+        "Existing ebooks indexed in {}ms",
+        start.elapsed().as_millis()
+    );
+    start = std::time::Instant::now();
     index_fill_series(&indexer, pool.clone()).await?;
+    info!(
+        "Existing series indexed in {}ms",
+        start.elapsed().as_millis()
+    );
+    start = std::time::Instant::now();
     index_fill_author(&indexer, pool).await?;
+    info!(
+        "Existing authors indexed in {}ms",
+        start.elapsed().as_millis()
+    );
     Ok(())
 }
 
@@ -248,19 +264,21 @@ impl SqlIndexerRunner {
         update: bool,
     ) -> Result<()> {
         if update {
-            sqlx::query("UPDATE idx_author SET fist_name = ?1, last_name = ?2 WHERE rowid = ?3")
+            sqlx::query("UPDATE idx_author SET first_name = ?1, last_name = ?2 WHERE rowid = ?3")
                 .bind(&author.first_name)
                 .bind(&author.last_name)
                 .bind(author.id)
                 .execute(&mut **transaction)
                 .await?;
         } else {
-            sqlx::query("INSERT INTO idx_author (fist_name, last_name, rowid) VALUES (?1, ?2, ?3)")
-                .bind(&author.first_name)
-                .bind(&author.last_name)
-                .bind(author.id)
-                .execute(&mut **transaction)
-                .await?;
+            sqlx::query(
+                "INSERT INTO idx_author (first_name, last_name, rowid) VALUES (?1, ?2, ?3)",
+            )
+            .bind(&author.first_name)
+            .bind(&author.last_name)
+            .bind(author.id)
+            .execute(&mut **transaction)
+            .await?;
         }
         Ok(())
     }
@@ -399,7 +417,7 @@ pub struct SqlSearcher {
 impl SqlSearcher {
     async fn search_series(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
         let mut rows = sqlx::query(
-            "SELECT title, rowid, rank FROM series_idx WHERE series_idx MATCH ? order by rank LIMIT ?",
+            "SELECT title, rowid, rank FROM idx_series WHERE idx_series MATCH ? order by rank LIMIT ?",
         )
         .bind(query)
         .bind(num_results as i64)
@@ -424,7 +442,7 @@ impl SqlSearcher {
 
     async fn search_author(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
         let mut rows = sqlx::query(
-            "SELECT first_name, last_name,rowid, rank FROM author_idx WHERE author_idx MATCH ? order by rank LIMIT ?",
+            "SELECT first_name, last_name,rowid, rank FROM idx_author WHERE idx_author MATCH ? order by rank LIMIT ?",
         )
         .bind(query)
         .bind(num_results as i64)
