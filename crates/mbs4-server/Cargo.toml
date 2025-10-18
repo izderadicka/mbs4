@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tower-sessions = { workspace = true }
 tracing-subscriber = "0.3.19"
 mbs4-auth = { path = "../mbs4-auth" }

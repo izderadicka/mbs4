@@ -5,9 +5,8 @@ use axum::{
     Router,
 };
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use std::{convert::Infallible, fmt::Display, time::Duration};
-use tokio_stream::StreamExt as _;
 
 use crate::state::AppState;
 
@@ -61,7 +60,9 @@ async fn sse_handler(
             .data(format!(r#"{{"type":"{}","data":{} }}"#, e.kind, e.data)))
     });
 
-    Sse::new(stream).keep_alive(
+    let cancelable_stream = stream.take_until(state.shutdown_signal().clone().cancelled_owned());
+
+    Sse::new(cancelable_stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(10))
             .text("ping"),

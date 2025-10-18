@@ -4,7 +4,6 @@ use crate::config::ServerConfig;
 use crate::error::Result;
 use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
-use futures::FutureExt;
 use mbs4_app::auth::{auth_router, token::TokenLayer};
 use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
@@ -17,21 +16,30 @@ pub async fn run(args: ServerConfig) -> Result<()> {
     run_with_state(args, state).await
 }
 
-pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
-    let shutdown = tokio::signal::ctrl_c()
-        .map(|_| info!("Got SIGINT to shutdown"))
-        .boxed();
-    run_graceful_with_state(args, state, shutdown).await
+fn shutdown() -> tokio_util::sync::CancellationToken {
+    let root_token = tokio_util::sync::CancellationToken::new();
+    let token = root_token.child_token();
+    tokio::spawn(async move {
+        let sigint = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        let mut _sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+        #[cfg(unix)]
+        let sigterm = _sigterm.recv();
+        #[cfg(unix)]
+        #[cfg(not(unix))]
+        let sigterm = std::future::pending();
+        tokio::select! {
+            _ = sigint => info!("Got SIGINT to shutdown"),
+            _ = sigterm => info!("Got SIGTERM to shutdown"),
+        }
+        root_token.cancel();
+    });
+    token
 }
 
-pub async fn run_graceful_with_state<S>(
-    args: ServerConfig,
-    state: AppState,
-    shutdown_signal: S,
-) -> Result<()>
-where
-    S: std::future::Future<Output = ()> + Send + 'static,
-{
+pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+    let shutdown = state.shutdown_signal().clone();
     let mut app = main_router(state);
 
     if args.cors {
@@ -47,7 +55,7 @@ where
     debug!("Listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
         .await?;
 
     Ok(())
@@ -176,7 +184,14 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     let tokens =
         mbs4_auth::token::TokenManager::new(&secret[0..32], &secret[32..], config.token_validity);
     let search = Search::new(&config.index_path(), pool.clone()).await?;
-    Ok(AppState::new(oidc_config, app_config, pool, tokens, search))
+    Ok(AppState::new(
+        shutdown(),
+        oidc_config,
+        app_config,
+        pool,
+        tokens,
+        search,
+    ))
 }
 
 async fn read_secret(data_dir: &Path) -> Result<Vec<u8>, std::io::Error> {

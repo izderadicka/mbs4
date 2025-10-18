@@ -23,6 +23,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
+        shutdown: tokio_util::sync::CancellationToken,
         oidc_config: OIDCConfig,
         app_config: AppConfig,
         pool: Pool,
@@ -35,6 +36,7 @@ impl AppState {
         let convertor = Convertor::new(events.sender(), store.clone());
         AppState {
             state: Arc::new(AppStateInner {
+                shutdown,
                 oidc_providers_config: oidc_config,
                 state,
                 app_config,
@@ -90,6 +92,10 @@ impl AppState {
     pub fn convertor(&self) -> &Convertor {
         &self.state.convertor
     }
+
+    pub fn shutdown_signal(&self) -> &tokio_util::sync::CancellationToken {
+        &self.state.shutdown
+    }
 }
 
 pub struct EventHub {
@@ -141,6 +147,7 @@ struct AppStateInner {
     search: Search,
     events: EventHub,
     convertor: Convertor,
+    shutdown: tokio_util::sync::CancellationToken,
 }
 
 pub struct AppConfig {
