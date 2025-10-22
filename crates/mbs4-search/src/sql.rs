@@ -346,25 +346,25 @@ impl SqlIndexerRunner {
                         error!("Indexing failed: {e}");
                     }
                     if let Err(_) = sender.send(res) {
-                        error!("Failed to send indexing result");
+                        debug!("Failed to send indexing result"); // no problem, can happen if initiator does not wait for result
                     }
                 }
                 IndexingJob::Delete { ids, sender, what } => {
                     let res = self.delete_batch(ids, what).await;
                     if let Err(ref e) = res {
-                        error!("Indexing failed: {e}");
+                        error!("Deleting form index failed: {e}");
                     }
                     if let Err(_) = sender.send(res) {
-                        error!("Failed to send indexing result");
+                        debug!("Failed to send deleting from index result");
                     }
                 }
                 IndexingJob::Reset { sender } => {
                     let res = self.reset_index().await;
                     if let Err(ref e) = res {
-                        error!("Indexing failed: {e}");
+                        error!("Index reset failed failed: {e}");
                     }
                     if let Err(_) = sender.send(res) {
-                        error!("Failed to send indexing result");
+                        debug!("Failed to send index reset result");
                     }
                 }
                 IndexingJob::Stop => break,
