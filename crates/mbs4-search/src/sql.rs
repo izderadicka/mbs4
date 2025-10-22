@@ -6,7 +6,7 @@ use mbs4_dal::author::AuthorShort;
 use mbs4_dal::series::SeriesShort;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
-use tracing::{error, info};
+use tracing::{error, info, debug};
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
