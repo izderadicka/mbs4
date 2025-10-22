@@ -10,6 +10,7 @@ use axum::{
 use axum_valid::Garde;
 use garde::Validate;
 use http::StatusCode;
+use mbs4_dal::series::SeriesShort;
 use mbs4_search::{ItemToIndex, SearchResult};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -56,8 +57,27 @@ impl Search {
         Ok(())
     }
 
+    pub fn index_books(&self, books: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> Result<()> {
+        let items = books.into_iter().map(ItemToIndex::Ebook).collect();
+        let _res = self.inner.indexer.index(items, update)?;
+        Ok(())
+    }
+
     pub fn delete_book(&self, id: i64) -> Result<()> {
         let _res = self.inner.indexer.delete(vec![id], SearchTarget::Ebook)?;
+        Ok(())
+    }
+
+    pub fn index_series(&self, series: SeriesShort, update: bool) -> Result<()> {
+        let _res = self
+            .inner
+            .indexer
+            .index(vec![ItemToIndex::Series(series)], update)?;
+        Ok(())
+    }
+
+    pub fn delete_series(&self, id: i64) -> Result<()> {
+        let _res = self.inner.indexer.delete(vec![id], SearchTarget::Series)?;
         Ok(())
     }
 }

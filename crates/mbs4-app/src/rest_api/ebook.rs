@@ -68,8 +68,10 @@ mod crud_api_extra {
     pub async fn create(
         repository: EbookRepository,
         State(state): State<AppState>,
-        Garde(Json(payload)): Garde<Json<CreateEbook>>,
+        api_user: ApiClaim,
+        Garde(Json(mut payload)): Garde<Json<CreateEbook>>,
     ) -> ApiResult<impl IntoResponse> {
+        payload.created_by = Some(api_user.sub);
         let record = repository.create(payload).await?;
         if let Err(e) = state.search().index_book(record.clone(), false) {
             tracing::error!("Failed to index book: {}", e);

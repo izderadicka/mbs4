@@ -287,6 +287,17 @@ where
         Ok(ebooks)
     }
 
+    pub async fn map_short_to_ebooks(
+        &self,
+        shorts: &[EbookShort],
+    ) -> crate::error::Result<Vec<Ebook>> {
+        let mut ebooks = Vec::with_capacity(shorts.len());
+        for short in shorts {
+            ebooks.push(self.get(short.id).await?);
+        }
+        Ok(ebooks)
+    }
+
     pub async fn list_ids(&self, params: crate::ListingParams) -> crate::error::Result<Batch<i64>> {
         self._list_ids(params, None).await
     }
