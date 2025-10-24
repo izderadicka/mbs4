@@ -20,13 +20,17 @@ mod extra_crud_api {
     use http::StatusCode;
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{EbookRepository, EbookShort};
-    use mbs4_dal::{
-        series::{CreateSeries, Series, SeriesRepository, SeriesShort, UpdateSeries},
-        ListingParams, Order,
-    };
+    use mbs4_dal::series::{CreateSeries, Series, SeriesRepository, SeriesShort, UpdateSeries};
     use mbs4_types::claim::ApiClaim;
 
-    use crate::{error::ApiResult, rest_api::Paging, search::Search, state::AppState};
+    use crate::{
+        error::ApiResult,
+        rest_api::{
+            indexing::{reindex_books, DependentId},
+            Paging,
+        },
+        state::AppState,
+    };
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Series", operation_id = "listSeriesEbook",
         params(Paging), responses((status = StatusCode::OK, description = "List of Series Ebooks paginated", body = crate::rest_api::Page<EbookShort>))))]
@@ -70,32 +74,6 @@ mod extra_crud_api {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
-    async fn reindex_books(
-        repository: &EbookRepository,
-        indexer: &Search,
-        series_id: i64,
-    ) -> anyhow::Result<()> {
-        let mut sent = 0;
-        loop {
-            let params = ListingParams {
-                limit: 100,
-                offset: sent,
-                order: Some(vec![Order::Asc("e.id".into())]),
-            };
-            let res = repository.list_by_series(params, series_id).await?;
-            let books = repository.map_short_to_ebooks(&res.rows).await?;
-            indexer.index_books(books, true)?;
-            let total: i64 = res.rows.len().try_into().unwrap(); // this cannot practically happen, but better to be safe then sorry and using unsafe conversions
-            let read: i64 = res.total.try_into().unwrap();
-            sent += read;
-            if sent >= total {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
     #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Series", operation_id = "updateSeries",
             responses((status = StatusCode::OK, description = "Updated Series", body = Series))))]
     pub async fn update(
@@ -117,7 +95,7 @@ mod extra_crud_api {
             tracing::error!("Failed to index series: {}", e);
         }
 
-        if let Err(e) = reindex_books(&ebook_repo, state.search(), id).await {
+        if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Series(id)).await {
             tracing::error!("Error reindexing ebooks based on series update: {e}");
         }
 
@@ -140,7 +118,7 @@ mod extra_crud_api {
             tracing::error!("Failed to delete in series index: {}", e);
         }
 
-        if let Err(e) = reindex_books(&ebook_repo, state.search(), id).await {
+        if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Series(id)).await {
             tracing::error!("Error reindexing ebooks based on series update: {e}");
         }
 

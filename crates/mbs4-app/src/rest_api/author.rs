@@ -1,6 +1,6 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs};
 #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
-use mbs4_dal::author::{Author, AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
+use mbs4_dal::author::{Author, AuthorRepository, AuthorShort};
 use mbs4_types::claim::Role;
 
 use crate::state::AppState;
@@ -8,7 +8,7 @@ use crate::state::AppState;
 use axum::routing::{delete, get, post, put};
 
 publish_api_docs!(extra_crud_api::list_ebooks);
-crud_api!(Author);
+crud_api!(Author, RO);
 
 mod extra_crud_api {
     use axum::{
@@ -18,10 +18,19 @@ mod extra_crud_api {
     };
     use axum_valid::Garde;
     use http::StatusCode;
+    use mbs4_dal::author::{Author, AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{EbookRepository, EbookShort};
+    use mbs4_types::claim::ApiClaim;
 
-    use crate::{error::ApiResult, rest_api::Paging, state::AppState};
+    use crate::{
+        error::ApiResult,
+        rest_api::{
+            indexing::{reindex_books, DependentId},
+            Paging,
+        },
+        state::AppState,
+    };
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Author", operation_id = "listAuthorEbook",
         params(Paging), responses((status = StatusCode::OK, description = "List of Author Ebooks paginated", body = crate::rest_api::Page<EbookShort>))))]
@@ -40,14 +49,91 @@ mod extra_crud_api {
             Json(crate::rest_api::Page::from_batch(batch, page_size)),
         ))
     }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Author", operation_id = "createAuthor",
+            responses((status = StatusCode::CREATED, description = "Created Author", body = Author))))]
+    pub async fn create(
+        repository: AuthorRepository,
+        State(state): State<AppState>,
+        api_user: ApiClaim,
+        Garde(Json(mut payload)): Garde<Json<CreateAuthor>>,
+    ) -> ApiResult<impl IntoResponse> {
+        payload.created_by = Some(api_user.sub);
+        let record = repository.create(payload).await?;
+
+        if let Err(e) = state.search().index_author(
+            AuthorShort {
+                id: record.id,
+                first_name: record.first_name.clone(),
+                last_name: record.last_name.clone(),
+            },
+            false,
+        ) {
+            tracing::error!("Failed to index author: {}", e);
+        }
+
+        Ok((StatusCode::CREATED, Json(record)))
+    }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Author", operation_id = "updateAuthor",
+            responses((status = StatusCode::OK, description = "Updated Author", body = Author))))]
+    pub async fn update(
+        Path(id): Path<i64>,
+        repository: AuthorRepository,
+        ebook_repo: EbookRepository,
+        State(state): State<AppState>,
+        Garde(Json(payload)): Garde<Json<UpdateAuthor>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let record = repository.update(id, payload).await?;
+
+        if let Err(e) = state.search().index_author(
+            AuthorShort {
+                id: record.id,
+                first_name: record.first_name.clone(),
+                last_name: record.last_name.clone(),
+            },
+            true,
+        ) {
+            tracing::error!("Failed to index author: {}", e);
+        }
+
+        if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Author(id)).await {
+            tracing::error!("Error reindexing ebooks based on author update: {e}");
+        }
+
+        Ok((StatusCode::OK, Json(record)))
+    }
+
+    #[cfg_attr(
+        feature = "openapi",
+        utoipa::path(delete, path = "/{id}", tag = "Author", operation_id = "deleteAuthor")
+    )]
+    pub async fn delete(
+        Path(id): Path<i64>,
+        repository: AuthorRepository,
+        ebook_repo: EbookRepository,
+        State(state): State<AppState>,
+    ) -> ApiResult<impl IntoResponse> {
+        repository.delete(id).await?;
+
+        if let Err(e) = state.search().delete_author(id) {
+            tracing::error!("Failed to delete in author index: {}", e);
+        }
+
+        if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Author(id)).await {
+            tracing::error!("Error reindexing ebooks based on author update: {e}");
+        }
+
+        Ok((StatusCode::NO_CONTENT, ()))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
-        .route("/{id}", delete(crud_api::delete))
+        .route("/{id}", delete(extra_crud_api::delete))
         .layer(RequiredRolesLayer::new([Role::Admin]))
-        .route("/", post(crud_api::create))
-        .route("/{id}", put(crud_api::update))
+        .route("/", post(extra_crud_api::create))
+        .route("/{id}", put(extra_crud_api::update))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/", get(crud_api::list))
         .route("/count", get(crud_api::count))

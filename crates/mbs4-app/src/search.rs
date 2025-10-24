@@ -80,6 +80,19 @@ impl Search {
         let _res = self.inner.indexer.delete(vec![id], SearchTarget::Series)?;
         Ok(())
     }
+
+    pub fn index_author(&self, author: mbs4_dal::author::AuthorShort, update: bool) -> Result<()> {
+        let _res = self
+            .inner
+            .indexer
+            .index(vec![ItemToIndex::Author(author)], update)?;
+        Ok(())
+    }
+
+    pub fn delete_author(&self, id: i64) -> Result<()> {
+        let _res = self.inner.indexer.delete(vec![id], SearchTarget::Author)?;
+        Ok(())
+    }
 }
 
 struct SearchInner {
