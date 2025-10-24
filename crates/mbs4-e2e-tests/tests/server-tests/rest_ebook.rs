@@ -75,9 +75,20 @@ async fn test_ebook() {
     assert_eq!(new_ebook.language.id, lang.id);
 
     //should be searchable now, to be sure wait a bit for indexing
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let mut retries = 10;
+    let mut found = Vec::new();
+    while retries > 0 {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        found = search(&client, &base_url, "Dune").await.unwrap();
+        if found.len() > 0 {
+            break;
+        }
+        retries -= 1;
+        if retries == 0 {
+            panic!("Not found in search");
+        }
+    }
 
-    let found = search(&client, &base_url, "Dune").await.unwrap();
     assert_eq!(found.len(), 1);
     let found_ebook = found.get(0).unwrap()["doc"].as_object().unwrap()["Ebook"]
         .as_object()
