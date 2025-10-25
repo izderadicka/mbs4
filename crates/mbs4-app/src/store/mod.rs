@@ -7,7 +7,9 @@ use axum::{
 };
 use http::request::Parts;
 
+pub(crate) mod download;
 pub mod rest_api;
+
 use mbs4_store::ValidPath;
 pub use rest_api::router;
 
