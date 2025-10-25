@@ -49,6 +49,11 @@ jobs:
     - name: Install stable toolchain
       uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v4
+    - name: Setup Calibre
+      uses: ./.github/actions/setup-calibre
+      with:
+        version: "8.7.0"       # or "latest"
+        cache-key-suffix: ""    # set e.g. "v2" when you need to bust cache
     - name: Setup cache
       uses: Swatinem/rust-cache@v2
       with:
