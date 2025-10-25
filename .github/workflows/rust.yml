@@ -20,7 +20,7 @@ jobs:
     - name: Setup Calibre
       uses: ./.github/actions/setup-calibre
       with:
-        version: "8.07.0"       # or "latest"
+        version: "8.7.0"       # or "latest"
         cache-key-suffix: ""    # set e.g. "v2" when you need to bust cache
     - name: Check Calibre version
       run: |
