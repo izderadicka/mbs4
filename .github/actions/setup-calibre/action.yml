@@ -1,0 +1,52 @@
+name: "Setup Calibre (cached)"
+description: "Install Calibre into /opt/calibre, cache it, and expose CLI on PATH"
+inputs:
+  version:
+    description: "Calibre version (e.g., 8.13.0). Use 'latest' to always install latest."
+    required: false
+    default: "8.7.0"
+  cache-key-suffix:
+    description: "Optional extra to bust/segment cache (e.g., 'v2')."
+    required: false
+    default: ""
+outputs:
+  installed_version:
+    description: "Detected Calibre version after setup"
+    value: ${{ steps.detect-version.outputs.installed_version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Restore Calibre cache
+      uses: actions/cache@v4
+      with:
+        path: /opt/calibre
+        key: ${{ runner.os }}-calibre-${{ inputs.version }}${{ inputs.cache-key-suffix && format('-{0}', inputs.cache-key-suffix) || '' }}
+
+    - name: Install Calibre if missing
+      shell: bash
+      run: |
+        if [ ! -x /opt/calibre/ebook-convert ]; then
+          sudo -v
+          if [ "${{ inputs.version }}" = "latest" ]; then
+            wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+          else
+            wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin version=${{ inputs.version }}
+          fi
+        fi
+
+    - name: Ensure binaries on PATH
+      shell: bash
+      run: |
+        sudo mkdir -p /usr/local/bin
+        sudo ln -sf /opt/calibre/* /usr/local/bin/
+
+    - name: Detect version
+      id: detect-version
+      shell: bash
+      run: |
+        if command -v ebook-convert >/dev/null 2>&1; then
+          ver=$(ebook-convert --version | head -n1 | sed 's/.* //')
+          echo "installed_version=$ver" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed_version=" >> "$GITHUB_OUTPUT"
+        fi
