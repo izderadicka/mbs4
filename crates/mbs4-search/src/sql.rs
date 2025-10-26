@@ -473,8 +473,6 @@ impl SqlSearcher {
     }
 
     async fn search_ebook(&self, query: &str, num_results: usize) -> Result<Vec<SearchItem>> {
-        let query: String = query.into();
-
         let mut rows = sqlx::query("SELECT title, series, series_index, series_id, author, author_id, rowid, rank FROM idx WHERE idx MATCH ? order by rank LIMIT ?")
         .bind(query)
         .bind(num_results as i64)
@@ -531,7 +529,7 @@ impl Searcher for SqlSearcher {
     fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> crate::SearchResult {
         let (res, sender) = crate::SearchResult::new();
         let searcher = self.clone();
-        let query = query.to_string();
+        let query = normalize_query(&query);
         tokio::spawn(async move {
             let res = match what {
                 SearchTarget::Ebook => searcher.search_ebook(&query, num_results).await,
@@ -547,4 +545,18 @@ impl Searcher for SqlSearcher {
         });
         res
     }
+}
+
+// Very primitive query normalization
+// TODO - need to be more complex
+fn normalize_query(query: &str) -> String {
+    let normalized = query
+        .chars()
+        .filter_map(|c| match c {
+            ' ' | '+' | '*' => Some(c),
+            _ if c.is_alphanumeric() => Some(c),
+            _ => Some(' '),
+        })
+        .collect::<String>();
+    normalized
 }
