@@ -7,7 +7,12 @@ use crate::state::AppState;
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
-publish_api_docs!(extra_crud_api::list_ebooks);
+publish_api_docs!(
+    extra_crud_api::list_ebooks,
+    extra_crud_api::create,
+    extra_crud_api::update,
+    extra_crud_api::delete
+);
 crud_api!(Series, RO);
 
 mod extra_crud_api {
