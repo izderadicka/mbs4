@@ -27,18 +27,34 @@ pub struct Source {
     pub modified: time::PrimitiveDateTime,
 }
 
+#[derive(Debug, Serialize, Clone, sqlx::FromRow)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookSource {
+    pub id: i64,
+    pub location: String,
+    pub format_name: String,
+    pub format_extension: String,
+    pub size: i64,
+    pub quality: Option<f32>,
+    pub created_by: Option<String>,
+    pub created: time::PrimitiveDateTime,
+}
+
 impl<'c, E> SourceRepositoryImpl<E>
 where
     for<'a> &'a E: sqlx::Executor<'c, Database = crate::ChosenDB>
         + sqlx::Acquire<'c, Database = crate::ChosenDB>,
 {
-    pub async fn list_for_ebook(&self, ebook_id: i64) -> crate::error::Result<Vec<Source>> {
-        let res = sqlx::query_as(
-            "SELECT * FROM source WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000",
-        )
-        .bind(ebook_id)
-        .fetch_all(&self.executor)
-        .await?;
+    pub async fn list_for_ebook(&self, ebook_id: i64) -> crate::error::Result<Vec<EbookSource>> {
+        let sql = "SELECT s.id id, s.location location, f.name format_name, f.extension format_extension,  
+s.size size, s.quality quality,
+s.created created, s.created_by created_by
+FROM source s join format f on s.format_id = f.id 
+WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
+        let res = sqlx::query_as(sql)
+            .bind(ebook_id)
+            .fetch_all(&self.executor)
+            .await?;
         Ok(res)
     }
 }

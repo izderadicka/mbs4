@@ -52,7 +52,7 @@ mod crud_api_extra {
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
     use mbs4_dal::{
         format,
-        source::{self, CreateSource, Source},
+        source::{self, CreateSource, EbookSource, Source},
     };
     use mbs4_store::{Store as _, StorePrefix, ValidPath};
     use mbs4_types::{claim::ApiClaim, utils::file_ext};
@@ -155,7 +155,7 @@ mod crud_api_extra {
     }
 
     #[cfg_attr(feature = "openapi", utoipa::path(get, path = "/{id}/source", tag = "Ebook", operation_id = "listEbookSources",
-responses((status = StatusCode::OK, description = "List Ebook Sources", body = Vec<Source>))))]
+responses((status = StatusCode::OK, description = "List Ebook Sources", body = Vec<EbookSource>))))]
     pub async fn ebook_sources(
         Path(id): Path<i64>,
         source_repo: source::SourceRepository,
