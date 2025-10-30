@@ -21,6 +21,12 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends libegl1 libopengl0 libxcb-cursor0
+    - name: Prepare /opt/calibre for cache restore
+      shell: bash
+      run: |
+        sudo mkdir -p /opt/calibre
+        # Let the runner write extracted cache files here
+        sudo chown -R "$USER:$USER" /opt/calibre
     - name: Restore Calibre cache
       uses: actions/cache@v4
       with:
@@ -55,3 +61,10 @@ runs:
         else
           echo "installed_version=" >> "$GITHUB_OUTPUT"
         fi
+
+    - name: Make Calibre cacheable (for post-install)
+      shell: bash
+      run: |
+        # Ensure the cache post-step can read everything
+        # sudo chown -R "$USER:$USER" /opt/calibre
+        sudo chmod -R a+r /opt/calibre
