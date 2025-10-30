@@ -290,12 +290,13 @@ async fn test_upload() {
     let res = client.get(source_url).send().await.unwrap();
     assert!(res.status().is_success());
 
-    let sources: Vec<Source> = res.json().await.unwrap();
+    let sources: Vec<Map<String, Value>> = res.json().await.unwrap();
     assert_eq!(sources.len(), 1);
-
-    let file_location = &sources[0].location;
+    let location = sources[0]["location"].as_str().unwrap();
+    let format_ext = sources[0]["format_extension"].as_str().unwrap();
+    assert_eq!("epub", format_ext);
     let download_url = base_url
-        .join(&format!("files/download/{}", file_location))
+        .join(&format!("files/download/{}", location))
         .unwrap();
 
     let res = client.get(download_url).send().await.unwrap();
