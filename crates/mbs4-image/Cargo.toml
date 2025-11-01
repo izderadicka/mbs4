@@ -1,0 +1,11 @@
+[package]
+name = "mbs4-image"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+image = { version = "0.25.8" }
+anyhow = { workspace = true }
+fast_image_resize = { version = "5.3.0", features = ["image"] }
