@@ -13,6 +13,30 @@ async fn search(
     client: &reqwest::Client,
     base_url: &Url,
     query: &str,
+    expected: usize,
+) -> Result<Vec<serde_json::Value>> {
+    let mut retries = 10;
+    let mut found = Vec::new();
+    while retries > 0 {
+        found = _search(&client, &base_url, query).await.unwrap();
+        if found.len() == expected {
+            break;
+        }
+        retries -= 1;
+        if retries == 0 {
+            panic!("Not found in search");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    assert_eq!(found.len(), expected, "Searching: {}", query);
+    Ok(found)
+}
+
+async fn _search(
+    client: &reqwest::Client,
+    base_url: &Url,
+    query: &str,
 ) -> Result<Vec<serde_json::Value>> {
     let search_api_url = base_url.join("search")?;
     let response = client
@@ -74,22 +98,8 @@ async fn test_ebook() {
     assert_eq!(new_ebook.series_index, Some(1));
     assert_eq!(new_ebook.language.id, lang.id);
 
-    //should be searchable now, to be sure wait a bit for indexing
-    let mut retries = 10;
-    let mut found = Vec::new();
-    while retries > 0 {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        found = search(&client, &base_url, "Dune").await.unwrap();
-        if found.len() > 0 {
-            break;
-        }
-        retries -= 1;
-        if retries == 0 {
-            panic!("Not found in search");
-        }
-    }
+    let found = search(&client, &base_url, "Dune", 1).await.unwrap();
 
-    assert_eq!(found.len(), 1);
     let found_ebook = found.get(0).unwrap()["doc"].as_object().unwrap()["Ebook"]
         .as_object()
         .unwrap();
@@ -137,10 +147,8 @@ async fn test_ebook() {
 
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let found = search(&client, &base_url, "Dune").await.unwrap();
-    assert_eq!(found.len(), 0);
-    let found = search(&client, &base_url, "Holmes").await.unwrap();
-    assert_eq!(found.len(), 1);
+    search(&client, &base_url, "Dune", 0).await.unwrap();
+    search(&client, &base_url, "Holmes", 1).await.unwrap();
 
     let response = client.delete(ebook_url.clone()).send().await.unwrap();
     info!("Response: {:#?}", response);
