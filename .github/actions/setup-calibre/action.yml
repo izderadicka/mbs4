@@ -57,7 +57,9 @@ runs:
       run: |
         ebook-convert --version 
         if command -v ebook-convert >/dev/null 2>&1; then
-          ver=$(ebook-convert --version | head -n1 | sed 's/.* //')
+          set -o | grep pipefail
+          out="$(ebook-convert --version 2>/dev/null || true)"
+          ver="$(printf '%s\n' "$out" | awk 'NR==1{print $NF}')"
           echo "installed_version=$ver" >> "$GITHUB_OUTPUT"
         else
           echo "installed_version=" >> "$GITHUB_OUTPUT"
