@@ -234,12 +234,15 @@ impl Store for FileStore {
         if !folder.exists() {
             fs::create_dir_all(folder).await?;
         }
-        let mut new_file = fs::File::create(&final_path).await?;
+        let mut tmp_path = final_path.clone();
+        tmp_path.add_extension("tmp");
+        let mut new_file = fs::File::create(&tmp_path).await?;
         new_file
             .write_all(data)
-            .or_else(|e| cleanup(&final_path, e))
+            .or_else(|e| cleanup(&tmp_path, e))
             .await?;
         new_file.flush().await?;
+        fs::rename(&tmp_path, &final_path).await?;
         let digest = Sha256::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
         let size = data.len() as u64;

@@ -37,6 +37,8 @@ pub enum ApiError {
     InvalidPath(#[from] PathRejection),
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
+    #[error("Runtime error: {0}")]
+    RuntimeError(#[from] tokio::task::JoinError),
 }
 
 impl IntoResponse for ApiError {
@@ -125,6 +127,10 @@ impl IntoResponse for ApiError {
             }
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
+            }
+            ApiError::RuntimeError(e) => {
+                tracing::error!("Runtime error: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal error".into())
             }
             ApiError::StoreError(error) => {

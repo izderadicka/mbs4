@@ -24,7 +24,11 @@ async fn create_and_save_icon(
 
     if let Some(path) = cover_path {
         if let Ok(true) = fs::try_exists(&path).await {
-            let icon_data = mbs4_image::scale_icon(path)?;
+            let icon_data = tokio::task::spawn_blocking(move || {
+                // blocking call
+                mbs4_image::scale_icon(path)
+            })
+            .await??;
             store
                 .store_data_overwrite(&icon_path(icon_id)?, &icon_data)
                 .await?;
