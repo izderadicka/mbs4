@@ -11,6 +11,7 @@ use tracing::debug;
 
 const UPLOAD_PATH_PREFIX: &str = "upload";
 const BOOKS_PATH_PREFIX: &str = "books";
+const ICONS_PATH_PREFIX: &str = "icons";
 
 const MAX_PATH_LEN: usize = 4095;
 const MAX_SEGMENT_LEN: usize = 255;
@@ -20,6 +21,7 @@ const PATH_INVALID_CHARS: &str = r#"/\:"#;
 pub enum StorePrefix {
     Upload,
     Books,
+    Icons,
 }
 
 impl StorePrefix {
@@ -27,6 +29,7 @@ impl StorePrefix {
         match self {
             StorePrefix::Upload => UPLOAD_PATH_PREFIX,
             StorePrefix::Books => BOOKS_PATH_PREFIX,
+            StorePrefix::Icons => ICONS_PATH_PREFIX,
         }
     }
 }
@@ -127,6 +130,7 @@ pub struct StoreInfo {
 
 pub trait Store {
     async fn store_data(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo>;
+    async fn store_data_overwrite(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo>;
     async fn store_stream<S, E>(&self, path: &ValidPath, stream: S) -> StoreResult<StoreInfo>
     where
         S: Stream<Item = Result<Bytes, E>>,

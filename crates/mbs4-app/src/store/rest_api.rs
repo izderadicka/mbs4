@@ -1,14 +1,10 @@
 use super::download::download_file;
-use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState};
+use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::download::get_icon};
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Request, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
+    Json, Router, extract::{DefaultBodyLimit, Multipart, Path, Request, State}, http::StatusCode, response::IntoResponse, routing::{get, post}
 };
 use futures::TryStreamExt as _;
-use mbs4_dal::format::FormatRepository;
+use mbs4_dal::{ebook::EbookRepository, format::FormatRepository};
 use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
 use mbs4_types::{claim::Role, utils::file_ext};
 use tracing::debug;
@@ -170,6 +166,22 @@ pub async fn download_uploaded(
     download_file(state, path, repository, StorePrefix::Upload, false).await
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(get, path = "/icon/{id}", tag = "File Store", operation_id = "downloadIcon",
+    description = "Download ebook cover icon",
+    params(("id"=i64, Path, description = "Ebook id")),
+     responses((status = StatusCode::OK, description="icon image", content_type="image/png"))
+),   
+)]
+pub async fn download_icon(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    repository: EbookRepository,
+) -> Result<impl IntoResponse, ApiError> {
+    get_icon(state, id, repository, ).await
+}
+
 #[derive(serde::Deserialize, Debug, garde::Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameBody {
@@ -218,6 +230,7 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
         .route("/move/upload", post(move_upload))
         .route("/download/uploaded/{*path}", get(download_uploaded))
         .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
+        .route("/icon/{id}", get(download_icon))
         .route("/download/{*path}", get(download))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
     app
@@ -227,7 +240,7 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(download, download_uploaded, move_upload, upload_direct, upload_form))]
+    #[openapi(paths(download, download_uploaded, move_upload, upload_direct, upload_form, download_icon))]
     struct ApiDoc;
     ApiDoc::openapi()
 }

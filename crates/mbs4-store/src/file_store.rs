@@ -131,11 +131,13 @@ async fn unique_path(root: &Path, path: &str) -> StoreResult<PathBuf> {
 }
 
 async fn cleanup<E: Display>(path: &Path, error: E) -> Result<(), E> {
-    error!("Failed to store file to tmp path{path:?}: {error}");
-    fs::remove_file(path)
-        .await
-        .map_err(|e| error!("Failed to remove file {path:?}: {e}"))
-        .ok();
+    error!("Failed to store file to path{path:?}: {error}");
+    if path.exists() {
+        fs::remove_file(path)
+            .await
+            .map_err(|e| error!("Failed to remove file {path:?}: {e}"))
+            .ok();
+    }
     Err(error)
 }
 
@@ -211,6 +213,28 @@ impl Store for FileStore {
             let new_file = fs::File::create(&final_path).await?;
             (final_path, new_file)
         };
+        new_file
+            .write_all(data)
+            .or_else(|e| cleanup(&final_path, e))
+            .await?;
+        new_file.flush().await?;
+        let digest = Sha256::digest(data);
+        let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
+        let size = data.len() as u64;
+        Ok(StoreInfo {
+            final_path,
+            size,
+            hash: hex(&digest),
+        })
+    }
+
+    async fn store_data_overwrite(&self, path: &ValidPath, data: &[u8]) -> StoreResult<StoreInfo> {
+        let final_path = self.inner.root.join(path.as_ref());
+        let folder = final_path.parent().ok_or(StoreError::InvalidPath)?;
+        if !folder.exists() {
+            fs::create_dir_all(folder).await?;
+        }
+        let mut new_file = fs::File::create(&final_path).await?;
         new_file
             .write_all(data)
             .or_else(|e| cleanup(&final_path, e))

@@ -18,6 +18,7 @@ mbs4-dal = { path = "../mbs4-dal" }
 mbs4-search = { path = "../mbs4-search" }
 mbs4-calibre = { path = "../mbs4-calibre" }
 mbs4-store = { path = "../mbs4-store" }
+mbs4-image = { path = "../mbs4-image" }
 time = { workspace = true }
 tower-sessions = { workspace = true }
 url = { workspace = true }

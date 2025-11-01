@@ -2404,6 +2404,7 @@ dependencies = [
  "mbs4-auth",
  "mbs4-calibre",
  "mbs4-dal",
+ "mbs4-image",
  "mbs4-search",
  "mbs4-store",
  "mbs4-types",
