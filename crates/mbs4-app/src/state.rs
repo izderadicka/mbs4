@@ -24,7 +24,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         shutdown: tokio_util::sync::CancellationToken,
-        oidc_config: OIDCConfig,
+        oidc_config: Option<OIDCConfig>,
         app_config: AppConfig,
         pool: Pool,
         tokens: TokenManager,
@@ -50,7 +50,10 @@ impl AppState {
         }
     }
     pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_types::oidc::OIDCProviderConfig> {
-        self.state.oidc_providers_config.get_provider(name).cloned()
+        self.state
+            .oidc_providers_config
+            .as_ref()
+            .and_then(|c| c.get_provider(name).cloned())
     }
 
     pub fn config(&self) -> &AppConfig {
@@ -138,7 +141,7 @@ impl EventHub {
 
 struct AppStateInner {
     pool: Pool,
-    oidc_providers_config: OIDCConfig,
+    oidc_providers_config: Option<OIDCConfig>,
     app_config: AppConfig,
     tokens: TokenManager,
     store: FileStore,

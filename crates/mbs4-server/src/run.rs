@@ -162,11 +162,19 @@ async fn health() -> impl IntoResponse {
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     let data_dir = config.data_dir();
-    let oidc_config_file = config.oidc_config.clone().unwrap_or_else(|| {
+    let oidc_config_file = config.oidc_config.clone().or_else(|| {
         let path = data_dir.join("oidc-config.toml");
-        path.to_string_lossy().to_string()
+        //it's ok in async context here as it's quick and called only on init
+        if path.exists() {
+            Some(path.to_string_lossy().to_string())
+        } else {
+            None
+        }
     });
-    let oidc_config = spawn_blocking(move || OIDCConfig::load_config(&oidc_config_file)).await??;
+    let oidc_config = match oidc_config_file {
+        Some(f) => Some(spawn_blocking(move || OIDCConfig::load_config(&f)).await??),
+        None => None,
+    };
 
     let app_config: AppConfig = config.into();
 
