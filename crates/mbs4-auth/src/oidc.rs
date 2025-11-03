@@ -208,7 +208,8 @@ mod tests {
     #[tokio::test]
     #[traced_test]
     async fn test_discovery() {
-        let config = OIDCConfig::load_config("../../test-data/oidc-config").unwrap();
+        let config =
+            OIDCConfig::load_config(Some("../../test-data/samples/oidc-config-sample")).unwrap();
         let config = config.get_provider("google").unwrap();
         let client = OIDCClient::discover(config, "http://localhost:3000")
             .await

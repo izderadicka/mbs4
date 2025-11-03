@@ -28,7 +28,7 @@ pub struct ServerConfig {
     #[arg(
         long,
         env = "MBS4_OIDC_CONFIG",
-        help = "Path to OIDC configuration file, default is oidc-config.toml in data directory"
+        help = "Path to OIDC configuration file, default location is in data directory"
     )]
     pub oidc_config: Option<String>,
 

@@ -137,8 +137,6 @@ pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, Co
         &data_dir,
         "--port",
         &port,
-        "--oidc-config",
-        "../../test-data/oidc-config.toml",
         "--base-url",
         &base_url,
         "--database-url",
