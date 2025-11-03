@@ -1,7 +1,13 @@
 use super::download::download_file;
-use crate::{auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::download::get_icon};
+use crate::{
+    auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::download::get_icon,
+};
 use axum::{
-    Json, Router, extract::{DefaultBodyLimit, Multipart, Path, Request, State}, http::StatusCode, response::IntoResponse, routing::{get, post}
+    extract::{DefaultBodyLimit, Multipart, Path, Request, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
 };
 use futures::TryStreamExt as _;
 use mbs4_dal::{ebook::EbookRepository, format::FormatRepository};
@@ -172,14 +178,14 @@ pub async fn download_uploaded(
     description = "Download ebook cover icon",
     params(("id"=i64, Path, description = "Ebook id")),
      responses((status = StatusCode::OK, description="icon image", content_type="image/png"))
-),   
+)
 )]
 pub async fn download_icon(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     repository: EbookRepository,
 ) -> Result<impl IntoResponse, ApiError> {
-    get_icon(state, id, repository, ).await
+    get_icon(state, id, repository).await
 }
 
 #[derive(serde::Deserialize, Debug, garde::Validate)]
@@ -240,7 +246,14 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(download, download_uploaded, move_upload, upload_direct, upload_form, download_icon))]
+    #[openapi(paths(
+        download,
+        download_uploaded,
+        move_upload,
+        upload_direct,
+        upload_form,
+        download_icon
+    ))]
     struct ApiDoc;
     ApiDoc::openapi()
 }
