@@ -7,7 +7,7 @@ use axum::{response::IntoResponse, routing::get, Router};
 use mbs4_app::auth::{auth_router, token::TokenLayer};
 use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
-use mbs4_types::oidc::OIDCConfig;
+use mbs4_auth::config::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
 use tracing::{debug, info};
 

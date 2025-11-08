@@ -8,10 +8,10 @@ use crate::{
 };
 use axum::extract::FromRef;
 use futures::Stream;
+use mbs4_auth::config::OIDCConfig;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
 use mbs4_store::file_store::FileStore;
-use mbs4_types::oidc::OIDCConfig;
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
 use url::Url;
@@ -49,7 +49,7 @@ impl AppState {
             }),
         }
     }
-    pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_types::oidc::OIDCProviderConfig> {
+    pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_auth::config::OIDCProviderConfig> {
         self.state
             .oidc_providers_config
             .as_ref()

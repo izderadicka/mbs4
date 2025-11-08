@@ -1,3 +1,4 @@
+pub mod config;
 pub mod error;
 pub mod oidc;
 pub mod token;

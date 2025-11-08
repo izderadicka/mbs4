@@ -2435,6 +2435,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "config",
  "hmac",
  "jsonwebtoken",
  "mbs4-types",
@@ -2608,7 +2609,6 @@ name = "mbs4-types"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "config",
  "fake",
  "garde",
  "phf",

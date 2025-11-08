@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
+use crate::config::OIDCProviderConfig;
 use anyhow::anyhow;
-use mbs4_types::{claim::UserClaim, oidc::OIDCProviderConfig};
+use mbs4_types::claim::UserClaim;
 use openidconnect::{
     core::{
         CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm,
@@ -200,7 +201,7 @@ pub struct OIDCSecrets {
 
 #[cfg(test)]
 mod tests {
-    use mbs4_types::oidc::OIDCConfig;
+    use crate::config::OIDCConfig;
     use tracing_test::traced_test;
 
     use super::*;

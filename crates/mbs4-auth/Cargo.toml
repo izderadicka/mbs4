@@ -8,6 +8,7 @@ serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 openidconnect = "4.0.0"
+config = "0.15.8"
 reqwest = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

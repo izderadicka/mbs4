@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 serde = { workspace = true }
 anyhow = { workspace = true }
-config = "0.15.8"
 garde = { workspace = true, features = ["full"] }
 unicode-normalization = "0.1.24"
 phf = { version = "0.12", features = ["macros"] }
