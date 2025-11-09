@@ -231,9 +231,9 @@ pub struct EbookRepositoryImpl<E> {
 const VALID_ORDER_FIELDS: &[&str] = &[
     "e.title",
     "s.title",
-    "series_index",
-    "created",
-    "modified",
+    "e.series_index",
+    "e.created",
+    "e.modified",
     "e.id",
 ];
 
