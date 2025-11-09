@@ -72,7 +72,8 @@ impl Paging {
 pub struct Page<T> {
     page: u32,
     page_size: u32,
-    total: u32,
+    total_pages: u32,
+    total: u64,
     rows: Vec<T>,
 }
 
@@ -87,9 +88,10 @@ where
         Ok(Self {
             page: u32::try_from(batch.offset)? / page_size + 1,
             page_size,
-            total: u32::try_from(
+            total_pages: u32::try_from(
                 (u64::try_from(batch.total)? + page_size as u64 - 1) / page_size as u64,
             )?,
+            total: batch.total,
             rows: batch.rows,
         })
     }
