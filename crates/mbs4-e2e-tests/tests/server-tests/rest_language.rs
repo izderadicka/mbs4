@@ -71,8 +71,10 @@ async fn test_paging() {
         let res: serde_json::Value = response.json().await.unwrap();
         let page_no: u64 = res.get("page").unwrap().as_u64().unwrap();
         assert_eq!(page, page_no);
-        let total: u64 = res.get("total").unwrap().as_u64().unwrap();
-        assert_eq!(num_pages, total);
+        let total_pages: u64 = res.get("total_pages").unwrap().as_u64().unwrap();
+        assert_eq!(num_pages, total_pages);
+        let total_items: u64 = res.get("total").unwrap().as_u64().unwrap();
+        assert_eq!(total, total_items);
         res.get("rows").unwrap().as_array().unwrap().to_vec()
     };
 
@@ -117,10 +119,12 @@ async fn test_languages() {
     let page: HashMap<String, serde_json::Value> = response.json().await.unwrap();
     println!("Page: {:#?}", page);
     let stored_langs = page.get("rows").unwrap().as_array().unwrap();
+    let total_pages = page.get("total_pages").unwrap().as_u64().unwrap();
     let total = page.get("total").unwrap().as_u64().unwrap();
     let page = page.get("page").unwrap().as_u64().unwrap();
     assert_eq!(langs.len(), stored_langs.len());
-    assert_eq!(1, total);
+    assert_eq!(1, total_pages);
+    assert_eq!(langs.len() as u64, total);
     assert_eq!(1, page);
     let name: &str = stored_langs[3].get("name").unwrap().as_str().unwrap();
     assert_eq!("Russian", name);
