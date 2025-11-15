@@ -34,6 +34,9 @@ pub enum Error {
 
     #[error("Invalid entity: {0}")]
     InvalidEntity(String),
+
+    #[error("Invalid filter: {0}")]
+    InvalidFilter(String),
 }
 
 impl From<sqlx::Error> for Error {

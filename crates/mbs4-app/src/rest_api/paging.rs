@@ -1,7 +1,9 @@
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiResult;
 use garde::Validate;
 use mbs4_dal::{Batch, ListingParams};
 use serde::Serialize;
+
+mod parsers;
 
 #[derive(Debug, Clone, Validate, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
@@ -23,45 +25,15 @@ impl Paging {
         let page_size = self.page_size.unwrap_or(default_page_size);
         let offset = (page - 1) * page_size;
         let limit = page_size;
-        let order = self
-            .sort
-            .map(|orderings| {
-                orderings
-                    .split(',')
-                    .map(|name| {
-                        let (field_name, descending) = match name.trim() {
-                            "" => {
-                                return Err(ApiError::InvalidQuery(
-                                    "Empty ordering name".to_string(),
-                                ))
-                            }
-                            name if name.len() > 100 => {
-                                return Err(ApiError::InvalidQuery(
-                                    "Ordering name too long".to_string(),
-                                ))
-                            }
-                            name if name.starts_with('+') => (&name[1..], false),
-                            name if name.starts_with('-') => (&name[1..], true),
-                            name => (name, false),
-                        };
+        let order = self.sort.map(parsers::parse_ordering).transpose()?;
 
-                        let order = if descending {
-                            mbs4_dal::Order::Desc(field_name.to_string())
-                        } else {
-                            mbs4_dal::Order::Asc(field_name.to_string())
-                        };
-
-                        Ok(order)
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
+        let filter = self.filter.map(parsers::parse_filters).transpose()?;
 
         Ok(ListingParams {
             offset: offset.into(),
             limit: limit.into(),
             order,
-            filter: None,
+            filter,
         })
     }
 

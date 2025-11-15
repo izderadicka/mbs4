@@ -8,7 +8,7 @@ pub mod series;
 pub mod source;
 pub mod user;
 
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 pub use error::Error;
 pub use sqlx::Error as SqlxError;
@@ -34,6 +34,37 @@ pub async fn new_pool(database_url: &str) -> Result<Pool, Error> {
 #[derive(Debug, Clone)]
 pub enum Filter {
     Genres(Vec<i64>),
+}
+
+impl FromStr for Filter {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let (name, value) = s.split_once('=').ok_or(Error::InvalidFilter(format!(
+            "Invalid filter expression: {}",
+            s
+        )))?;
+        match name {
+            "genres" => {
+                let ids = value
+                    .split(',')
+                    .map(|s| s.parse())
+                    .collect::<Result<Vec<i64>, _>>()
+                    .or_else(|e| {
+                        Err(Error::InvalidFilter(format!(
+                            "Invalid genre filters value: {}, error {}",
+                            s, e
+                        )))
+                    })?;
+
+                Ok(Filter::Genres(ids))
+            }
+            _ => Err(Error::InvalidFilter(format!(
+                "Invalid filter name: {}",
+                name
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -128,16 +159,6 @@ impl ListingParams {
             })
             .unwrap_or_default();
         Ok(ordering)
-    }
-
-    pub fn genres_filter(&self) -> Option<&Vec<i64>> {
-        self.filter.as_ref().and_then(|f| {
-            f.iter().find_map(|f| match f {
-                Filter::Genres(genres) => Some(genres),
-                #[allow(unreachable_patterns)]
-                _ => None,
-            })
-        })
     }
 }
 

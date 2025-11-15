@@ -1,5 +1,5 @@
 use crate::{
-    Batch, ChosenDB, ChosenRow, Error, FromRowPrefixed, ListingParams, author::AuthorShort,
+    Batch, ChosenDB, ChosenRow, Error, Filter, FromRowPrefixed, ListingParams, author::AuthorShort,
     genre::GenreShort, language::LanguageShort, now, series::SeriesShort,
 };
 use futures::StreamExt as _;
@@ -165,14 +165,24 @@ impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
     }
 }
 
-struct EbookQuery<'a> {
-    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
-    where_clause: Option<&'a Where>,
-    limits: Option<&'a ListingParams>,
+pub fn genres_filter(filters: Option<&Vec<Filter>>) -> Option<&Vec<i64>> {
+    filters.as_ref().and_then(|f| {
+        f.iter().find_map(|f| match f {
+            Filter::Genres(genres) => Some(genres),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        })
+    })
 }
 
-impl<'a> EbookQuery<'a> {
-    const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM ebook e ";
+enum QueryType {
+    Count,
+    List,
+    ListIds,
+}
+
+impl QueryType {
+    const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM (SELECT e.id FROM ebook e ";
     const LIST_IDS_QUERY: &'static str = "SELECT e.id FROM ebook e ";
     const LIST_QUERY: &'static str = r#"
         SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, 
@@ -182,17 +192,47 @@ impl<'a> EbookQuery<'a> {
         LEFT JOIN language l ON e.language_id = l.id
         LEFT JOIN series s ON e.series_id = s.id
     "#;
+    fn sql(&self) -> &'static str {
+        match self {
+            QueryType::Count => QueryType::COUNT_QUERY,
+            QueryType::List => QueryType::LIST_QUERY,
+            QueryType::ListIds => QueryType::LIST_IDS_QUERY,
+        }
+    }
+}
 
+struct EbookQuery<'a> {
+    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
+    where_clause: Option<&'a Where>,
+    limits: Option<&'a ListingParams>,
+    filter: Option<&'a Vec<Filter>>,
+    subquery: bool,
+}
+
+impl<'a> EbookQuery<'a> {
     fn new(
-        initial_query: impl Into<String>,
+        query_type: QueryType,
         where_clause: Option<&'a Where>,
         limits: Option<&'a ListingParams>,
     ) -> Self {
-        let builder = sqlx::query_builder::QueryBuilder::new(initial_query);
+        let builder = sqlx::query_builder::QueryBuilder::new(query_type.sql());
         EbookQuery {
             builder,
             where_clause,
+            filter: limits.and_then(|l| l.filter.as_ref()),
             limits,
+            subquery: false,
+        }
+    }
+
+    fn new_count_query(where_clause: Option<&'a Where>, filter: Option<&'a Vec<Filter>>) -> Self {
+        let builder = sqlx::query_builder::QueryBuilder::new(QueryType::Count.sql());
+        EbookQuery {
+            builder,
+            where_clause,
+            filter,
+            limits: None,
+            subquery: true,
         }
     }
 
@@ -204,10 +244,8 @@ impl<'a> EbookQuery<'a> {
             }
         }
 
-        //TODO
-        if self
-            .limits
-            .and_then(|l| l.genres_filter().map(|g| !g.is_empty()))
+        if genres_filter(self.filter)
+            .map(|g| !g.is_empty())
             .unwrap_or(false)
         {
             self.builder
@@ -238,22 +276,20 @@ impl<'a> EbookQuery<'a> {
             }
         }
 
-        if let Some(limits) = self.limits {
-            if let Some(genres_filter) = limits.genres_filter() {
-                if !genres_filter.is_empty() {
-                    push_expr(" eg.genre_id IN (", None);
-                    let mut sep_builder = self.builder.separated(", ");
-                    for genre_id in genres_filter {
-                        sep_builder.push_bind(*genre_id);
-                    }
-                    self.builder.push(") ");
+        if let Some(genres_filter) = genres_filter(self.filter) {
+            if !genres_filter.is_empty() {
+                push_expr(" eg.genre_id IN (", None);
+                let mut sep_builder = self.builder.separated(", ");
+                for genre_id in genres_filter {
+                    sep_builder.push_bind(*genre_id);
                 }
-
-                self.builder
-                    .push(" GROUP BY e.id HAVING COUNT(DISTINCT eg.genre_id) = ");
-                self.builder.push_bind(genres_filter.len() as i64);
-                self.builder.push(" ");
+                self.builder.push(") ");
             }
+
+            self.builder
+                .push(" GROUP BY e.id HAVING COUNT(DISTINCT eg.genre_id) = ");
+            self.builder.push_bind(genres_filter.len() as i64);
+            self.builder.push(" ");
         }
 
         if let Some(limits) = self.limits {
@@ -267,6 +303,10 @@ impl<'a> EbookQuery<'a> {
             self.builder.push_bind(limits.limit);
             self.builder.push(" OFFSET ");
             self.builder.push_bind(limits.offset);
+        }
+
+        if self.subquery {
+            self.builder.push(" ) as sub");
         }
 
         Ok(())
@@ -337,11 +377,15 @@ where
     }
 
     pub async fn count(&self) -> crate::error::Result<u64> {
-        self._count(&None).await
+        self._count(None, None).await
     }
 
-    async fn _count(&self, where_clause: &Option<Where>) -> crate::error::Result<u64> {
-        let mut builder = EbookQuery::new(EbookQuery::COUNT_QUERY, where_clause.as_ref(), None);
+    async fn _count(
+        &self,
+        where_clause: Option<&Where>,
+        filter: Option<&Vec<Filter>>,
+    ) -> crate::error::Result<u64> {
+        let mut builder = EbookQuery::new_count_query(where_clause, filter);
         let query = builder.build_query_as::<(u64,)>()?;
         let res = query.fetch_one(&self.executor).await?;
         Ok(res.0)
@@ -424,14 +468,12 @@ where
         params: crate::ListingParams,
         where_clause: Option<Where>,
     ) -> crate::error::Result<Batch<i64>> {
-        let mut builder = EbookQuery::new(
-            EbookQuery::LIST_IDS_QUERY,
-            where_clause.as_ref(),
-            Some(&params),
-        );
+        let mut builder = EbookQuery::new(QueryType::ListIds, where_clause.as_ref(), Some(&params));
         let query = builder.build_query_as::<(i64,)>()?;
 
-        let count = self._count(&where_clause).await?;
+        let count = self
+            ._count(where_clause.as_ref(), params.filter.as_ref())
+            .await?;
 
         let res = query.fetch_all(&self.executor).await?;
         Ok(Batch {
@@ -447,8 +489,7 @@ where
         params: crate::ListingParams,
         where_clause: Option<Where>,
     ) -> crate::error::Result<Batch<EbookShort>> {
-        let mut builder =
-            EbookQuery::new(EbookQuery::LIST_QUERY, where_clause.as_ref(), Some(&params));
+        let mut builder = EbookQuery::new(QueryType::List, where_clause.as_ref(), Some(&params));
 
         let query = builder.build_query_as::<EbookShort>()?;
 
@@ -496,7 +537,9 @@ where
             );
         }
 
-        let count = self._count(&where_clause).await?;
+        let count = self
+            ._count(where_clause.as_ref(), params.filter.as_ref())
+            .await?;
 
         Ok(Batch {
             offset: params.offset,

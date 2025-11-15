@@ -132,6 +132,25 @@ async fn test_ebook() {
         .unwrap();
     get_ebooks(&client, url, 1).await;
 
+    let genres_filter = vec![genre1.id, genre2.id]
+        .iter()
+        .map(|g| g.to_string())
+        .collect::<Vec<String>>()
+        .join(",");
+    let url = base_url
+        .join(&format!(
+            "api/ebook?filter=genres={genres_filter}&sort=e.title",
+        ))
+        .unwrap();
+    get_ebooks(&client, url, 1).await;
+
+    let url = base_url
+        .join(&format!(
+            "api/ebook?filter=genres=99999999,888888888&sort=e.title",
+        ))
+        .unwrap();
+    get_ebooks(&client, url, 0).await;
+
     // Update
 
     let series2 = create_series(&client, &base_url, "Adventures")

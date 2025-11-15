@@ -96,6 +96,10 @@ impl IntoResponse for ApiError {
                     tracing::error!("Invalid entity: {msg}");
                     (StatusCode::UNPROCESSABLE_ENTITY, "Invalid entity".into())
                 }
+                mbs4_dal::Error::InvalidFilter(msg) => {
+                    tracing::error!("Invalid filter: {msg}");
+                    (StatusCode::BAD_REQUEST, "Invalid filter".into())
+                }
             },
             ApiError::ResourceNotFound(r) => (
                 StatusCode::NOT_FOUND,
