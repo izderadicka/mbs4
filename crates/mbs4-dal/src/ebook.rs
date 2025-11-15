@@ -1,12 +1,13 @@
-use std::vec;
-
 use crate::{
-    Batch, ChosenRow, Error, FromRowPrefixed, author::AuthorShort, genre::GenreShort,
-    language::LanguageShort, now, series::SeriesShort,
+    Batch, ChosenDB, ChosenRow, Error, FromRowPrefixed, ListingParams, author::AuthorShort,
+    genre::GenreShort, language::LanguageShort, now, series::SeriesShort,
 };
 use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
-use sqlx::{Acquire, Executor, Row, query::QueryAs};
+use sqlx::{
+    Acquire, Database, Executor, FromRow, Row,
+    query::{Query, QueryAs},
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -164,10 +165,106 @@ impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
     }
 }
 
+struct EbookQuery<'a> {
+    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
+    where_clause: Option<&'a Where>,
+    limits: Option<&'a ListingParams>,
+}
+
+impl<'a> EbookQuery<'a> {
+    const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM ebook e ";
+    const LIST_IDS_QUERY: &'static str = "SELECT e.id FROM ebook e ";
+    const LIST_QUERY: &'static str = r#"
+        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, 
+        l.code as language_code, l.name as language_name,
+        s.title as series_title
+        FROM ebook e 
+        LEFT JOIN language l ON e.language_id = l.id
+        LEFT JOIN series s ON e.series_id = s.id
+    "#;
+
+    fn new(
+        initial_query: impl Into<String>,
+        where_clause: Option<&'a Where>,
+        limits: Option<&'a ListingParams>,
+    ) -> Self {
+        let builder = sqlx::query_builder::QueryBuilder::new(initial_query);
+        EbookQuery {
+            builder,
+            where_clause,
+            limits,
+        }
+    }
+
+    fn _build(&mut self) -> crate::error::Result<()> {
+        if let Some(where_clause) = self.where_clause {
+            if where_clause.author_id.is_some() {
+                self.builder
+                    .push(" JOIN ebook_authors ea ON e.id = ea.ebook_id ");
+            }
+
+            let mut has_where = false;
+
+            let mut push_expr = |expr, value| {
+                if !has_where {
+                    self.builder.push(" WHERE ");
+                    has_where = true;
+                } else {
+                    self.builder.push(" AND ");
+                }
+                self.builder.push(expr);
+                self.builder.push_bind(value);
+            };
+
+            if let Some(author_id) = where_clause.author_id {
+                push_expr(" author_id = ", author_id)
+            }
+
+            if let Some(series_id) = where_clause.series_id {
+                push_expr(" series_id = ", series_id)
+            }
+        }
+
+        if let Some(limits) = self.limits {
+            if limits.order.is_some() {
+                let order = limits.ordering(VALID_ORDER_FIELDS)?;
+                self.builder.push(order);
+                self.builder.push(" ");
+            }
+
+            self.builder.push("LIMIT ");
+            self.builder.push_bind(limits.limit);
+            self.builder.push(" OFFSET ");
+            self.builder.push_bind(limits.offset);
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn build_query(
+        &mut self,
+    ) -> crate::error::Result<Query<'_, ChosenDB, <ChosenDB as Database>::Arguments<'static>>> {
+        self._build()?;
+        Ok(self.builder.build())
+    }
+
+    fn build_query_as<'q, T>(
+        &'q mut self,
+    ) -> crate::error::Result<QueryAs<'q, ChosenDB, T, <ChosenDB as Database>::Arguments<'static>>>
+    where
+        T: FromRow<'q, <ChosenDB as Database>::Row>,
+    {
+        self._build()?;
+        Ok(self.builder.build_query_as())
+    }
+}
+
 #[derive(Default)]
 struct Where {
     series_id: Option<i64>,
     author_id: Option<i64>,
+    genres: Option<Vec<i64>>,
 }
 
 impl Where {
@@ -185,42 +282,11 @@ impl Where {
         self
     }
 
-    fn bind<'q, DB, O, A>(&self, mut query: QueryAs<'q, DB, O, A>) -> QueryAs<'q, DB, O, A>
-    where
-        DB: sqlx::Database<Arguments<'q> = A>,
-        i64: sqlx::Encode<'q, DB> + sqlx::Type<DB>,
-    {
-        if let Some(author_id) = self.author_id {
-            query = query.bind(author_id)
-        }
-        if let Some(series_id) = self.series_id {
-            query = query.bind(series_id)
-        }
-        query
-    }
-
-    fn where_clause(&self) -> Option<String> {
-        let mut where_clause = Vec::new();
-        if self.author_id.is_some() {
-            where_clause.push("author_id = ?");
-        }
-        if self.series_id.is_some() {
-            where_clause.push("series_id = ?");
-        }
-
-        if where_clause.is_empty() {
-            None
-        } else {
-            Some(format!("WHERE {}", where_clause.join(" AND ")))
-        }
-    }
-
-    fn extra_tables(&self) -> Option<String> {
-        if self.author_id.is_some() {
-            Some("JOIN ebook_authors ea ON e.id = ea.ebook_id ".to_string())
-        } else {
-            None
-        }
+    fn genres(mut self, genres: Vec<i64>) -> Self {
+        assert!(!genres.is_empty());
+        assert!(genres.len() <= 10); // Safety check
+        self.genres = Some(genres);
+        self
     }
 }
 
@@ -237,12 +303,11 @@ const VALID_ORDER_FIELDS: &[&str] = &[
     "e.id",
 ];
 
-pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<crate::ChosenDB>>;
+pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<ChosenDB>>;
 
 impl<'c, E> EbookRepositoryImpl<E>
 where
-    for<'a> &'a E:
-        Executor<'c, Database = crate::ChosenDB> + Acquire<'c, Database = crate::ChosenDB>,
+    for<'a> &'a E: Executor<'c, Database = ChosenDB> + Acquire<'c, Database = ChosenDB>,
 {
     pub fn new(executor: E) -> Self {
         Self { executor }
@@ -253,21 +318,8 @@ where
     }
 
     async fn _count(&self, where_clause: &Option<Where>) -> crate::error::Result<u64> {
-        let sql = format!(
-            "SELECT COUNT(*) FROM ebook e {extra_tables} {where_clause} ",
-            extra_tables = where_clause
-                .as_ref()
-                .and_then(|w| w.extra_tables())
-                .unwrap_or_default(),
-            where_clause = where_clause
-                .as_ref()
-                .and_then(|w| w.where_clause())
-                .unwrap_or_default(),
-        );
-        let mut query = sqlx::query_as::<_, (u64,)>(&sql);
-        if let Some(w) = where_clause {
-            query = w.bind(query);
-        }
+        let mut builder = EbookQuery::new(EbookQuery::COUNT_QUERY, where_clause.as_ref(), None);
+        let query = builder.build_query_as::<(u64,)>()?;
         let res = query.fetch_one(&self.executor).await?;
         Ok(res.0)
     }
@@ -349,33 +401,15 @@ where
         params: crate::ListingParams,
         where_clause: Option<Where>,
     ) -> crate::error::Result<Batch<i64>> {
-        let order = params.ordering(VALID_ORDER_FIELDS)?;
-        let extra_tables = where_clause
-            .as_ref()
-            .and_then(Where::extra_tables)
-            .unwrap_or_default();
-        let where_cond = where_clause
-            .as_ref()
-            .and_then(Where::where_clause)
-            .unwrap_or_default();
-        let sql = format!(
-            r#"
-        SELECT e.id
-        FROM ebook e 
-        {extra_tables}
-        {where_cond}
-        {order}
-        LIMIT ? OFFSET ?;
-        "#
+        let mut builder = EbookQuery::new(
+            EbookQuery::LIST_IDS_QUERY,
+            where_clause.as_ref(),
+            Some(&params),
         );
+        let query = builder.build_query_as::<(i64,)>()?;
 
         let count = self._count(&where_clause).await?;
 
-        let mut query = sqlx::query_as::<_, (i64,)>(&sql);
-        if let Some(w) = where_clause {
-            query = w.bind(query);
-        }
-        query = query.bind(params.limit).bind(params.offset);
         let res = query.fetch_all(&self.executor).await?;
         Ok(Batch {
             rows: res.iter().map(|r| r.0).collect(),
@@ -390,37 +424,10 @@ where
         params: crate::ListingParams,
         where_clause: Option<Where>,
     ) -> crate::error::Result<Batch<EbookShort>> {
-        let order = params.ordering(VALID_ORDER_FIELDS)?;
-        let extra_tables = where_clause
-            .as_ref()
-            .and_then(Where::extra_tables)
-            .unwrap_or_default();
-        let where_cond = where_clause
-            .as_ref()
-            .and_then(Where::where_clause)
-            .unwrap_or_default();
-        let sql = format!(
-            r#"
-        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, 
-        l.code as language_code, l.name as language_name,
-        s.title as series_title
-        FROM ebook e 
-        LEFT JOIN language l ON e.language_id = l.id
-        LEFT JOIN series s ON e.series_id = s.id
-        {extra_tables}
-        {where_cond}
-        {order}
-        LIMIT ? OFFSET ?;
-        "#
-        );
+        let mut builder =
+            EbookQuery::new(EbookQuery::LIST_QUERY, where_clause.as_ref(), Some(&params));
 
-        // println!("SQL: {}", sql);
-
-        let mut query = sqlx::query_as::<_, EbookShort>(&sql);
-
-        if let Some(ref where_clause) = where_clause {
-            query = where_clause.bind(query);
-        }
+        let query = builder.build_query_as::<EbookShort>()?;
 
         let mut res = query
             .bind(params.limit)
@@ -725,7 +732,7 @@ async fn insert_ebook_dependencies(
     book_id: i64,
     genres: Option<Vec<i64>>,
     authors: Option<Vec<i64>>,
-    transaction: &mut sqlx::Transaction<'_, crate::ChosenDB>,
+    transaction: &mut sqlx::Transaction<'_, ChosenDB>,
 ) -> crate::error::Result<()> {
     if let Some(ref genres) = genres {
         let query = "INSERT INTO ebook_genres (ebook_id, genre_id) VALUES (?, ?);";

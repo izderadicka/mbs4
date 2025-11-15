@@ -5,7 +5,7 @@ use mbs4_e2e_tests::{
     rest::{create_author, create_ebook, create_genre, create_language, create_series},
 };
 use reqwest::Url;
-use serde_json::json;
+use serde_json::{Value, json};
 use tracing::info;
 use tracing_test::traced_test;
 
@@ -106,6 +106,34 @@ async fn test_ebook() {
     assert_eq!(found_ebook["title"].as_str().unwrap(), "Dune");
     assert_eq!(found_ebook["authors"].as_array().unwrap().len(), 2);
 
+    // Get by Author, Series and Genres
+
+    async fn get_ebooks(client: &reqwest::Client, url: Url, expected: usize) {
+        let response = client.get(url.clone()).send().await.unwrap();
+        info!("Response: {:#?}", response);
+        assert!(response.status().is_success());
+        assert!(response.status().as_u16() == 200);
+        let body = response.text().await.unwrap();
+        info!("Response body: {:#?}", body);
+        let ebooks: Value = serde_json::from_str(&body).unwrap();
+        let total = ebooks["total"].as_u64().unwrap();
+        let rows = ebooks["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), expected, "Searching: {}", url);
+        assert_eq!(total, expected as u64, "Searching: {}", url);
+    }
+
+    let url = base_url
+        .join(&format!("api/author/{}/ebooks", author1.id))
+        .unwrap();
+    get_ebooks(&client, url, 1).await;
+
+    let url = base_url
+        .join(&format!("api/series/{}/ebooks", series.id))
+        .unwrap();
+    get_ebooks(&client, url, 1).await;
+
+    // Update
+
     let series2 = create_series(&client, &base_url, "Adventures")
         .await
         .unwrap();
@@ -149,6 +177,8 @@ async fn test_ebook() {
 
     search(&client, &base_url, "Dune", 0).await.unwrap();
     search(&client, &base_url, "Holmes", 1).await.unwrap();
+
+    // Delete
 
     let response = client.delete(ebook_url.clone()).send().await.unwrap();
     info!("Response: {:#?}", response);
