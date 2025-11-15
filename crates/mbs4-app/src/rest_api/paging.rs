@@ -13,6 +13,8 @@ pub struct Paging {
     page_size: Option<u32>,
     #[garde(length(max = 255))]
     sort: Option<String>,
+    #[garde(length(max = 255))]
+    filter: Option<String>,
 }
 
 impl Paging {
@@ -59,6 +61,7 @@ impl Paging {
             offset: offset.into(),
             limit: limit.into(),
             order,
+            filter: None,
         })
     }
 

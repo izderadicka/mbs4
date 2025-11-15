@@ -18,6 +18,7 @@ pub async fn reindex_books(
             limit: 100,
             offset: sent,
             order: Some(vec![Order::Asc("e.id".into())]),
+            filter: None,
         };
         let res = match id {
             DependentId::Author(author_id) => repository.list_by_author(params, author_id).await?,

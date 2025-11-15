@@ -93,6 +93,7 @@ macro_rules! index_fill {
                 limit: PAGE_SIZE,
                 offset: 0,
                 order: Some(vec![mbs4_dal::Order::Asc("id".to_string())]),
+                filter: None,
             };
 
             let mut indexed = 0;
@@ -138,6 +139,7 @@ async fn index_fill_ebook(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<
         limit: PAGE_SIZE,
         offset: 0,
         order: Some(vec![mbs4_dal::Order::Asc("e.id".to_string())]),
+        filter: None,
     };
 
     let mut indexed = 0;

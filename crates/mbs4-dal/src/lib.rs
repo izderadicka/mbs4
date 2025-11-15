@@ -32,6 +32,11 @@ pub async fn new_pool(database_url: &str) -> Result<Pool, Error> {
 }
 
 #[derive(Debug, Clone)]
+pub enum Filter {
+    Genres(Vec<i64>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Order {
     Asc(String),
     Desc(String),
@@ -60,6 +65,7 @@ pub struct ListingParams {
     pub offset: i64,
     pub limit: i64,
     pub order: Option<Vec<Order>>,
+    pub filter: Option<Vec<Filter>>,
 }
 
 impl Default for ListingParams {
@@ -68,6 +74,7 @@ impl Default for ListingParams {
             offset: 0,
             limit: DEFAULT_PAGE_SIZE,
             order: None,
+            filter: None,
         }
     }
 }
@@ -78,6 +85,7 @@ impl ListingParams {
             offset,
             limit,
             order: None,
+            filter: None,
         }
     }
 
@@ -86,6 +94,7 @@ impl ListingParams {
             offset: 0,
             limit: MAX_LIMIT as i64,
             order: None,
+            filter: None,
         }
     }
     pub fn with_order(mut self, order: Vec<Order>) -> Self {
@@ -119,6 +128,16 @@ impl ListingParams {
             })
             .unwrap_or_default();
         Ok(ordering)
+    }
+
+    pub fn genres_filter(&self) -> Option<&Vec<i64>> {
+        self.filter.as_ref().and_then(|f| {
+            f.iter().find_map(|f| match f {
+                Filter::Genres(genres) => Some(genres),
+                #[allow(unreachable_patterns)]
+                _ => None,
+            })
+        })
     }
 }
 

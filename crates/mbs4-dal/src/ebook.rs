@@ -202,26 +202,57 @@ impl<'a> EbookQuery<'a> {
                 self.builder
                     .push(" JOIN ebook_authors ea ON e.id = ea.ebook_id ");
             }
+        }
 
-            let mut has_where = false;
+        //TODO
+        if self
+            .limits
+            .and_then(|l| l.genres_filter().map(|g| !g.is_empty()))
+            .unwrap_or(false)
+        {
+            self.builder
+                .push(" JOIN ebook_genres eg ON e.id = eg.ebook_id ");
+        }
 
-            let mut push_expr = |expr, value| {
-                if !has_where {
-                    self.builder.push(" WHERE ");
-                    has_where = true;
-                } else {
-                    self.builder.push(" AND ");
-                }
-                self.builder.push(expr);
+        let mut has_where = false;
+        let mut push_expr = |expr, value| {
+            if !has_where {
+                self.builder.push(" WHERE ");
+                has_where = true;
+            } else {
+                self.builder.push(" AND ");
+            }
+            self.builder.push(expr);
+            if let Some(value) = value {
                 self.builder.push_bind(value);
-            };
+            }
+        };
 
+        if let Some(where_clause) = self.where_clause {
             if let Some(author_id) = where_clause.author_id {
-                push_expr(" author_id = ", author_id)
+                push_expr(" author_id = ", Some(author_id))
             }
 
             if let Some(series_id) = where_clause.series_id {
-                push_expr(" series_id = ", series_id)
+                push_expr(" series_id = ", Some(series_id))
+            }
+        }
+
+        if let Some(limits) = self.limits {
+            if let Some(genres_filter) = limits.genres_filter() {
+                if !genres_filter.is_empty() {
+                    push_expr(" eg.genre_id IN (", None);
+                    let mut sep_builder = self.builder.separated(", ");
+                    for genre_id in genres_filter {
+                        sep_builder.push_bind(*genre_id);
+                    }
+                    self.builder.push(") ");
+                }
+
+                self.builder
+                    .push(" GROUP BY e.id HAVING COUNT(DISTINCT eg.genre_id) = ");
+                self.builder.push_bind(genres_filter.len() as i64);
+                self.builder.push(" ");
             }
         }
 
@@ -264,7 +295,6 @@ impl<'a> EbookQuery<'a> {
 struct Where {
     series_id: Option<i64>,
     author_id: Option<i64>,
-    genres: Option<Vec<i64>>,
 }
 
 impl Where {
@@ -279,13 +309,6 @@ impl Where {
 
     fn series(mut self, series_id: i64) -> Self {
         self.series_id = Some(series_id);
-        self
-    }
-
-    fn genres(mut self, genres: Vec<i64>) -> Self {
-        assert!(!genres.is_empty());
-        assert!(genres.len() <= 10); // Safety check
-        self.genres = Some(genres);
         self
     }
 }
