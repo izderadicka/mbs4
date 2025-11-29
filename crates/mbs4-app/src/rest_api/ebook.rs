@@ -51,6 +51,7 @@ mod crud_api_extra {
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
     use mbs4_dal::{
+        conversion::{self, EbookConversion},
         format,
         source::{self, CreateSource, EbookSource, Source},
     };
@@ -164,6 +165,16 @@ responses((status = StatusCode::OK, description = "List Ebook Sources", body = V
         Ok((StatusCode::OK, Json(sources)))
     }
 
+    #[cfg_attr(feature = "openapi", utoipa::path(get, path = "/{id}/conversion", tag = "Ebook", operation_id = "listEbookConversions",
+responses((status = StatusCode::OK, description = "List Ebook Conversions", body = Vec<EbookConversion>))))]
+    pub async fn ebook_conversions(
+        Path(id): Path<i64>,
+        conversion_repo: conversion::ConversionRepository,
+    ) -> ApiResult<impl IntoResponse> {
+        let conversions: Vec<EbookConversion> = conversion_repo.list_for_ebook(id).await?;
+        Ok((StatusCode::OK, Json(conversions)))
+    }
+
     #[cfg_attr(feature = "openapi", utoipa::path(put, path = "/{id}/cover", tag = "Ebook", operation_id = "updateEbookCover",
     responses((status = StatusCode::OK, description = "Updated Ebook Cover", body = Ebook))))]
     pub async fn update_ebook_cover(
@@ -220,4 +231,5 @@ pub fn router() -> axum::Router<AppState> {
         .route("/count", get(crud_api::count))
         .route("/{id}", get(crud_api::get))
         .route("/{id}/source", get(crud_api_extra::ebook_sources))
+        .route("/{id}/conversion", get(crud_api_extra::ebook_conversions))
 }

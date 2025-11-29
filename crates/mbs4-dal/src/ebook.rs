@@ -30,6 +30,9 @@ pub struct Ebook {
     pub authors: Option<Vec<AuthorShort>>,
     pub genres: Option<Vec<GenreShort>>,
 
+    pub rating: Option<f32>,
+    pub rating_count: Option<u32>,
+
     pub version: i64,
     pub created_by: Option<String>,
     pub created: time::PrimitiveDateTime,
@@ -122,6 +125,8 @@ impl sqlx::FromRow<'_, ChosenRow> for Ebook {
             series,
             series_index: row.try_get("series_index")?,
             language,
+            rating: row.try_get("rating")?,
+            rating_count: row.try_get("rating_count")?,
             version: row.try_get("version")?,
             created_by: row.try_get("created_by")?,
             created: row.try_get("created")?,
@@ -142,6 +147,7 @@ pub struct EbookShort {
     pub series_index: Option<u32>,
     pub language: LanguageShort,
     pub authors: Option<Vec<AuthorShort>>,
+    pub rating: Option<f32>,
 }
 
 impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
@@ -161,6 +167,7 @@ impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
             series_index: row.try_get("series_index")?,
             language,
             authors: None,
+            rating: row.try_get("rating")?,
         })
     }
 }
@@ -185,7 +192,7 @@ impl QueryType {
     const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM (SELECT e.id FROM ebook e ";
     const LIST_IDS_QUERY: &'static str = "SELECT e.id FROM ebook e ";
     const LIST_QUERY: &'static str = r#"
-        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, 
+        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, e.rating,
         l.code as language_code, l.name as language_name,
         s.title as series_title
         FROM ebook e 
@@ -553,6 +560,7 @@ where
         const SQL: &str = r#"
         SELECT e.id, e.title, e.description, e.cover, e.base_dir, e.series_id, e.series_index, e.language_id, e.version, 
         e.created_by, e.created, e.modified,
+        e.rating, e.rating_count,
         l.code as language_code, l.name as language_name,
         s.title as series_title
         FROM ebook e 

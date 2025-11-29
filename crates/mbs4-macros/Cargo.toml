@@ -21,3 +21,6 @@ utoipa = { workspace = true, features = ["time", "preserve_order"] }
 proc-macro2 = "1.0.94"
 quote = "1.0.39"
 syn = "2.0.99"
+
+[features]
+debug-macros = []

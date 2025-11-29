@@ -349,37 +349,42 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             bound_fields_update.push(quote!(.bind(#version_ident)));
             quote!(let version = payload.version;)
         } else {
-            quote!()
+            quote!(let version = 0;)
         };
 
-        let update_fn = quote!(
-            pub async fn update(&self, id: i64, payload: #update_struct_name) -> crate::error::Result<#entity_ident> {
-                #version_def
-                #now_def
-                if payload.id != id {
-                    return Err(crate::Error::InvalidEntity(
-                    "Entity id mismatch".into(),
-                ));
-                }
-                let mut conn = self.executor.acquire().await?;
-                let mut transaction = conn.begin().await?;
-                let result = sqlx::query(
-                    #update_query_ident,
-                )
-                #(#bound_fields_update)*
-                .bind(id)
-                .execute(&mut *transaction)
-                .await?;
+        // update is possible only for versioned entities
+        let update_fn = if version_field.is_some() {
+            quote!(
+                pub async fn update(&self, id: i64, payload: #update_struct_name) -> crate::error::Result<#entity_ident> {
+                    #version_def
+                    #now_def
+                    if payload.id != id {
+                        return Err(crate::Error::InvalidEntity(
+                        "Entity id mismatch".into(),
+                    ));
+                    }
+                    let mut conn = self.executor.acquire().await?;
+                    let mut transaction = conn.begin().await?;
+                    let result = sqlx::query(
+                        #update_query_ident,
+                    )
+                    #(#bound_fields_update)*
+                    .bind(id)
+                    .execute(&mut *transaction)
+                    .await?;
 
-                if result.rows_affected() == 0 {
-                    Err(crate::error::Error::FailedUpdate { id, version })
-                } else {
-                    let record = get(id, &mut *transaction).await?;
-                    transaction.commit().await?;
-                    Ok(record)
+                    if result.rows_affected() == 0 {
+                        Err(crate::error::Error::FailedUpdate { id, version })
+                    } else {
+                        let record = get(id, &mut *transaction).await?;
+                        transaction.commit().await?;
+                        Ok(record)
+                    }
                 }
-            }
-        );
+            )
+        } else {
+            quote!()
+        };
 
         // COUNT ======================================================================
 
