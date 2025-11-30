@@ -12,6 +12,7 @@ use tracing::debug;
 const UPLOAD_PATH_PREFIX: &str = "upload";
 const BOOKS_PATH_PREFIX: &str = "books";
 const ICONS_PATH_PREFIX: &str = "icons";
+const CONVERSIONS_PATH_PREFIX: &str = "converted";
 
 const MAX_PATH_LEN: usize = 4095;
 const MAX_SEGMENT_LEN: usize = 255;
@@ -22,6 +23,7 @@ pub enum StorePrefix {
     Upload,
     Books,
     Icons,
+    Conversions,
 }
 
 impl StorePrefix {
@@ -30,6 +32,7 @@ impl StorePrefix {
             StorePrefix::Upload => UPLOAD_PATH_PREFIX,
             StorePrefix::Books => BOOKS_PATH_PREFIX,
             StorePrefix::Icons => ICONS_PATH_PREFIX,
+            StorePrefix::Conversions => CONVERSIONS_PATH_PREFIX,
         }
     }
 }

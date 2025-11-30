@@ -33,7 +33,7 @@ impl AppState {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
         let events = EventHub::new();
-        let convertor = Convertor::new(events.sender(), store.clone());
+        let convertor = Convertor::new(events.sender(), store.clone(), pool.clone());
         AppState {
             state: Arc::new(AppStateInner {
                 shutdown,

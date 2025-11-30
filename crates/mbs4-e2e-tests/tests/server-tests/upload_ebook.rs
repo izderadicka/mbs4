@@ -314,8 +314,20 @@ async fn test_upload() {
     let hash = digester.finalize();
     let hash = base16ct::lower::encode_string(hash.as_slice());
 
+    // Check files have same size and hash
     assert_eq!(upload_info.size, size);
     assert_eq!(upload_info.hash, hash);
 
-    // Check files have same size and hash
+    // Check conversion
+
+    let conversion_url = base_url
+        .join(&format!("api/ebook/{}/conversion", new_ebook.id))
+        .unwrap();
+
+    let res = client.get(conversion_url).send().await.unwrap();
+    assert!(res.status().is_success());
+    assert!(res.status().as_u16() == 200);
+
+    let conversions: Vec<Map<String, Value>> = res.json().await.unwrap();
+    assert_eq!(conversions.len(), 0);
 }

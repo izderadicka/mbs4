@@ -1,4 +1,7 @@
-use std::process::Stdio;
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 pub use crate::meta::EbookMetadata;
 use crate::meta::parse_metadata;
@@ -6,8 +9,27 @@ use crate::meta::parse_metadata;
 pub mod meta;
 
 const EBOOK_META_PROGRAM: &str = "ebook-meta";
+const EBOOK_CONVERT_PROGRAM: &str = "ebook-convert";
 
-pub async fn extract_metadata(path: &str, extract_cover: bool) -> anyhow::Result<EbookMetadata> {
+async fn run_command(cmd: &mut tokio::process::Command) -> anyhow::Result<std::process::Output> {
+    let output = cmd.output().await?;
+
+    if output.status.success() {
+        Ok(output)
+    } else {
+        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        Err(anyhow::anyhow!(
+            "{cmd:?} failed with status: {}",
+            output.status
+        ))
+    }
+}
+
+pub async fn extract_metadata(
+    path: impl AsRef<Path>,
+    extract_cover: bool,
+) -> anyhow::Result<EbookMetadata> {
+    let path = path.as_ref();
     let mut cmd = tokio::process::Command::new(EBOOK_META_PROGRAM);
     let mut cover_file = None;
 
@@ -21,22 +43,35 @@ pub async fn extract_metadata(path: &str, extract_cover: bool) -> anyhow::Result
         cover_file = Some(tmp_name);
     }
 
-    let output = cmd.output().await?;
+    let output = run_command(&mut cmd).await?;
 
-    if output.status.success() {
-        let stdout = std::str::from_utf8(&output.stdout)?;
-        let mut meta = parse_metadata(stdout);
-        if let Some(cover_file) = cover_file {
-            if tokio::fs::metadata(&cover_file).await.is_ok() {
-                meta.cover_file = Some(cover_file.to_string_lossy().into());
-            }
+    let stdout = std::str::from_utf8(&output.stdout)?;
+    let mut meta = parse_metadata(stdout);
+    if let Some(cover_file) = cover_file {
+        if tokio::fs::metadata(&cover_file).await.is_ok() {
+            meta.cover_file = Some(cover_file.to_string_lossy().into());
         }
-        Ok(meta)
+    }
+    Ok(meta)
+}
+
+pub async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<PathBuf> {
+    let path = path.as_ref();
+    let mut cmd = tokio::process::Command::new(EBOOK_CONVERT_PROGRAM);
+    let output_file = std::env::temp_dir().join(format!(
+        "mbs4-ebook-{}.{}",
+        uuid::Uuid::new_v4(),
+        format_ext
+    ));
+    cmd.arg(path).arg(&output_file).stdin(Stdio::null());
+
+    let _output = run_command(&mut cmd).await?;
+    let file_meta = tokio::fs::metadata(&output_file).await?;
+    if file_meta.is_file() && file_meta.len() > 0 {
+        Ok(output_file)
     } else {
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
         Err(anyhow::anyhow!(
-            "ebook-meta failed with status: {}",
-            output.status
+            "Failed to convert, missing or empty file: {output_file:?}"
         ))
     }
 }
@@ -68,5 +103,13 @@ mod tests {
         assert!(file_meta.len() > 100_000);
 
         tokio::fs::remove_file(&cover_file).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_convert() {
+        let path = "../../test-data/samples/Holmes.epub";
+        let converted = convert(path, "mobi").await.unwrap();
+        assert!(converted.exists());
+        tokio::fs::remove_file(&converted).await.unwrap();
     }
 }
