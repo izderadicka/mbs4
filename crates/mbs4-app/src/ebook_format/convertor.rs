@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use crate::{ebook_format::MetaResult, events::EventMessage};
+use crate::{
+    ebook_format::{ConversionResult, ErrorResult, MetaResult},
+    events::EventMessage,
+};
 use mbs4_dal::conversion::CreateConversion;
 use mbs4_store::{file_store::FileStore, upload_path, Store, StorePrefix, ValidPath};
 use mbs4_types::utils::file_ext;
@@ -113,12 +116,10 @@ impl Convertor {
 
 impl ConvertorInner {
     fn send_error(&self, operation_id: String, error: impl std::fmt::Display) {
-        let error_result = MetaResult {
+        let error_result = ErrorResult {
             operation_id,
             created: time::OffsetDateTime::now_utc(),
-            success: false,
-            error: Some(error.to_string()),
-            metadata: None,
+            error: error.to_string(),
         };
         let event = EventMessage::message("extract_meta_error", error_result);
         self.event_sender.send(event).unwrap();
@@ -169,7 +170,7 @@ impl ConvertorInner {
                     created: time::OffsetDateTime::now_utc(),
                     success: true,
                     error: None,
-                    metadata: Some(meta),
+                    metadata: meta,
                 };
                 let event = EventMessage::message("extract_meta", result);
                 self.event_sender.send(event).unwrap();
@@ -199,7 +200,7 @@ impl ConvertorInner {
                     .await
                 {
                     Ok(conversion) => {
-                        let result = MetaResult {
+                        let result = ConversionResult {
                             operation_id,
                             created: time::OffsetDateTime::now_utc(),
                             success: true,

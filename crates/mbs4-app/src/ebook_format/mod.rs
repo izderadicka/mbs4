@@ -33,7 +33,7 @@ macro_rules! result_struct {
             pub created: time::OffsetDateTime,
             pub success: bool,
             pub error: Option<String>,
-            pub $field: Option<$field_type>,
+            pub $field: $field_type,
         }
     };
 
@@ -41,6 +41,11 @@ macro_rules! result_struct {
 }
 
 result_struct!(MetaResult, metadata, mbs4_calibre::EbookMetadata);
+result_struct!(
+    ConversionResult,
+    conversion,
+    mbs4_dal::conversion::Conversion
+);
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, garde::Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
