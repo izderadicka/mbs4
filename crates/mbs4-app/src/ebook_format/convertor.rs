@@ -168,8 +168,6 @@ impl ConvertorInner {
                 let result = MetaResult {
                     operation_id,
                     created: time::OffsetDateTime::now_utc(),
-                    success: true,
-                    error: None,
                     metadata: meta,
                 };
                 let event = EventMessage::message("extract_meta", result);
@@ -203,8 +201,6 @@ impl ConvertorInner {
                         let result = ConversionResult {
                             operation_id,
                             created: time::OffsetDateTime::now_utc(),
-                            success: true,
-                            error: None,
                             conversion,
                         };
                         let event = EventMessage::message("convert", result);

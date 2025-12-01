@@ -18,29 +18,19 @@ pub struct OperationTicket {
     pub created: time::OffsetDateTime,
 }
 
-#[derive(Debug, serde::Serialize)]
-pub struct ErrorResult {
-    pub operation_id: String,
-    pub created: time::OffsetDateTime,
-    pub error: String,
-}
-
 macro_rules! result_struct {
     ($name:ident, $field:ident, $field_type:ty) => {
         #[derive(Debug, serde::Serialize)]
         pub struct $name {
             pub operation_id: String,
             pub created: time::OffsetDateTime,
-            pub success: bool,
-            pub error: Option<String>,
             pub $field: $field_type,
         }
     };
-
-    ($name:ident) => {};
 }
 
 result_struct!(MetaResult, metadata, mbs4_calibre::EbookMetadata);
+result_struct!(ErrorResult, error, String);
 result_struct!(
     ConversionResult,
     conversion,
