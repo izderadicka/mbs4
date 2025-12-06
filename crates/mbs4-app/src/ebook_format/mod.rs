@@ -129,13 +129,14 @@ pub async fn convert_source(
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/extract_meta", post(get_ebook_meta))
+        .route("/convert", post(convert_source))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
 }
 
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(get_ebook_meta))]
+    #[openapi(paths(get_ebook_meta, convert_source))]
     struct ApiDocs;
     ApiDocs::openapi()
 }

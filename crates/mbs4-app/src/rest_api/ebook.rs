@@ -36,7 +36,8 @@ publish_api_docs!(
     crud_api_extra::delete,
     crud_api_extra::ebook_sources,
     crud_api_extra::create_source_for_upload,
-    crud_api_extra::update_ebook_cover
+    crud_api_extra::update_ebook_cover,
+    crud_api_extra::ebook_conversions
 );
 crud_api!(Ebook, RO);
 
