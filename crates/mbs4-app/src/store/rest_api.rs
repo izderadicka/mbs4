@@ -10,10 +10,10 @@ use axum::{
     Json, Router,
 };
 use futures::TryStreamExt as _;
-use mbs4_dal::{ebook::EbookRepository, format::FormatRepository};
+use mbs4_dal::{ebook::EbookRepository, format::FormatRepository, source::SourceRepository};
 use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
 use mbs4_types::{claim::Role, utils::file_ext};
-use tracing::debug;
+use tracing::{debug, error};
 
 use super::ValidPath;
 
@@ -66,7 +66,8 @@ impl UploadInfo {
 )]
 pub async fn upload_form(
     State(state): State<AppState>,
-    repository: FormatRepository,
+    format_repository: FormatRepository,
+    source_repository: SourceRepository,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
     if let Some(field) = multipart.next_field().await? {
@@ -77,9 +78,12 @@ pub async fn upload_form(
         let ext = file_ext(&file_name)
             .ok_or_else(|| ApiError::UnprocessableRequest("Missing file extension".into()))?;
 
-        let format = repository.get_by_extension(&ext).await.map_err(|e| {
-            ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
-        })?;
+        let format = format_repository
+            .get_by_extension(&ext)
+            .await
+            .map_err(|e| {
+                ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
+            })?;
         // TODO: More check?
         let mime_type = format.mime_type;
 
@@ -91,9 +95,23 @@ pub async fn upload_form(
         let stream = field.map_err(|e| {
             StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
         });
-        let info = state.store().store_stream(&dest_path, stream).await?;
+        let store_info = state.store().store_stream(&dest_path, stream).await?;
 
-        let info = UploadInfo::from_store_info(info, Some(file_name));
+        if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
+            debug!("File with same hash exists as {}", source.location);
+            state
+                .store()
+                .delete(&store_info.final_path)
+                .await
+                .inspect_err(|e| error!("Error deleting file {e}"))
+                .ok();
+            return Err(ApiError::ResourceAlreadyExists(format!(
+                "File with same hash exists as {}",
+                source.location
+            )));
+        }
+
+        let info = UploadInfo::from_store_info(store_info, Some(file_name));
 
         Ok((StatusCode::CREATED, Json(info)))
     } else {

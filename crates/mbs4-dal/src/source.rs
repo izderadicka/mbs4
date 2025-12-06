@@ -57,4 +57,12 @@ WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
             .await?;
         Ok(res)
     }
+
+    pub async fn find_by_hash(&self, hash: &str) -> crate::error::Result<Option<Source>> {
+        let res = sqlx::query_as("SELECT * FROM source WHERE hash = ?")
+            .bind(hash)
+            .fetch_optional(&self.executor)
+            .await?;
+        Ok(res)
+    }
 }

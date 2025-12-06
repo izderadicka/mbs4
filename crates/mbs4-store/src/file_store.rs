@@ -378,6 +378,12 @@ impl Store for FileStore {
     fn local_path(&self, path: &ValidPath) -> Option<std::path::PathBuf> {
         Some(self.inner.root.join(path.as_ref()))
     }
+
+    async fn delete(&self, path: &ValidPath) -> StoreResult<()> {
+        let _lock = self.inner.lock.lock().await;
+        fs::remove_file(self.inner.root.join(path.as_ref())).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
