@@ -7,7 +7,7 @@ use crate::{
     ebook_format::{ConversionResult, ErrorResult, MetaResult},
     events::EventMessage,
 };
-use mbs4_dal::conversion::CreateConversion;
+use mbs4_dal::conversion::{CreateConversion, EbookConversion};
 use mbs4_store::{file_store::FileStore, upload_path, Store, StorePrefix, ValidPath};
 use mbs4_types::utils::file_ext;
 use tracing::error;
@@ -219,7 +219,7 @@ impl ConvertorInner {
         source_id: i64,
         to_ext: String,
         user: String,
-    ) -> anyhow::Result<mbs4_dal::conversion::Conversion> {
+    ) -> anyhow::Result<mbs4_dal::conversion::EbookConversion> {
         // let mut tr = self.pool.begin().await?;
         let source = mbs4_dal::source::SourceRepository::new(self.pool.clone())
             .get(source_id)
@@ -227,9 +227,8 @@ impl ConvertorInner {
         let ebook = mbs4_dal::ebook::EbookRepository::new(self.pool.clone())
             .get(source.ebook_id)
             .await?;
-        let format = mbs4_dal::format::FormatRepository::new(self.pool.clone())
-            .get_by_extension(&to_ext)
-            .await?;
+        let format_repository = mbs4_dal::format::FormatRepository::new(self.pool.clone());
+        let format = format_repository.get_by_extension(&to_ext).await?;
 
         let naming = ebook.naming_meta();
         let ext = file_ext(&converted_file)
@@ -254,6 +253,23 @@ impl ConvertorInner {
         let conversion = mbs4_dal::conversion::ConversionRepository::new(self.pool.clone())
             .create(create_conversion_result)
             .await?;
-        Ok(conversion)
+
+        let source_format = mbs4_dal::format::FormatRepository::new(self.pool.clone())
+            .get(source.format_id)
+            .await?;
+
+        Ok(EbookConversion {
+            id: conversion.id,
+            location: conversion.location,
+            source_id: conversion.source_id,
+            ebook_id: source.ebook_id,
+            batch_id: conversion.batch_id,
+            source_format_name: source_format.name,
+            source_format_extension: source_format.extension,
+            format_name: format.name,
+            format_extension: format.extension,
+            created_by: conversion.created_by,
+            created: conversion.created,
+        })
     }
 }

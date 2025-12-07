@@ -24,6 +24,7 @@ pub struct EbookConversion {
     pub id: i64,
     pub location: String,
     pub source_id: i64,
+    pub ebook_id: i64,
     pub batch_id: Option<i64>,
     pub source_format_name: String,
     pub source_format_extension: String,
@@ -42,7 +43,7 @@ where
         &self,
         ebook_id: i64,
     ) -> crate::error::Result<Vec<EbookConversion>> {
-        let sql = "SELECT c.id id, c.location location, c.source_id source_id, c.batch_id batch_id,
+        let sql = "SELECT c.id id, c.location location, c.source_id source_id, s.ebook_id ebook_id, c.batch_id batch_id,
 c.created created, c.created_by created_by,
 f.name format_name, f.extension format_extension,
 sf.name source_format_name, sf.extension source_format_extension

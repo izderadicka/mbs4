@@ -34,7 +34,7 @@ result_struct!(ErrorResult, error, String);
 result_struct!(
     ConversionResult,
     conversion,
-    mbs4_dal::conversion::Conversion
+    mbs4_dal::conversion::EbookConversion
 );
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, garde::Validate)]
