@@ -96,6 +96,10 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/api/series", mbs4_app::rest_api::series::api_docs())
         .nest("/api/source", mbs4_app::rest_api::source::api_docs())
         .nest("/api/author", mbs4_app::rest_api::author::api_docs())
+        .nest(
+            "/api/conversion",
+            mbs4_app::rest_api::conversion::api_docs(),
+        )
         .nest("/auth", mbs4_app::auth::api_docs())
         .nest("/files", mbs4_app::store::rest_api::api_docs())
         .nest("/search", mbs4_app::search::api_docs())
@@ -125,6 +129,7 @@ fn main_router(state: AppState) -> Router<()> {
         .nest("/api/source", mbs4_app::rest_api::source::router())
         .nest("/api/author", mbs4_app::rest_api::author::router())
         .nest("/api/ebook", mbs4_app::rest_api::ebook::router())
+        .nest("/api/conversion", mbs4_app::rest_api::conversion::router())
         .nest("/search", mbs4_app::search::router())
         .nest("/events", mbs4_app::events::router())
         // All above routes are protected

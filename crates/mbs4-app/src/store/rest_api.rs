@@ -192,6 +192,20 @@ pub async fn download_uploaded(
 
 #[cfg_attr(
     feature = "openapi",
+    utoipa::path(get, path = "/download/conversion/{path}", tag = "File Store", operation_id = "downloadConversion",
+    description = "Download converted file",
+    params(("path"=String, Path, description = "Path to file"))),
+)]
+pub async fn download_conversion(
+    State(state): State<AppState>,
+    path: ValidPath,
+    repository: FormatRepository,
+) -> Result<impl IntoResponse, ApiError> {
+    download_file(state, path, repository, StorePrefix::Conversions, false).await
+}
+
+#[cfg_attr(
+    feature = "openapi",
     utoipa::path(get, path = "/icon/{id}", tag = "File Store", operation_id = "downloadIcon",
     description = "Download ebook cover icon",
     params(("id"=i64, Path, description = "Ebook id")),
@@ -256,6 +270,7 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
         .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
         .route("/icon/{id}", get(download_icon))
         .route("/download/{*path}", get(download))
+        .route("/download/conversion/{*path}", get(download_conversion))
         .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
     app
 }
@@ -267,6 +282,7 @@ pub fn api_docs() -> utoipa::openapi::OpenApi {
     #[openapi(paths(
         download,
         download_uploaded,
+        download_conversion,
         move_upload,
         upload_direct,
         upload_form,

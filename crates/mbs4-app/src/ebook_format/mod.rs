@@ -42,7 +42,7 @@ result_struct!(
 #[garde(allow_unvalidated)]
 pub struct ConversionRequest {
     pub source_id: i64,
-    pub to_format_id: i64,
+    pub to_format_extension: String,
 }
 
 #[cfg_attr(
@@ -102,7 +102,9 @@ pub async fn convert_source(
     Garde(Json(payload)): Garde<Json<ConversionRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let source = source_repositry.get(payload.source_id).await?;
-    let to_format = format_repositry.get(payload.to_format_id).await?;
+    let to_format = format_repositry
+        .get_by_extension(&payload.to_format_extension)
+        .await?;
 
     let file_path = ValidPath::new(source.location)?.with_prefix(mbs4_store::StorePrefix::Books);
 
