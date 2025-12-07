@@ -13,7 +13,7 @@ async fn test_invalid_user_email() {
     let user_password = "password";
 
     let new_user = user::CreateUser {
-        name: Some("admin".to_string()),
+        name: "admin".to_string(),
         email: ValidEmail::cheat(user_email.to_string()),
         password: Some(user_password.to_string()),
         roles: Some(vec!["admin".to_string()]),
@@ -38,7 +38,7 @@ async fn test_invalid_user_email() {
 async fn test_valid_user() {
     let (args, _config_guard) = prepare_env("test_valid_user").await.unwrap();
     let new_user = user::CreateUser {
-        name: Some("admin".to_string()),
+        name: "admin".to_string(),
         email: "admin@example.com".parse().unwrap(),
         password: Some("password".to_string()),
         roles: Some(vec!["admin".to_string(), "trusted".to_string()]),
@@ -62,7 +62,7 @@ async fn test_valid_user() {
 async fn test_invalid_role() {
     let (args, _config_guard) = prepare_env("test_invalid_role").await.unwrap();
     let new_user = user::CreateUser {
-        name: Some("admin".to_string()),
+        name: "admin".to_string(),
         email: "admin@example.com".parse().unwrap(),
         password: Some("password".to_string()),
         roles: Some(vec![

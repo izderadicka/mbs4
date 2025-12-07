@@ -62,7 +62,7 @@ pub struct CreateUser {
     #[schema(value_type = String)]
     pub email: ValidEmail,
     #[garde(length(min = 3, max = 255))]
-    pub name: Option<String>,
+    pub name: String,
     #[garde(length(min = 8, max = 255))]
     pub password: Option<String>,
     #[garde(inner(inner(custom(is_valid_role))))]
@@ -76,7 +76,7 @@ pub struct CreateUser {
     #[garde(dive)]
     pub email: ValidEmail,
     #[garde(length(min = 3, max = 255))]
-    pub name: Option<String>,
+    pub name: String,
     #[garde(length(min = 8, max = 255))]
     pub password: Option<String>,
     #[garde(inner(inner(custom(is_valid_role))))]

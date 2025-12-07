@@ -103,6 +103,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/auth", mbs4_app::auth::api_docs())
         .nest("/files", mbs4_app::store::rest_api::api_docs())
         .nest("/search", mbs4_app::search::api_docs())
+        .nest("/users", mbs4_app::user::api_docs())
 }
 
 fn main_router(state: AppState) -> Router<()> {

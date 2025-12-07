@@ -15,7 +15,7 @@ async fn test_auth() {
     let user_password = "password";
 
     let new_user = user::CreateUser {
-        name: Some("admin".to_string()),
+        name: "admin".to_string(),
         email: user_email.parse().unwrap(),
         password: Some(user_password.to_string()),
         roles: Some(vec!["admin".to_string()]),
