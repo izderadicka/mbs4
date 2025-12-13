@@ -1,0 +1,19 @@
+[package]
+name = "mbs4-cli"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mbs4"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+mbs4-types = { path = "../mbs4-types" }
+mbs4-store = { path = "../mbs4-store" }

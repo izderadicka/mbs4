@@ -16,7 +16,7 @@ time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tower-sessions = { workspace = true }
-tracing-subscriber = "0.3.19"
+tracing-subscriber = { workspace = true }
 mbs4-auth = { path = "../mbs4-auth" }
 clap = { workspace = true, features = ["derive", "env"] }
 anyhow = { workspace = true }
@@ -24,7 +24,6 @@ mbs4-types = { path = "../mbs4-types" }
 mbs4-app = { path = "../mbs4-app" }
 mbs4-dal = { path = "../mbs4-dal" }
 url = { workspace = true }
-dirs = "6.0.0"
 rand = { workspace = true }
 humantime = "2.1.0"
 tower-cookies = { workspace = true }
