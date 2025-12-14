@@ -14,6 +14,15 @@ tokio = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 mbs4-types = { path = "../mbs4-types" }
 mbs4-store = { path = "../mbs4-store" }
+reqwest = { workspace = true, features = [
+    "json",
+    "cookies",
+    "multipart",
+    "stream",
+] }
+serde_json = { workspace = true }
+reqwest-eventsource = "0.6.0"
+futures = { workspace = true }

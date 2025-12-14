@@ -2,6 +2,7 @@ use clap::{ArgGroup, Args, Parser};
 use mbs4_store::StorePrefix;
 use mbs4_types::config::BackendConfig;
 use tokio::fs;
+use tracing::{debug, info};
 
 use crate::commands::Executor;
 
@@ -34,21 +35,26 @@ impl Executor for CleanupCmd {
     async fn run(self) -> anyhow::Result<()> {
         if self.work.uploads || self.work.all {
             let upload_dir = self.backend.files_dir().join(StorePrefix::Upload.as_str());
+
             let mut files = fs::read_dir(&upload_dir).await?;
+            let mut count = 0;
             while let Some(file) = files.next_entry().await? {
                 let metadata = file.metadata().await?;
-                if metadata
-                    .created()
-                    .or_else(|_| metadata.modified())?
-                    .elapsed()
-                    .unwrap()
-                    .as_secs()
-                    > 60 * 60 * 24 * CLEANUP_INTERVAL_DAYS
+                if metadata.is_file()
+                    && metadata
+                        .created()
+                        .or_else(|_| metadata.modified())?
+                        .elapsed()
+                        .unwrap()
+                        .as_secs()
+                        > 60 * 60 * 24 * CLEANUP_INTERVAL_DAYS
                 {
                     fs::remove_file(file.path()).await?;
-                    println!("Deleted {:?}", file.path());
+                    debug!("Deleted {:?} files in uploads", file.path());
+                    count += 1;
                 }
             }
+            info!("Deleted {} files in uploads", count);
         }
 
         Ok(())
