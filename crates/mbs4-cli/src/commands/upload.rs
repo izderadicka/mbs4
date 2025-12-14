@@ -8,7 +8,6 @@ use reqwest_eventsource::Event;
 use serde_json::{Map, Value};
 use tokio::fs;
 use tracing::{debug, error};
-use tracing_subscriber::field::debug;
 
 use crate::{commands::Executor, config::ServerConfig};
 
