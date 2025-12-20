@@ -12,10 +12,32 @@ pub struct EbookMetadata {
     pub comments: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Author {
     pub first_name: Option<String>,
     pub last_name: String,
+}
+
+impl Author {
+    pub fn from_comma_form(author: &str) -> anyhow::Result<Self> {
+        let (last_name, first_name) = author.split_once(',').unwrap_or((author, ""));
+        let first_name = first_name.trim();
+        let first_name = if first_name.is_empty() {
+            None
+        } else {
+            Some(first_name.to_string())
+        };
+
+        let last_name = last_name.trim();
+        if last_name.is_empty() {
+            anyhow::bail!("Empty last name");
+        }
+
+        Ok(Self {
+            last_name: last_name.to_string(),
+            first_name,
+        })
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

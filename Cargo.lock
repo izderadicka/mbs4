@@ -2486,6 +2486,8 @@ dependencies = [
  "anyhow",
  "clap",
  "futures",
+ "mbs4-calibre",
+ "mbs4-dal",
  "mbs4-store",
  "mbs4-types",
  "reqwest",
