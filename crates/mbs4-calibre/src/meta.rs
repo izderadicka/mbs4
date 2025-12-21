@@ -1,5 +1,8 @@
+use std::str::FromStr;
+
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
+use tracing::error;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct EbookMetadata {
@@ -18,32 +21,59 @@ pub struct Author {
     pub last_name: String,
 }
 
-impl Author {
-    pub fn from_comma_form(author: &str) -> anyhow::Result<Self> {
-        let (last_name, first_name) = author.split_once(',').unwrap_or((author, ""));
-        let first_name = first_name.trim();
-        let first_name = if first_name.is_empty() {
-            None
+impl FromStr for Author {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').map(|s| s.trim()).collect();
+
+        if parts.len() > 1 {
+            Ok(Author {
+                last_name: parts[0].to_string(),
+                first_name: Some(parts[1..].join(" ")),
+            })
         } else {
-            Some(first_name.to_string())
-        };
-
-        let last_name = last_name.trim();
-        if last_name.is_empty() {
-            anyhow::bail!("Empty last name");
+            let words: Vec<&str> = s.split_whitespace().collect();
+            if !words.is_empty() {
+                let last_name = words.last().unwrap().to_string();
+                if last_name.is_empty() {
+                    anyhow::bail!("Empty last name");
+                }
+                let first_name = if words.len() > 1 {
+                    Some(words[..words.len() - 1].join(" "))
+                } else {
+                    None
+                };
+                Ok(Author {
+                    last_name,
+                    first_name,
+                })
+            } else {
+                anyhow::bail!("Empty author");
+            }
         }
-
-        Ok(Self {
-            last_name: last_name.to_string(),
-            first_name,
-        })
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Series {
     pub title: String,
     pub index: i32,
+}
+
+impl FromStr for Series {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(series_caps) = SERIES_INDEX_RE.captures(s) {
+            Ok(Series {
+                title: series_caps[1].trim().to_string(),
+                index: series_caps[2].parse::<i32>()?,
+            })
+        } else {
+            anyhow::bail!("Failed to parse series");
+        }
+    }
 }
 
 fn build_regex(pattern: &str) -> Regex {
@@ -60,7 +90,7 @@ lazy_static! {
     static ref TAGS_RE: Regex = build_regex(r"^Tags\s*:\s*(.+)");
     static ref SERIES_RE: Regex = build_regex(r"^Series\s*:\s*(.+)");
     static ref LANGUAGES_RE: Regex = build_regex(r"^Languages\s*:\s*(.+)");
-    static ref SERIES_INDEX_RE: Regex = Regex::new(r"^(.*) #(\d+)$").unwrap();
+    static ref SERIES_INDEX_RE: Regex = Regex::new(r"^(.*)\s*#(\d+)$").unwrap();
     static ref COMMENTS_RE: Regex = build_regex(r"^Comments\s*:\s*(.+)");
     static ref BRACKETS_RE: Regex = Regex::new(r"\[[^\]]+\]").unwrap();
 }
@@ -87,7 +117,7 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
             .filter_map(|a| {
                 let trimmed = a.trim();
                 if !trimmed.is_empty() {
-                    parse_author(trimmed)
+                    trimmed.parse().ok()
                 } else {
                     None
                 }
@@ -112,12 +142,10 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
     // Series
     if let Some(caps) = SERIES_RE.captures(data) {
         let series_str = caps[1].trim();
-        if let Some(series_caps) = SERIES_INDEX_RE.captures(series_str) {
-            series = Some(Series {
-                title: series_caps[1].trim().to_string(),
-                index: series_caps[2].parse::<i32>().unwrap_or(0),
-            });
-        }
+        series = series_str
+            .parse()
+            .inspect_err(|e| error!("Invalid series {series_str}, error {e}"))
+            .ok();
     }
 
     // Comments
@@ -139,36 +167,13 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
     }
 }
 
-fn parse_author(author: &str) -> Option<Author> {
-    let parts: Vec<&str> = author.split(',').map(|s| s.trim()).collect();
-
-    if parts.len() > 1 {
-        Some(Author {
-            last_name: parts[0].to_string(),
-            first_name: Some(parts[1..].join(" ")),
-        })
-    } else {
-        let words: Vec<&str> = author.split_whitespace().collect();
-        if !words.is_empty() {
-            let last_name = words.last().unwrap().to_string();
-            let first_name = if words.len() > 1 {
-                Some(words[..words.len() - 1].join(" "))
-            } else {
-                None
-            };
-            Some(Author {
-                last_name,
-                first_name,
-            })
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_author(author: &str) -> Option<Author> {
+        author.parse().ok()
+    }
 
     #[test]
     fn test_parse_author() {

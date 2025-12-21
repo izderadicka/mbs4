@@ -1,4 +1,4 @@
-use mbs4_dal::author::Author;
+use mbs4_dal::author::{Author, AuthorShort};
 use mbs4_e2e_tests::{
     TestUser, admin_token, extend_url, launch_env, now, prepare_env, rest::create_author,
 };
@@ -62,6 +62,15 @@ async fn test_authors() {
     assert_eq!(rec.last_name, "Kulisak");
     assert_eq!(rec.first_name, Some("Usak".into()));
     assert_eq!(rec.version, 2);
+
+    //Can directly deserialize also short version
+    let response = client.get(record_url.clone()).send().await.unwrap();
+    info!("Response: {:#?}", response);
+    assert!(response.status().is_success());
+
+    let rec: AuthorShort = response.json().await.unwrap();
+    assert_eq!(rec.last_name, "Kulisak");
+    assert_eq!(rec.first_name, Some("Usak".into()));
 
     let response = client.get(api_url.clone()).send().await.unwrap();
     info!("Response: {:#?}", response);

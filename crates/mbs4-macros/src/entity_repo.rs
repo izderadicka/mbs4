@@ -110,7 +110,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let base_fields = data.fields.iter().filter(|f| f.ident.is_some());
 
         let common_input_atts = quote! {
-            #[derive(Debug,  serde::Deserialize, Clone, garde::Validate)]
+            #[derive(Debug,  serde::Deserialize, serde::Serialize, Clone, garde::Validate)]
             #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         };
 

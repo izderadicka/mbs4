@@ -1,15 +1,18 @@
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{anyhow, Context as _, Result};
 use clap::{Args, Parser};
 use futures::stream::StreamExt as _;
 use mbs4_calibre::EbookMetadata;
-use mbs4_dal::author::{self, AuthorShort};
+use mbs4_dal::{
+    author::{AuthorShort, CreateAuthor},
+    series::{CreateSeries, SeriesShort},
+};
 use reqwest::{multipart, Url};
 use reqwest_eventsource::Event;
 use serde_json::{Map, Value};
 use tokio::fs;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{commands::Executor, config::ServerConfig};
 
@@ -152,7 +155,16 @@ impl Executor for UploadCmd {
         let meta: EbookMetadata = serde_json::from_value(meta).context("Failed to parse meta")?;
 
         let upload = self.to_executor(meta, upload_info, client);
-        let authors = upload.prepare_authors().await?;
+        let title = upload.title();
+
+        if let Some(title) = title {
+            println!("Title: {}", title);
+
+            let authors = upload.authors()?;
+            let series = upload.series()?;
+        } else {
+            anyhow::bail!("Missing title");
+        }
 
         Ok(())
     }
@@ -168,39 +180,39 @@ struct UploadHelper {
 }
 
 impl UploadHelper {
-    async fn prepare_authors(&self) -> Result<Vec<AuthorShort>> {
-        use mbs4_calibre::meta::Author;
+    fn title(&self) -> Option<&str> {
+        self.book
+            .title
+            .as_ref()
+            .map(|t| t.as_str())
+            .or_else(|| self.meta.title.as_ref().map(|t| t.as_str()))
+    }
+
+    fn authors(&self) -> Result<Vec<mbs4_calibre::meta::Author>> {
         let mut authors = Vec::new();
         if self.book.author.is_empty() {
             authors.extend_from_slice(&self.meta.authors);
         } else {
             for author in self.book.author.iter() {
-                authors.push(Author::from_comma_form(&author)?)
+                authors.push(author.parse()?)
             }
         }
+        Ok(authors)
+    }
+    async fn prepare_authors(
+        &self,
+        authors: Vec<mbs4_calibre::meta::Author>,
+    ) -> Result<Vec<AuthorShort>> {
         let mut verified_authors = Vec::with_capacity(authors.len());
         for author in authors {
-            let mut search_url = self.server.url.join("search")?;
-            let query = if let Some(ref first_name) = author.first_name {
-                format!("{} {}", first_name, author.last_name)
-            } else {
-                author.last_name.clone()
-            };
-
-            search_url
-                .query_pairs_mut()
-                .append_pair("what", "author")
-                .append_pair("num_results", "10")
-                .append_pair("query", &query);
-
-            let res = self.client.get(search_url).send().await?;
-            check_response!(res, "Search Author");
-
-            let found_authors: Vec<Map<String, Value>> = res.json().await?;
-            let mut matching_authors = filter_found_authors(found_authors, &author);
+            let mut matching_authors = self.search_author(&author).await?;
 
             match matching_authors.len() {
-                0 => {}
+                0 => {
+                    let created_author = self.create_author(author).await?;
+                    info!("Created author: {created_author:?}");
+                    verified_authors.push(created_author);
+                }
                 1 => verified_authors.push(matching_authors.pop().unwrap()),
                 n => {
                     warn!("Found {n} matching authors");
@@ -212,8 +224,135 @@ impl UploadHelper {
 
         Ok(verified_authors)
     }
+
+    fn series(&self) -> Result<Option<mbs4_calibre::meta::Series>> {
+        use mbs4_calibre::meta::Series;
+        let provided_series: Series;
+
+        if let Some(series_str) = self.book.series.as_ref() {
+            provided_series = series_str.parse()?;
+        } else if let Some(ref series) = self.meta.series {
+            provided_series = series.clone();
+        } else {
+            return Ok(None);
+        }
+
+        Ok(Some(provided_series))
+    }
+
+    async fn prepare_series(
+        &self,
+        provided_series: mbs4_calibre::meta::Series,
+    ) -> Result<Option<(SeriesShort, i32)>> {
+        let existing_series = self.search_series(&provided_series.title).await?;
+
+        match existing_series {
+            Some(series) => Ok(Some((series, provided_series.index))),
+            None => {
+                let created_series = self.create_series(provided_series.title).await?;
+                Ok(Some((created_series, provided_series.index)))
+            }
+        }
+    }
+
+    async fn create_series(&self, series: String) -> Result<SeriesShort> {
+        let create_url = self.server.url.join("api/series")?;
+        let series_request = CreateSeries {
+            title: series,
+            description: None,
+            created_by: Some(self.server.email.clone()),
+        };
+        let res = self
+            .client
+            .post(create_url)
+            .json(&series_request)
+            .send()
+            .await?;
+        check_response!(res, "Create Series");
+        let created_series: mbs4_dal::series::SeriesShort = res.json().await?;
+        Ok(created_series)
+    }
+
+    async fn create_author(&self, author: mbs4_calibre::meta::Author) -> Result<AuthorShort> {
+        let create_url = self.server.url.join("api/author")?;
+        let author_request = CreateAuthor {
+            first_name: author.first_name,
+            last_name: author.last_name,
+            description: None,
+            created_by: Some(self.server.email.clone()),
+        };
+        let res = self
+            .client
+            .post(create_url)
+            .json(&author_request)
+            .send()
+            .await?;
+        check_response!(res, "Create Author");
+        let created_author: mbs4_dal::author::AuthorShort = res.json().await?;
+        Ok(created_author)
+    }
+
+    async fn search_author(&self, author: &mbs4_calibre::meta::Author) -> Result<Vec<AuthorShort>> {
+        let mut search_url = self.server.url.join("search")?;
+        let query = if let Some(ref first_name) = author.first_name {
+            format!("{} {}", first_name, author.last_name)
+        } else {
+            author.last_name.clone()
+        };
+        search_url
+            .query_pairs_mut()
+            .append_pair("what", "author")
+            .append_pair("num_results", "10")
+            .append_pair("query", &query);
+        let res = self.client.get(search_url).send().await?;
+        check_response!(res, "Search Author");
+        let found_authors: Vec<Map<String, Value>> = res.json().await?;
+        let matching_authors = filter_found_authors(found_authors, &author);
+        Ok(matching_authors)
+    }
+
+    async fn search_series(&self, series: &str) -> Result<Option<SeriesShort>> {
+        let mut search_url = self.server.url.join("search")?;
+        search_url
+            .query_pairs_mut()
+            .append_pair("what", "series")
+            .append_pair("num_results", "10")
+            .append_pair("query", series);
+        let res = self.client.get(search_url).send().await?;
+        let json = res.json().await?;
+        Ok(filter_found_series(json, series))
+    }
 }
 
+fn filter_found_series(found: Vec<Map<String, Value>>, series: &str) -> Option<SeriesShort> {
+    fn extract_series(json: &Map<String, Value>) -> Result<SeriesShort> {
+        let doc = json
+            .get("doc")
+            .and_then(|d| d.get("Series"))
+            .and_then(Value::as_object)
+            .context("Missing Series object in json")?;
+        let id = doc
+            .get("id")
+            .and_then(Value::as_i64)
+            .context("Missing id field")?;
+        let title = doc
+            .get("title")
+            .and_then(Value::as_str)
+            .context("Missing title field")?
+            .to_string();
+        Ok(SeriesShort { id, title })
+    }
+
+    found.into_iter().find_map(|json| {
+        extract_series(&json).ok().and_then(|s| {
+            if s.title.trim().to_lowercase() == series.trim().to_lowercase() {
+                Some(s)
+            } else {
+                None
+            }
+        })
+    })
+}
 fn filter_found_authors(
     found: Vec<Map<String, Value>>,
     author: &mbs4_calibre::meta::Author,
