@@ -6,6 +6,7 @@ use futures::stream::StreamExt as _;
 use mbs4_calibre::EbookMetadata;
 use mbs4_dal::{
     author::{AuthorShort, CreateAuthor},
+    ebook::Ebook,
     series::{CreateSeries, SeriesShort},
 };
 use reqwest::{multipart, Url};
@@ -13,6 +14,7 @@ use reqwest_eventsource::Event;
 use serde_json::{Map, Value};
 use tokio::fs;
 use tracing::{debug, error, info, warn};
+use tracing_subscriber::field::debug;
 
 use crate::{commands::Executor, config::ServerConfig};
 
@@ -94,67 +96,7 @@ macro_rules! check_response {
 
 impl Executor for UploadCmd {
     async fn run(self) -> Result<()> {
-        let file_name = self
-            .file
-            .file_name()
-            .ok_or_else(|| anyhow!("Missing file name"))?
-            .to_string_lossy()
-            .to_string();
-        let file = fs::File::open(&self.file).await?;
-
-        let form =
-            multipart::Form::new().part("file", multipart::Part::stream(file).file_name(file_name));
-
-        let client = self.server.authenticated_client().await?;
-        debug!("Client created");
-
-        let upload_url = self.server.url.join("files/upload/form").unwrap();
-
-        let res = client
-            .post(upload_url)
-            .multipart(form)
-            .send()
-            .await
-            .unwrap();
-        debug!("Upload Response: {:?}", res);
-
-        check_response!(res, "Upload");
-
-        let upload_info: Map<String, Value> = res.json().await?;
-
-        let meta_url = self.server.url.join("api/convert/extract_meta").unwrap();
-
-        let res = client
-            .post(meta_url)
-            .json(&upload_info)
-            .send()
-            .await
-            .unwrap();
-        debug!("Extract meta Response: {:?}", res);
-
-        check_response!(res, "Extract meta");
-
-        let meta_ticket: Map<String, Value> = res.json().await.unwrap();
-        debug!("Meta ticket: {:#?}", meta_ticket);
-        let ticket_id = meta_ticket.get("id").unwrap().as_str().unwrap();
-
-        let sse_url = self.server.url.join("events").unwrap();
-        let receiver = catch_event(client.clone(), sse_url, ticket_id.to_string())?;
-
-        let meta;
-        match tokio::time::timeout(std::time::Duration::from_secs(10), receiver).await {
-            Ok(res) => {
-                let res = res.unwrap();
-                meta = res["metadata"].clone();
-                debug!("Meta: {:#?}", meta);
-            }
-            Err(_) => {
-                anyhow::bail!("Meta event timeout");
-            }
-        }
-        let meta: EbookMetadata = serde_json::from_value(meta).context("Failed to parse meta")?;
-
-        let upload = self.to_executor(meta, upload_info, client);
+        let upload = self.upload().await?;
         let title = upload.title();
 
         if let Some(title) = title {
@@ -162,6 +104,17 @@ impl Executor for UploadCmd {
 
             let authors = upload.authors()?;
             let series = upload.series()?;
+
+            let existing_ebook = upload
+                .search_ebook(title, &authors, series.as_ref())
+                .await?;
+
+            let ebook = if let Some(ebook) = existing_ebook {
+                debug!("Found existing ebook: {}:{}", ebook.id, ebook.title);
+                ebook
+            } else {
+                todo!("Create new ebook");
+            };
         } else {
             anyhow::bail!("Missing title");
         }
@@ -199,6 +152,27 @@ impl UploadHelper {
         }
         Ok(authors)
     }
+
+    async fn search_ebook(
+        &self,
+        title: &str,
+        authors: &[mbs4_calibre::meta::Author],
+        series: Option<&mbs4_calibre::meta::Series>,
+    ) -> Result<Option<Ebook>> {
+        let mut search_url = self.server.url.join("search")?;
+        let query = title.to_string();
+        search_url
+            .query_pairs_mut()
+            .append_pair("what", "ebook")
+            .append_pair("num_results", "10")
+            .append_pair("query", title);
+        let res = self.client.get(search_url).send().await?;
+        check_response!(res, "Search Ebook");
+        let found_ebooks: Vec<Map<String, Value>> = res.json().await?;
+        // let matching_ebooks = filter_found_ebooks(found_ebooks, authors, series);
+        todo!()
+    }
+
     async fn prepare_authors(
         &self,
         authors: Vec<mbs4_calibre::meta::Author>,
@@ -443,6 +417,58 @@ impl UploadCmd {
             upload_info,
             client,
         }
+    }
+
+    async fn upload(self) -> Result<UploadHelper, anyhow::Error> {
+        let file_name = self
+            .file
+            .file_name()
+            .ok_or_else(|| anyhow!("Missing file name"))?
+            .to_string_lossy()
+            .to_string();
+        let file = fs::File::open(&self.file).await?;
+        let form =
+            multipart::Form::new().part("file", multipart::Part::stream(file).file_name(file_name));
+        let client = self.server.authenticated_client().await?;
+        debug!("Client created");
+        let upload_url = self.server.url.join("files/upload/form").unwrap();
+        let res = client
+            .post(upload_url)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        debug!("Upload Response: {:?}", res);
+        check_response!(res, "Upload");
+        let upload_info: Map<String, Value> = res.json().await?;
+        let meta_url = self.server.url.join("api/convert/extract_meta").unwrap();
+        let res = client
+            .post(meta_url)
+            .json(&upload_info)
+            .send()
+            .await
+            .unwrap();
+        debug!("Extract meta Response: {:?}", res);
+        check_response!(res, "Extract meta");
+        let meta_ticket: Map<String, Value> = res.json().await.unwrap();
+        debug!("Meta ticket: {:#?}", meta_ticket);
+        let ticket_id = meta_ticket.get("id").unwrap().as_str().unwrap();
+        let sse_url = self.server.url.join("events").unwrap();
+        let receiver = catch_event(client.clone(), sse_url, ticket_id.to_string())?;
+        let meta;
+        match tokio::time::timeout(std::time::Duration::from_secs(10), receiver).await {
+            Ok(res) => {
+                let res = res.unwrap();
+                meta = res["metadata"].clone();
+                debug!("Meta: {:#?}", meta);
+            }
+            Err(_) => {
+                anyhow::bail!("Meta event timeout");
+            }
+        }
+        let meta: EbookMetadata = serde_json::from_value(meta).context("Failed to parse meta")?;
+        let upload = self.to_executor(meta, upload_info, client);
+        Ok(upload)
     }
 }
 
