@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
@@ -51,6 +51,16 @@ impl FromStr for Author {
             } else {
                 anyhow::bail!("Empty author");
             }
+        }
+    }
+}
+
+impl Display for Author {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(first_name) = &self.first_name {
+            write!(f, "{} {}", first_name, self.last_name)
+        } else {
+            write!(f, "{}", self.last_name)
         }
     }
 }

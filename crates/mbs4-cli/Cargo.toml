@@ -18,6 +18,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 mbs4-types = { path = "../mbs4-types" }
 mbs4-store = { path = "../mbs4-store" }
 mbs4-calibre = { path = "../mbs4-calibre" }
+mbs4-search = { path = "../mbs4-search" }
 mbs4-dal = { path = "../mbs4-dal" }
 reqwest = { workspace = true, features = [
     "json",

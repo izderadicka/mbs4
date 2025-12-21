@@ -5,7 +5,7 @@ use std::{fmt::Display, str::FromStr, task::Poll};
 pub use anyhow::Result;
 use mbs4_dal::{author::AuthorShort, ebook::Ebook, series::SeriesShort};
 use pin_project_lite::pin_project;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub enum SearchTarget {
@@ -36,18 +36,18 @@ impl Display for SearchTarget {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookDoc {
-    title: String,
-    series: String,
-    series_index: String,
-    series_id: Option<i64>,
-    authors: Vec<AuthorSummary>,
-    id: i64,
+    pub title: String,
+    pub series: String,
+    pub series_index: String,
+    pub series_id: Option<i64>,
+    pub authors: Vec<AuthorSummary>,
+    pub id: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum FoundDoc {
     Ebook(EbookDoc),
@@ -55,7 +55,7 @@ pub enum FoundDoc {
     Author(AuthorShort),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchItem {
     pub score: f32,
@@ -116,7 +116,7 @@ pub trait Searcher {
     fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> SearchResult;
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuthorSummary {
     pub id: u64,

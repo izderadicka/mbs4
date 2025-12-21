@@ -6,15 +6,14 @@ use futures::stream::StreamExt as _;
 use mbs4_calibre::EbookMetadata;
 use mbs4_dal::{
     author::{AuthorShort, CreateAuthor},
-    ebook::Ebook,
     series::{CreateSeries, SeriesShort},
 };
+use mbs4_search::{EbookDoc, FoundDoc, SearchItem};
 use reqwest::{multipart, Url};
 use reqwest_eventsource::Event;
 use serde_json::{Map, Value};
 use tokio::fs;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::field::debug;
 
 use crate::{commands::Executor, config::ServerConfig};
 
@@ -100,9 +99,13 @@ impl Executor for UploadCmd {
         let title = upload.title();
 
         if let Some(title) = title {
-            println!("Title: {}", title);
+            let mut authors = upload.authors()?;
+            const MAX_AUTHORS: usize = 20;
+            if authors.len() > MAX_AUTHORS {
+                warn!("Found {} authors, will only use first 20 ", authors.len());
+                authors.truncate(MAX_AUTHORS);
+            }
 
-            let authors = upload.authors()?;
             let series = upload.series()?;
 
             let existing_ebook = upload
@@ -113,6 +116,12 @@ impl Executor for UploadCmd {
                 debug!("Found existing ebook: {}:{}", ebook.id, ebook.title);
                 ebook
             } else {
+                let authors = upload.prepare_authors(authors).await?;
+                let series = if let Some(series) = series {
+                    upload.prepare_series(series).await?
+                } else {
+                    None
+                };
                 todo!("Create new ebook");
             };
         } else {
@@ -158,9 +167,20 @@ impl UploadHelper {
         title: &str,
         authors: &[mbs4_calibre::meta::Author],
         series: Option<&mbs4_calibre::meta::Series>,
-    ) -> Result<Option<Ebook>> {
+    ) -> Result<Option<EbookDoc>> {
         let mut search_url = self.server.url.join("search")?;
-        let query = title.to_string();
+        let mut query = title.to_string()
+            + " "
+            + authors
+                .into_iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .as_str();
+        if let Some(series) = series {
+            query += " ";
+            query += series.title.as_str();
+        }
         search_url
             .query_pairs_mut()
             .append_pair("what", "ebook")
@@ -168,9 +188,18 @@ impl UploadHelper {
             .append_pair("query", title);
         let res = self.client.get(search_url).send().await?;
         check_response!(res, "Search Ebook");
-        let found_ebooks: Vec<Map<String, Value>> = res.json().await?;
-        // let matching_ebooks = filter_found_ebooks(found_ebooks, authors, series);
-        todo!()
+        let found_ebooks: Vec<SearchItem> = res.json().await?;
+        let first_item = found_ebooks.into_iter().next();
+
+        if let Some(first_item) = first_item {
+            if let FoundDoc::Ebook(ebook) = first_item.doc {
+                Ok(Some(ebook))
+            } else {
+                anyhow::bail!("Found item is not an ebook");
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     async fn prepare_authors(
@@ -280,7 +309,7 @@ impl UploadHelper {
             .append_pair("query", &query);
         let res = self.client.get(search_url).send().await?;
         check_response!(res, "Search Author");
-        let found_authors: Vec<Map<String, Value>> = res.json().await?;
+        let found_authors: Vec<SearchItem> = res.json().await?;
         let matching_authors = filter_found_authors(found_authors, &author);
         Ok(matching_authors)
     }
@@ -298,27 +327,16 @@ impl UploadHelper {
     }
 }
 
-fn filter_found_series(found: Vec<Map<String, Value>>, series: &str) -> Option<SeriesShort> {
-    fn extract_series(json: &Map<String, Value>) -> Result<SeriesShort> {
-        let doc = json
-            .get("doc")
-            .and_then(|d| d.get("Series"))
-            .and_then(Value::as_object)
-            .context("Missing Series object in json")?;
-        let id = doc
-            .get("id")
-            .and_then(Value::as_i64)
-            .context("Missing id field")?;
-        let title = doc
-            .get("title")
-            .and_then(Value::as_str)
-            .context("Missing title field")?
-            .to_string();
-        Ok(SeriesShort { id, title })
+fn filter_found_series(found: Vec<SearchItem>, series: &str) -> Option<SeriesShort> {
+    fn extract_series(i: SearchItem) -> Option<SeriesShort> {
+        match i.doc {
+            FoundDoc::Series(s) => Some(s),
+            _ => None,
+        }
     }
 
-    found.into_iter().find_map(|json| {
-        extract_series(&json).ok().and_then(|s| {
+    found.into_iter().find_map(|item| {
+        extract_series(item).and_then(|s| {
             if s.title.trim().to_lowercase() == series.trim().to_lowercase() {
                 Some(s)
             } else {
@@ -328,33 +346,14 @@ fn filter_found_series(found: Vec<Map<String, Value>>, series: &str) -> Option<S
     })
 }
 fn filter_found_authors(
-    found: Vec<Map<String, Value>>,
+    found: Vec<SearchItem>,
     author: &mbs4_calibre::meta::Author,
 ) -> Vec<AuthorShort> {
-    fn extract_author(json: &Map<String, Value>) -> Result<AuthorShort> {
-        let doc = json
-            .get("doc")
-            .and_then(|d| d.get("Author"))
-            .and_then(Value::as_object)
-            .context("Missing Author object in json")?;
-        let id = doc
-            .get("id")
-            .and_then(Value::as_i64)
-            .context("Missing id field")?;
-        let last_name = doc
-            .get("last_name")
-            .and_then(Value::as_str)
-            .context("Missing last_name field")?
-            .to_string();
-        let first_name = doc
-            .get("first_name")
-            .and_then(Value::as_str)
-            .map(|s| s.to_string());
-        Ok(AuthorShort {
-            id,
-            first_name,
-            last_name,
-        })
+    fn extract_author(i: SearchItem) -> Option<AuthorShort> {
+        match i.doc {
+            FoundDoc::Author(a) => Some(a),
+            _ => None,
+        }
     }
 
     fn author_matches(a: &AuthorShort, to: &mbs4_calibre::meta::Author) -> bool {
@@ -386,18 +385,8 @@ fn filter_found_authors(
 
     found
         .into_iter()
-        .filter_map(|o| match extract_author(&o) {
-            Ok(found_author) => {
-                if author_matches(&found_author, &author) {
-                    Some(found_author)
-                } else {
-                    None
-                }
-            }
-            Err(e) => {
-                error!("Invalid response from search");
-                None
-            }
+        .filter_map(|item| {
+            extract_author(item).filter(|found_author| author_matches(found_author, &author))
         })
         .collect()
 }
