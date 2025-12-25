@@ -135,6 +135,7 @@ pub fn router() -> axum::Router<AppState> {
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
 }
 
+#[cfg(feature = "openapi")]
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]

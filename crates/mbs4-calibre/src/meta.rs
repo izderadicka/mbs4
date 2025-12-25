@@ -2,7 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct EbookMetadata {
@@ -68,7 +68,7 @@ impl Display for Author {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Series {
     pub title: String,
-    pub index: i32,
+    pub index: u32,
 }
 
 impl FromStr for Series {
@@ -76,9 +76,14 @@ impl FromStr for Series {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(series_caps) = SERIES_INDEX_RE.captures(s) {
+            let index_neg = series_caps[2].parse::<i32>()?;
+            if index_neg < 0 {
+                warn!("Negative series index: {index_neg}, will use 0");
+            }
+
             Ok(Series {
                 title: series_caps[1].trim().to_string(),
-                index: series_caps[2].parse::<i32>()?,
+                index: u32::try_from(index_neg).unwrap_or(0),
             })
         } else {
             anyhow::bail!("Failed to parse series");

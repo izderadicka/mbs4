@@ -2487,6 +2487,7 @@ dependencies = [
  "anyhow",
  "clap",
  "futures",
+ "mbs4-app",
  "mbs4-calibre",
  "mbs4-dal",
  "mbs4-search",

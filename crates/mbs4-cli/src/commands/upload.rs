@@ -1,12 +1,20 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use anyhow::{anyhow, Context as _, Result};
 use clap::{Args, Parser};
 use futures::stream::StreamExt as _;
+use mbs4_app::{
+    rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
+    store::rest_api::UploadInfo,
+};
 use mbs4_calibre::EbookMetadata;
 use mbs4_dal::{
     author::{AuthorShort, CreateAuthor},
+    ebook::{CreateEbook, Ebook},
+    genre::GenreShort,
+    language::LanguageShort,
     series::{CreateSeries, SeriesShort},
+    source::Source,
 };
 use mbs4_search::{EbookDoc, FoundDoc, SearchItem};
 use reqwest::{multipart, Url};
@@ -112,18 +120,71 @@ impl Executor for UploadCmd {
                 .search_ebook(title, &authors, series.as_ref())
                 .await?;
 
-            let ebook = if let Some(ebook) = existing_ebook {
+            let ebook: Ebook = if let Some(ebook) = existing_ebook {
                 debug!("Found existing ebook: {}:{}", ebook.id, ebook.title);
-                ebook
+                upload.get_ebook(ebook.id).await?
             } else {
-                let authors = upload.prepare_authors(authors).await?;
-                let series = if let Some(series) = series {
-                    upload.prepare_series(series).await?
+                let lang_code = upload
+                    .book
+                    .language
+                    .as_ref()
+                    .or_else(|| upload.meta.language.as_ref());
+
+                let language = if let Some(ref lang) = lang_code {
+                    upload.prepare_language(lang).await?
                 } else {
-                    None
+                    anyhow::bail!("Missing language input");
                 };
-                todo!("Create new ebook");
+                let mut genres: Vec<_> = upload.book.genre.iter().map(|s| s.as_str()).collect();
+                if genres.is_empty() {
+                    genres = upload.meta.genres.iter().map(|s| s.as_str()).collect();
+                }
+                let genres = upload.prepare_genres(&genres).await?;
+                let genres_ids = if genres.is_empty() {
+                    None
+                } else {
+                    Some(genres.iter().map(|g| g.id).collect::<Vec<_>>())
+                };
+                let authors = upload.prepare_authors(authors).await?;
+                let authors_ids = if authors.is_empty() {
+                    None
+                } else {
+                    Some(authors.iter().map(|a| a.id).collect::<Vec<_>>())
+                };
+
+                let (series_id, series_index) = if let Some(series) = series {
+                    match upload.prepare_series(series).await? {
+                        Some((s, index)) => (Some(s.id), Some(index)),
+                        None => (None, None),
+                    }
+                } else {
+                    (None, None)
+                };
+
+                let new_ebook = CreateEbook {
+                    title: title.to_string(),
+                    description: upload.description(),
+                    series_id,
+                    series_index,
+                    language_id: language.id,
+                    authors: authors_ids,
+                    genres: genres_ids,
+                    created_by: Some(upload.server.email.clone()),
+                };
+                let ebook = upload.create_ebook(&new_ebook).await?;
+                info!("Created new ebook: {}:{}", ebook.id, ebook.title);
+                ebook
             };
+
+            let source = upload.add_source_to_ebook(ebook.id).await?;
+            if let Some(ref cover_file) = upload.meta.cover_file {
+                if ebook.cover.is_none() {
+                    upload.add_cover_to_ebook(&ebook, cover_file).await?;
+                } else {
+                    upload.delete_cover(cover_file).await?;
+                }
+            }
+            debug!("Source {} added", source.id);
         } else {
             anyhow::bail!("Missing title");
         }
@@ -134,20 +195,122 @@ impl Executor for UploadCmd {
 
 struct UploadHelper {
     server: ServerConfig,
-    file: PathBuf,
     book: EbookInfo,
     meta: EbookMetadata,
-    upload_info: Map<String, Value>,
+    upload_info: UploadInfo,
     client: reqwest::Client,
 }
 
 impl UploadHelper {
+    async fn add_cover_to_ebook(&self, ebook: &Ebook, cover_file: &str) -> Result<()> {
+        let cover_url = self
+            .server
+            .url
+            .join(&format!("api/ebook/{}/cover", ebook.id))?;
+        let cover_info = EbookCoverInfo {
+            cover_file: Some(cover_file.to_string()),
+            ebook_id: ebook.id,
+            ebook_version: ebook.version,
+        };
+
+        let res = self
+            .client
+            .put(cover_url.clone())
+            .json(&cover_info)
+            .send()
+            .await?;
+        check_response!(res, "Add Cover");
+        let _updated_ebook: Ebook = res.json().await.unwrap();
+        Ok(())
+    }
+
+    async fn delete_cover(&self, cover_file: &str) -> Result<()> {
+        Ok(())
+    }
+    async fn create_ebook(&self, new_ebook: &CreateEbook) -> Result<Ebook> {
+        let ebook_url = self.server.url.join("api/ebook")?;
+        let res = self.client.post(ebook_url).json(new_ebook).send().await?;
+        check_response!(res, "Create ebook");
+        let ebook = res.json().await?;
+        Ok(ebook)
+    }
+
+    async fn get_ebook(&self, ebook_id: i64) -> Result<Ebook> {
+        let ebook_url = self.server.url.join(&format!("api/ebook/{}", ebook_id))?;
+        let res = self.client.get(ebook_url).send().await?;
+        check_response!(res, "Get ebook");
+        let ebook = res.json().await?;
+        Ok(ebook)
+    }
+
+    async fn prepare_language(&self, lang_code: &str) -> Result<LanguageShort> {
+        let lang_url = self.server.url.join("api/language/all")?;
+        let res = self.client.get(lang_url).send().await?;
+        check_response!(res, "Get languages");
+        let languages: Vec<LanguageShort> = res.json().await?;
+
+        languages
+            .into_iter()
+            .find(|l| l.code == lang_code)
+            .ok_or_else(|| anyhow!("Language {} not found", lang_code))
+    }
+
+    async fn prepare_genres(&self, genres: &[&str]) -> Result<Vec<GenreShort>> {
+        let genres: HashSet<String> = genres
+            .into_iter()
+            .map(|s| s.trim().to_lowercase())
+            .collect();
+        let genre_url = self.server.url.join("api/genre/all")?;
+        let res = self.client.get(genre_url).send().await?;
+        check_response!(res, "Get genres");
+        let all_genres: Vec<GenreShort> = res.json().await?;
+
+        Ok(all_genres
+            .into_iter()
+            .filter(|g| genres.contains(&g.name.to_lowercase()))
+            .collect())
+    }
+
+    async fn add_source_to_ebook(&self, ebook_id: i64) -> Result<Source> {
+        let source_url = self
+            .server
+            .url
+            .join(&format!("api/ebook/{}/source", ebook_id))
+            .unwrap();
+        let ebook_file_info = EbookFileInfo {
+            uploaded_file: self.upload_info.final_path.clone(),
+            size: self.upload_info.size,
+            hash: self.upload_info.hash.clone(),
+            quality: None,
+        };
+
+        let res = self
+            .client
+            .post(source_url.clone())
+            .json(&ebook_file_info)
+            .send()
+            .await
+            .unwrap();
+        check_response!(res, "Add Source");
+
+        let source: Source = res.json().await.unwrap();
+
+        Ok(source)
+    }
     fn title(&self) -> Option<&str> {
         self.book
             .title
             .as_ref()
             .map(|t| t.as_str())
             .or_else(|| self.meta.title.as_ref().map(|t| t.as_str()))
+    }
+
+    fn description(&self) -> Option<String> {
+        self.book
+            .description
+            .as_ref()
+            .or_else(|| self.meta.comments.as_ref())
+            .map(|s| s.to_string())
     }
 
     fn authors(&self) -> Result<Vec<mbs4_calibre::meta::Author>> {
@@ -246,7 +409,7 @@ impl UploadHelper {
     async fn prepare_series(
         &self,
         provided_series: mbs4_calibre::meta::Series,
-    ) -> Result<Option<(SeriesShort, i32)>> {
+    ) -> Result<Option<(SeriesShort, u32)>> {
         let existing_series = self.search_series(&provided_series.title).await?;
 
         match existing_series {
@@ -395,12 +558,11 @@ impl UploadCmd {
     fn to_executor(
         self,
         meta: EbookMetadata,
-        upload_info: Map<String, Value>,
+        upload_info: UploadInfo,
         client: reqwest::Client,
     ) -> UploadHelper {
         UploadHelper {
             server: self.server,
-            file: self.file,
             book: self.book,
             meta,
             upload_info,
@@ -429,7 +591,7 @@ impl UploadCmd {
             .unwrap();
         debug!("Upload Response: {:?}", res);
         check_response!(res, "Upload");
-        let upload_info: Map<String, Value> = res.json().await?;
+        let upload_info: UploadInfo = res.json().await?;
         let meta_url = self.server.url.join("api/convert/extract_meta").unwrap();
         let res = client
             .post(meta_url)

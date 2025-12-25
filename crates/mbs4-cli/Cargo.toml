@@ -20,6 +20,7 @@ mbs4-store = { path = "../mbs4-store" }
 mbs4-calibre = { path = "../mbs4-calibre" }
 mbs4-search = { path = "../mbs4-search" }
 mbs4-dal = { path = "../mbs4-dal" }
+mbs4-app = { path = "../mbs4-app" }
 reqwest = { workspace = true, features = [
     "json",
     "cookies",
