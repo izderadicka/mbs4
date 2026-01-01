@@ -110,6 +110,9 @@
 
         -- Creating indexes
         CREATE INDEX ix_source_modified ON source(modified);
+        CREATE INDEX ix_source_ebook_id ON source(ebook_id);
+        CREATE INDEX ix_source_format_id ON source(format_id);
+        CREATE INDEX ix_source_hash ON source(hash);
 
         
 
