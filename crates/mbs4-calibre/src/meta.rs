@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
 use tracing::{error, warn};
 
+use crate::lang::normalize_lang;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct EbookMetadata {
     pub title: Option<String>,
@@ -151,7 +153,12 @@ pub fn parse_metadata(data: &str) -> EbookMetadata {
 
     // Language
     if let Some(caps) = LANGUAGES_RE.captures(data) {
-        language = caps[1].split(',').next().map(|l| l.trim().to_string());
+        language = caps[1]
+            .split(',')
+            .next()
+            .map(|l| l.trim())
+            .and_then(normalize_lang)
+            .map(|l| l.to_string());
     }
 
     // Series

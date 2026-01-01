@@ -11,3 +11,4 @@ anyhow.workspace = true
 uuid = { version = "1.17.0", features = ["v4"] }
 serde = { workspace = true }
 tracing = { workspace = true }
+phf = { version = "0.13.1", features = ["macros"] }

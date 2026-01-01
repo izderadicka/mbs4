@@ -6,6 +6,7 @@ use std::{
 pub use crate::meta::EbookMetadata;
 use crate::meta::parse_metadata;
 
+pub mod lang;
 pub mod meta;
 
 const EBOOK_META_PROGRAM: &str = "ebook-meta";
