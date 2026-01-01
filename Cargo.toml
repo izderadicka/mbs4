@@ -24,7 +24,7 @@ thiserror = { version = "2.0.11" }
 futures = { version = "0.3.31" }
 tower-cookies = { version = "0.11.0" }
 tower = { version = "0.5.2" }
-garde = { version = "0.22.0" }
+garde = { version = "0.22.1" }
 tempfile = { version = "3.18.0" }
 rand = { version = "0.9.0" }
 utoipa = { version = "5.4.0" }
