@@ -95,7 +95,7 @@ mod tests {
             "Arthur Conan"
         );
         assert_eq!(metadata.genres.len(), 5);
-        assert_eq!(metadata.language, Some("eng".to_string()));
+        assert_eq!(metadata.language, Some("en".to_string()));
         assert!(metadata.series.is_none());
 
         let cover_file = metadata.cover_file.unwrap();

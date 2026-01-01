@@ -245,7 +245,7 @@ Comments            : Sbírka dvanácti apokalyptických scénářů, v nichž c
         assert_eq!(metadata.title.unwrap(), "Armagedony");
         assert_eq!(metadata.authors.len(), 13);
         assert_eq!(metadata.genres.len(), 2);
-        assert_eq!(metadata.language, Some("ces".to_string()));
+        assert_eq!(metadata.language, Some("cs".to_string()));
         assert!(metadata.series.is_none());
         assert!(metadata.comments.unwrap().len() > 80);
     }
