@@ -6,7 +6,7 @@ description.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "mbs4"
+name = "mbs4-cli"
 path = "src/main.rs"
 
 [dependencies]
@@ -30,3 +30,4 @@ reqwest = { workspace = true, features = [
 serde_json = { workspace = true }
 reqwest-eventsource = "0.6.0"
 futures = { workspace = true }
+sqlx = { workspace = true }

@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use reqwest::Url;
 use serde_json::json;
 
-use crate::commands::{cleanup::CleanupCmd, upload::UploadCmd};
+use crate::commands::{cleanup::CleanupCmd, create_user::CreateUserCmd, upload::UploadCmd};
 
 #[derive(Parser)]
 #[command(
@@ -55,6 +55,7 @@ impl ServerConfig {
 pub enum Command {
     Cleanup(CleanupCmd),
     Upload(UploadCmd),
+    CreateUser(CreateUserCmd),
 }
 
 impl crate::commands::Executor for Command {
@@ -62,6 +63,7 @@ impl crate::commands::Executor for Command {
         match self {
             Command::Cleanup(cmd) => cmd.run().await,
             Command::Upload(cmd) => cmd.run().await,
+            Command::CreateUser(cmd) => cmd.run().await,
         }
     }
 }

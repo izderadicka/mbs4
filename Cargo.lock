@@ -2497,6 +2497,7 @@ dependencies = [
  "reqwest",
  "reqwest-eventsource",
  "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",
