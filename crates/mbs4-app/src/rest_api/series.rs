@@ -25,7 +25,7 @@ mod extra_crud_api {
     use http::StatusCode;
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{EbookRepository, EbookShort};
-    use mbs4_dal::series::{CreateSeries, Series, SeriesRepository, SeriesShort, UpdateSeries};
+    use mbs4_dal::series::{CreateSeries, SeriesRepository, SeriesShort, UpdateSeries};
     use mbs4_types::claim::ApiClaim;
 
     use crate::{
@@ -56,7 +56,7 @@ mod extra_crud_api {
     }
 
     #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Series", operation_id = "createSeries",
-            responses((status = StatusCode::CREATED, description = "Created Series", body = Series))))]
+            responses((status = StatusCode::CREATED, description = "Created Series", body = mbs4_dal::series::Series))))]
     pub async fn create(
         repository: SeriesRepository,
         State(state): State<AppState>,
@@ -80,7 +80,7 @@ mod extra_crud_api {
     }
 
     #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Series", operation_id = "updateSeries",
-            responses((status = StatusCode::OK, description = "Updated Series", body = Series))))]
+            responses((status = StatusCode::OK, description = "Updated Series", body = mbs4_dal::series::Series))))]
     pub async fn update(
         Path(id): Path<i64>,
         repository: SeriesRepository,

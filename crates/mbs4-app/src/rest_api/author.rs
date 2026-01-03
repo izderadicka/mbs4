@@ -23,7 +23,7 @@ mod extra_crud_api {
     };
     use axum_valid::Garde;
     use http::StatusCode;
-    use mbs4_dal::author::{Author, AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
+    use mbs4_dal::author::{AuthorRepository, AuthorShort, CreateAuthor, UpdateAuthor};
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{EbookRepository, EbookShort};
     use mbs4_types::claim::ApiClaim;
@@ -56,7 +56,7 @@ mod extra_crud_api {
     }
 
     #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Author", operation_id = "createAuthor",
-            responses((status = StatusCode::CREATED, description = "Created Author", body = Author))))]
+            responses((status = StatusCode::CREATED, description = "Created Author", body = mbs4_dal::author::Author))))]
     pub async fn create(
         repository: AuthorRepository,
         State(state): State<AppState>,
@@ -81,7 +81,7 @@ mod extra_crud_api {
     }
 
     #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Author", operation_id = "updateAuthor",
-            responses((status = StatusCode::OK, description = "Updated Author", body = Author))))]
+            responses((status = StatusCode::OK, description = "Updated Author", body = mbs4_dal::author::Author))))]
     pub async fn update(
         Path(id): Path<i64>,
         repository: AuthorRepository,
