@@ -225,6 +225,12 @@ impl UploadHelper {
     }
 
     async fn delete_cover(&self, cover_file: &str) -> Result<()> {
+        let cover_url = self
+            .server
+            .url
+            .join(&format!("/files/uploaded/{}", cover_file))?;
+        let res = self.client.delete(cover_url).send().await?;
+        check_response!(res, "Delete Cover");
         Ok(())
     }
     async fn create_ebook(&self, new_ebook: &CreateEbook) -> Result<Ebook> {

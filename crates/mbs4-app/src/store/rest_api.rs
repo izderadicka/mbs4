@@ -6,7 +6,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Request, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use futures::TryStreamExt as _;
@@ -192,6 +192,22 @@ pub async fn download_uploaded(
 
 #[cfg_attr(
     feature = "openapi",
+    utoipa::path(delete, path = "/uploaded/{path}", tag = "File Store", operation_id = "deleteUploaded",
+    description = "Delete recently uploaded file (for advanced uploads processing)",
+    params(("path"=String, Path, description = "Path to file"))),
+)]
+pub async fn delete_uploaded(
+    State(state): State<AppState>,
+    path: ValidPath,
+) -> Result<impl IntoResponse, ApiError> {
+    let store = state.store();
+    let fullpath = path.with_prefix(StorePrefix::Upload);
+    store.delete(&fullpath).await?;
+    Ok((StatusCode::NO_CONTENT, ()))
+}
+
+#[cfg_attr(
+    feature = "openapi",
     utoipa::path(get, path = "/download/conversion/{path}", tag = "File Store", operation_id = "downloadConversion",
     description = "Download converted file",
     params(("path"=String, Path, description = "Path to file"))),
@@ -267,6 +283,7 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
         .route("/upload/direct", post(upload_direct))
         .route("/move/upload", post(move_upload))
         .route("/download/uploaded/{*path}", get(download_uploaded))
+        .route("/uploaded/{*path}", delete(delete_uploaded))
         .layer(RequiredRolesLayer::new([Role::Admin, Role::Trusted]))
         .route("/icon/{id}", get(download_icon))
         .route("/download/{*path}", get(download))
@@ -282,6 +299,7 @@ pub fn api_docs() -> utoipa::openapi::OpenApi {
     #[openapi(paths(
         download,
         download_uploaded,
+        delete_uploaded,
         download_conversion,
         move_upload,
         upload_direct,
