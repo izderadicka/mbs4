@@ -29,7 +29,7 @@ humantime = "2.1.0"
 tower-cookies = { workspace = true }
 tower = { workspace = true }
 futures = { workspace = true }
-tower-http = { version = "0.6.6", features = ["cors"] }
+tower-http = { version = "0.6.6", features = ["cors", "fs"] }
 utoipa = { workspace = true, features = [
     "axum_extras",
     "preserve_order",

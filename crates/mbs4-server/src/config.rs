@@ -82,6 +82,14 @@ pub struct ServerConfig {
         default_value = "false"
     )]
     pub cors: bool,
+
+    #[arg(
+        long,
+        env = "MBS4_STATIC_DIR",
+        default_value = "static",
+        help = "Path to static client files, if provided will be served by server"
+    )]
+    pub static_dir: Option<PathBuf>,
 }
 
 impl ServerConfig {
@@ -119,6 +127,7 @@ impl From<&ServerConfig> for AppConfig {
             upload_limit_mb: config.upload_limit_mb,
             default_page_size: config.default_page_size,
             cors: config.cors,
+            static_dir: config.static_dir.clone(),
         }
     }
 }

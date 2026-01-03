@@ -157,6 +157,7 @@ pub struct AppConfig {
     pub base_url: Url,
     pub base_backend_url: Url,
     pub file_store_path: PathBuf,
+    pub static_dir: Option<PathBuf>,
     pub upload_limit_mb: usize,
     pub default_page_size: u32,
     pub cors: bool,

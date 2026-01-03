@@ -9,6 +9,7 @@ use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
 use mbs4_auth::config::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
@@ -137,11 +138,15 @@ fn main_router(state: AppState) -> Router<()> {
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router())
         .layer(tower_cookies::CookieManagerLayer::new())
-        .with_state(state)
+        .with_state(state.clone())
         // static and public resources
-        .route("/", get(root))
-        .route("/index.html", get(root)) // TODO - change
         .route("/health", get(health));
+
+    if let Some(ref static_path) = state.config().static_dir {
+        let static_service =
+            ServeDir::new(&static_path).fallback(ServeFile::new(static_path.join("index.html")));
+        router = router.fallback_service(static_service);
+    }
 
     #[cfg(feature = "openapi")]
     {
@@ -151,15 +156,6 @@ fn main_router(state: AppState) -> Router<()> {
         );
     }
     router
-}
-
-async fn root(request: axum::extract::Request) -> impl IntoResponse {
-    let headers = request.headers();
-    let mut headers_print = "Request headers:\n".to_string();
-    for (name, value) in headers.iter() {
-        headers_print.push_str(&format!("{}: {}\n", name.as_str(), value.to_str().unwrap()));
-    }
-    headers_print
 }
 
 async fn health() -> impl IntoResponse {
