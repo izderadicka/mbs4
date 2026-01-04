@@ -22,7 +22,7 @@ pub fn scale_icon(path: impl AsRef<Path> + std::fmt::Debug) -> Result<Vec<u8>> {
 }
 
 pub fn scale_image(path: impl AsRef<Path> + std::fmt::Debug, sz: u32) -> Result<Vec<u8>> {
-    let img = ImageReader::open(&path)?.decode()?;
+    let img = ImageReader::open(&path)?.with_guessed_format()?.decode()?;
     let actual_dim = img.dimensions();
     let (width, height) = calculate_dimensions((sz, sz), actual_dim);
     let mut dst_image = Image::new(
