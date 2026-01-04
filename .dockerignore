@@ -1,3 +1,5 @@
-/test-data
-/target
-/.git
+test-data/
+target/
+.git
+.vscode
+Dockerfile
