@@ -1,0 +1,34 @@
+# To be used with excellent jwilder/nginx-proxy - to automatically publish behind proxy with valid certificate
+# Valid https is prerequisit for mbs4-client to work with server(only locally for development in can be http - on localhost)
+
+name: mbs4
+services:
+  mbs4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # not needed only if want to access directly over http
+    ports: 
+      - 4000:3000
+    volumes:
+      - /data-dir:/data
+      # this is build directory from client - after npm run build
+      - /built-client-dir:/client:ro
+    # this is default - need to have rw access to data
+    user: 1000:1000
+    environment:
+      - RUST_LOG=debug
+      - VIRTUAL_HOST=your.host.name
+      - VIRTUAL_PORT=3000
+      - LETSENCRYPT_HOST=your.host.name
+    command: ["--static-dir",  "/client"]
+    container_name: mbs4
+    networks:
+      - proxy
+      - default
+
+networks:
+# this is docker network on which nginx proxy is too
+  proxy:
+    external: true
