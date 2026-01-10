@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    time::Duration,
 };
 
 pub use crate::meta::EbookMetadata;
@@ -12,17 +13,24 @@ pub mod meta;
 const EBOOK_META_PROGRAM: &str = "ebook-meta";
 const EBOOK_CONVERT_PROGRAM: &str = "ebook-convert";
 
-async fn run_command(cmd: &mut tokio::process::Command) -> anyhow::Result<std::process::Output> {
-    let output = cmd.output().await?;
-
-    if output.status.success() {
-        Ok(output)
-    } else {
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-        Err(anyhow::anyhow!(
-            "{cmd:?} failed with status: {}",
-            output.status
-        ))
+async fn run_command(
+    cmd: &mut tokio::process::Command,
+    timeout: Duration,
+) -> anyhow::Result<std::process::Output> {
+    match tokio::time::timeout(timeout, cmd.output()).await {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                Ok(output)
+            } else {
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                Err(anyhow::anyhow!(
+                    "{cmd:?} failed with status: {}",
+                    output.status
+                ))
+            }
+        }
+        Ok(Err(e)) => Err(anyhow::anyhow!("Command failed: {e}")),
+        Err(_) => Err(anyhow::anyhow!("Command timed out")),
     }
 }
 
@@ -44,7 +52,7 @@ pub async fn extract_metadata(
         cover_file = Some(tmp_name);
     }
 
-    let output = run_command(&mut cmd).await?;
+    let output = run_command(&mut cmd, Duration::from_secs(120)).await?;
 
     let stdout = std::str::from_utf8(&output.stdout)?;
     let mut meta = parse_metadata(stdout);
@@ -66,7 +74,7 @@ pub async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result
     ));
     cmd.arg(path).arg(&output_file).stdin(Stdio::null());
 
-    let _output = run_command(&mut cmd).await?;
+    let _output = run_command(&mut cmd, Duration::from_secs(1200)).await?;
     let file_meta = tokio::fs::metadata(&output_file).await?;
     if file_meta.is_file() && file_meta.len() > 0 {
         Ok(output_file)

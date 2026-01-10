@@ -53,7 +53,7 @@ ARG calibre_version=8.16.2
 RUN set -eu && \
     apt-get update && apt-get install -y --no-install-recommends \
     libegl1 libopengl0 libxcb-cursor0 wget ca-certificates python3 libfreetype6 xz-utils \
-    libglx0 libxkbcommon0 libfontconfig1 && \
+    libglx0 libxkbcommon0 libfontconfig1 libnss3 && \
     rm -rf /var/lib/apt/lists/* && \
     wget -nv -O /tmp/calibre-installer.sh https://download.calibre-ebook.com/linux-installer.sh && \
     bash /tmp/calibre-installer.sh version="${calibre_version}" && \
