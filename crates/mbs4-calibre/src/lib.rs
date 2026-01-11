@@ -11,6 +11,7 @@ use tokio::{
     process::Command,
     time::timeout,
 };
+use tracing::error;
 
 pub use crate::meta::EbookMetadata;
 use crate::{meta::parse_metadata, ooffice::OoPool};
@@ -154,7 +155,34 @@ impl Calibre {
         path: impl AsRef<Path>,
         format_ext: &str,
     ) -> anyhow::Result<PathBuf> {
-        convert(path, format_ext).await
+        let mut path: PathBuf = path.as_ref().into();
+        let needs_preconv = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase() == "doc")
+            .unwrap_or(false);
+        let tmp_dir = if needs_preconv {
+            let tmp_dir =
+                std::env::temp_dir().join(format!("mbs4-preconv-{}", uuid::Uuid::new_v4()));
+            let converted_file = self
+                .oo_pool
+                .convert_file(&path, "html", Some(&tmp_dir))
+                .await?;
+            path = converted_file;
+            Some(tmp_dir)
+        } else {
+            None
+        };
+
+        let res = convert(path, format_ext).await;
+
+        if let Some(tmp_dir) = tmp_dir {
+            tokio::fs::remove_dir_all(&tmp_dir)
+                .await
+                .inspect_err(|e| error!("Cannot delete tmp dir {tmp_dir:?}, error {e}"))
+                .ok();
+        }
+        res
     }
 }
 
