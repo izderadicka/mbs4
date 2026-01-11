@@ -194,14 +194,7 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     let tokens =
         mbs4_auth::token::TokenManager::new(&secret[0..32], &secret[32..], config.token_validity);
     let search = Search::new(&config.index_path(), pool.clone()).await?;
-    Ok(AppState::new(
-        shutdown(),
-        oidc_config,
-        app_config,
-        pool,
-        tokens,
-        search,
-    ))
+    AppState::new(shutdown(), oidc_config, app_config, pool, tokens, search).await
 }
 
 async fn read_secret(data_dir: &Path) -> Result<Vec<u8>, std::io::Error> {

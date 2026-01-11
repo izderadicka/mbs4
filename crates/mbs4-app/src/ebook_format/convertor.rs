@@ -41,27 +41,31 @@ pub struct ConvertorInner {
     job_queue: tokio::sync::mpsc::Sender<ConversionJob>,
     store: FileStore,
     pool: mbs4_dal::Pool,
+    calibre: mbs4_calibre::Calibre,
 }
 
 impl Convertor {
-    pub fn new(
+    pub async fn new(
         event_sender: tokio::sync::broadcast::Sender<EventMessage>,
         store: FileStore,
         pool: mbs4_dal::Pool,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let (job_sender, job_receiver) = tokio::sync::mpsc::channel(1024);
+        let num_cpus = num_cpus::get();
+        let calibre = mbs4_calibre::Calibre::new(num_cpus).await?;
         let inner = ConvertorInner {
             event_sender,
             job_queue: job_sender,
             store,
             pool,
+            calibre,
         };
 
         let convertor = Self {
             inner: Arc::new(inner),
         };
         convertor.start_main_loop(job_receiver);
-        convertor
+        Ok(convertor)
     }
 
     pub async fn extract_meta(&self, request: MetadataRequest) {
@@ -136,7 +140,10 @@ impl ConvertorInner {
             .local_path(&file_path)
             .expect("Current implementation always provide path");
         //TODO: case to download, if cannot get local path
-        let meta_result = mbs4_calibre::extract_metadata(&local_path, extract_cover).await;
+        let meta_result = self
+            .calibre
+            .extract_metadata(&local_path, extract_cover)
+            .await;
         match meta_result {
             Ok(mut meta) => {
                 if let Some(cover_file) = meta.cover_file.take() {
@@ -189,7 +196,7 @@ impl ConvertorInner {
             .store
             .local_path(&file_path)
             .expect("Current implementation always provides path");
-        let meta_result = mbs4_calibre::convert(&local_path, &to_ext).await;
+        let meta_result = self.calibre.convert(&local_path, &to_ext).await;
 
         match meta_result {
             Ok(converted_file) => {

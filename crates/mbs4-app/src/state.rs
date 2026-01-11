@@ -22,19 +22,19 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
+    pub async fn new(
         shutdown: tokio_util::sync::CancellationToken,
         oidc_config: Option<OIDCConfig>,
         app_config: AppConfig,
         pool: Pool,
         tokens: TokenManager,
         search: Search,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
         let events = EventHub::new();
-        let convertor = Convertor::new(events.sender(), store.clone(), pool.clone());
-        AppState {
+        let convertor = Convertor::new(events.sender(), store.clone(), pool.clone()).await?;
+        Ok(AppState {
             state: Arc::new(AppStateInner {
                 shutdown,
                 oidc_providers_config: oidc_config,
@@ -47,7 +47,7 @@ impl AppState {
                 events,
                 convertor,
             }),
-        }
+        })
     }
     pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_auth::config::OIDCProviderConfig> {
         self.state

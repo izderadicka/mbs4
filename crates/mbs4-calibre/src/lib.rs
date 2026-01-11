@@ -13,7 +13,7 @@ use tokio::{
 };
 
 pub use crate::meta::EbookMetadata;
-use crate::meta::parse_metadata;
+use crate::{meta::parse_metadata, ooffice::OoPool};
 
 pub mod lang;
 pub mod meta;
@@ -130,7 +130,35 @@ fn terminate_process(mut child: Child) {
     });
 }
 
-pub async fn extract_metadata(
+pub struct Calibre {
+    oo_pool: OoPool,
+}
+
+impl Calibre {
+    pub async fn new(oo_concurrency: usize) -> anyhow::Result<Self> {
+        Ok(Self {
+            oo_pool: OoPool::new(oo_concurrency).await?,
+        })
+    }
+
+    pub async fn extract_metadata(
+        &self,
+        path: impl AsRef<Path>,
+        extract_cover: bool,
+    ) -> anyhow::Result<EbookMetadata> {
+        extract_metadata(path, extract_cover).await
+    }
+
+    pub async fn convert(
+        &self,
+        path: impl AsRef<Path>,
+        format_ext: &str,
+    ) -> anyhow::Result<PathBuf> {
+        convert(path, format_ext).await
+    }
+}
+
+async fn extract_metadata(
     path: impl AsRef<Path>,
     extract_cover: bool,
 ) -> anyhow::Result<EbookMetadata> {
@@ -160,7 +188,7 @@ pub async fn extract_metadata(
     Ok(meta)
 }
 
-pub async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<PathBuf> {
+async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<PathBuf> {
     let path = path.as_ref();
     let mut cmd = Command::new(EBOOK_CONVERT_PROGRAM);
     let output_file = std::env::temp_dir().join(format!(
@@ -188,6 +216,7 @@ mod tests {
     #[tokio::test]
     async fn test_extract_metadata() {
         print!("Current dir: {:#?}\n", std::env::current_dir());
+
         let metadata = extract_metadata("../../test-data/samples/Holmes.epub", true)
             .await
             .unwrap();
