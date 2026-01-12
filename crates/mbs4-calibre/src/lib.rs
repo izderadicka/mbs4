@@ -224,7 +224,22 @@ async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<Pat
         uuid::Uuid::new_v4(),
         format_ext
     ));
+
     cmd.arg(path).arg(&output_file).stdin(Stdio::null());
+
+    // Some extra params
+    if format_ext == "epub" {
+        cmd.args(["--no-default-epub-cover", "--remove-paragraph-spacing"]);
+    }
+    let input_ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    if let Some(ext) = input_ext {
+        if ext == "pdb" || ext == "txt" {
+            cmd.arg("--input-encoding=windows-1250");
+        }
+    }
 
     let _output = run_command(&mut cmd, Duration::from_secs(CONVERSION_TIMEOUT)).await?;
     let file_meta = tokio::fs::metadata(&output_file).await?;
