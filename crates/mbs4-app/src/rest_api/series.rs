@@ -40,7 +40,7 @@ mod extra_crud_api {
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ebooks", tag = "Series", operation_id = "listSeriesEbook",
         params(Paging), responses((status = StatusCode::OK, description = "List of Series Ebooks paginated", body = crate::rest_api::Page<EbookShort>))))]
     pub async fn list_ebooks(
-        Path(author_id): Path<i64>,
+        Path(series_id): Path<i64>,
         repository: EbookRepository,
         State(state): State<AppState>,
         Garde(Query(paging)): Garde<Query<Paging>>,
@@ -48,7 +48,7 @@ mod extra_crud_api {
         let default_page_size: u32 = state.config().default_page_size;
         let page_size = paging.page_size(default_page_size);
         let listing_params = paging.into_listing_params(default_page_size)?;
-        let batch = repository.list_by_author(listing_params, author_id).await?;
+        let batch = repository.list_by_series(listing_params, series_id).await?;
         Ok((
             StatusCode::OK,
             Json(crate::rest_api::Page::from_batch(batch, page_size)),
