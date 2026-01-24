@@ -800,6 +800,24 @@ where
         let ebook = self.get(id).await?;
         Ok(ebook)
     }
+
+    pub async fn merge(&self, from_id: i64, to_id: i64) -> crate::error::Result<()> {
+        let mut tx = self.executor.begin().await?;
+
+        sqlx::query("UPDATE source SET ebook_id = ? WHERE ebook_id = ?")
+            .bind(to_id)
+            .bind(from_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM ebook WHERE id = ?")
+            .bind(from_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        Ok(())
+    }
 }
 
 async fn insert_ebook_dependencies(

@@ -37,7 +37,8 @@ publish_api_docs!(
     crud_api_extra::ebook_sources,
     crud_api_extra::create_source_for_upload,
     crud_api_extra::update_ebook_cover,
-    crud_api_extra::ebook_conversions
+    crud_api_extra::ebook_conversions,
+    crud_api_extra::merge
 );
 crud_api!(Ebook, RO);
 
@@ -214,12 +215,24 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
 
         Ok((StatusCode::OK, Json(record)))
     }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/{id}/merge/{to_id}", tag = "Ebook", operation_id = "mergeEbook",
+    responses((status = StatusCode::OK, description = "Merge ebook to other ebook"))))]
+    pub async fn merge(
+        id: Path<i64>,
+        to_id: Path<i64>,
+        repository: EbookRepository,
+    ) -> ApiResult<impl IntoResponse> {
+        repository.merge(*id, *to_id).await?;
+        Ok((StatusCode::NO_CONTENT, ()))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/{id}", delete(crud_api_extra::delete))
         .layer(RequiredRolesLayer::new([Role::Admin]))
+        .route("/{id}/merge/{to_id}", post(crud_api_extra::merge))
         .route("/", post(crud_api_extra::create))
         .route("/{id}", put(crud_api_extra::update))
         .route(
