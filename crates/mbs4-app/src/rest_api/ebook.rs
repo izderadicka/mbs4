@@ -63,7 +63,7 @@ mod crud_api_extra {
     use crate::{
         error::{ApiError, ApiResult},
         rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
-        state::AppState,
+        state::{self, AppState},
     };
 
     #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook", operation_id = "createEbook",
@@ -219,11 +219,12 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
     #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/{id}/merge/{to_id}", tag = "Ebook", operation_id = "mergeEbook",
     responses((status = StatusCode::OK, description = "Merge ebook to other ebook"))))]
     pub async fn merge(
-        id: Path<i64>,
-        to_id: Path<i64>,
+        Path((id, to_id)): Path<(i64, i64)>,
         repository: EbookRepository,
+        state: State<AppState>,
     ) -> ApiResult<impl IntoResponse> {
-        repository.merge(*id, *to_id).await?;
+        repository.merge(id, to_id).await?;
+        state.search().delete_book(id)?;
         Ok((StatusCode::NO_CONTENT, ()))
     }
 }
