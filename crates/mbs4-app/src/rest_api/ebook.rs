@@ -53,17 +53,18 @@ mod crud_api_extra {
     #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
     use mbs4_dal::{
-        conversion::{self, EbookConversion},
+        conversion::{self, ConversionRepository, EbookConversion},
         format,
-        source::{self, CreateSource},
+        source::{self, CreateSource, SourceRepository},
     };
     use mbs4_store::{Store as _, StorePrefix, ValidPath};
     use mbs4_types::{claim::ApiClaim, utils::file_ext};
+    use tracing::debug;
 
     use crate::{
         error::{ApiError, ApiResult},
         rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
-        state::{self, AppState},
+        state::AppState,
     };
 
     #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook", operation_id = "createEbook",
@@ -106,10 +107,64 @@ mod crud_api_extra {
     pub async fn delete(
         Path(id): Path<i64>,
         repository: EbookRepository,
+        sources_repository: SourceRepository,
+        conversions_repository: ConversionRepository,
         State(state): State<AppState>,
     ) -> ApiResult<impl IntoResponse> {
+        let cover_file = repository.get(id).await?.cover;
+        let resources_files = sources_repository
+            .list_for_ebook(id)
+            .await?
+            .into_iter()
+            .map(|s| s.location);
+
+        let conversions_files = conversions_repository
+            .list_for_ebook(id)
+            .await?
+            .into_iter()
+            .map(|c| c.location);
+
         repository.delete(id).await?;
 
+        //delete cover
+        if let Some(cover_file) = cover_file {
+            let res = async {
+                let path = ValidPath::new(cover_file)?.with_prefix(mbs4_store::StorePrefix::Books);
+                state.store().delete(&path).await?;
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            if let Err(e) = res {
+                tracing::error!("Failed to delete cover file: {}", e);
+            }
+        }
+
+        // delete converted files
+        for conversion in conversions_files {
+            let res = async {
+                let path =
+                    ValidPath::new(conversion)?.with_prefix(mbs4_store::StorePrefix::Conversions);
+                state.store().delete(&path).await?;
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            if let Err(e) = res {
+                tracing::error!("Failed to delete conversion file: {}", e);
+            }
+        }
+        // delete sources files
+        for src in resources_files {
+            let res: anyhow::Result<()> = async {
+                let path = ValidPath::new(src)?.with_prefix(mbs4_store::StorePrefix::Books);
+                state.store().delete(&path).await?;
+                Ok(())
+            }
+            .await;
+            if let Err(e) = res {
+                tracing::error!("Failed to delete source file: {}", e);
+            }
+        }
+        debug!("Sources deleted");
         if let Err(e) = state.search().delete_book(id) {
             tracing::error!("Failed to delete book: {}", e);
         }
@@ -224,7 +279,9 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
         state: State<AppState>,
     ) -> ApiResult<impl IntoResponse> {
         repository.merge(id, to_id).await?;
-        state.search().delete_book(id)?;
+        if let Err(e) = state.search().delete_book(id) {
+            tracing::error!("Failed to delete book: {}", e);
+        }
         Ok((StatusCode::NO_CONTENT, ()))
     }
 }

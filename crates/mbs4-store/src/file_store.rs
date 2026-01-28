@@ -381,6 +381,7 @@ impl Store for FileStore {
 
     async fn delete(&self, path: &ValidPath) -> StoreResult<()> {
         let _lock = self.inner.lock.lock().await;
+        debug!("Deleting {path:?}");
         fs::remove_file(self.inner.root.join(path.as_ref())).await?;
         Ok(())
     }
