@@ -20,9 +20,18 @@ use super::ValidPath;
 #[cfg(feature = "openapi")]
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[allow(unused)]
+enum UploadKind {
+    Ebook,
+    Cover,
+}
+
+#[cfg(feature = "openapi")]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[allow(unused)]
 struct UploadForm {
     #[schema(value_type = String, format = Binary, content_media_type = "application/octet-stream")]
     file: String,
+    kind: Option<UploadKind>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, garde::Validate)]
