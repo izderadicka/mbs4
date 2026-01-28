@@ -144,63 +144,33 @@ pub async fn upload_form(
     source_repository: SourceRepository,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
-    let mut kind: Option<UploadKind> = None;
+    let mut kind: Option<UploadKind> = None; //Some(UploadKind::Ebook);
 
-    if let Some(field) = multipart.next_field().await? {
+    while let Some(field) = multipart.next_field().await? {
         let field_name = field.name();
         match field_name {
-            Some("kind") => {}
-            Some("file") => {}
+            Some("kind") => {
+                kind = Some(field.text().await?.parse()?);
+            }
+            Some("file") => {
+                if let Some(kind) = kind {
+                    let info =
+                        upload_file(kind, field, &state, format_repository, source_repository)
+                            .await?;
+                    return Ok((StatusCode::CREATED, Json(info)));
+                } else {
+                    return Err(ApiError::InvalidRequest("File kind not defined".into()));
+                }
+            }
             _ => {
                 debug!("Ignoring field {:?}", field_name)
             }
         }
-        let file_name = field
-            .file_name()
-            .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?
-            .to_string();
-        let ext = file_ext(&file_name)
-            .ok_or_else(|| ApiError::UnprocessableRequest("Missing file extension".into()))?;
-
-        let format = format_repository
-            .get_by_extension(&ext)
-            .await
-            .map_err(|e| {
-                ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
-            })?;
-        // TODO: More check?
-        let mime_type = format.mime_type;
-
-        let dest_path = upload_path(&ext)?;
-        debug!(
-            "Uploading file {} to {:?}, mime {}",
-            file_name, dest_path, mime_type
-        );
-        let stream = field.map_err(|e| {
-            StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
-        });
-        let store_info = state.store().store_stream(&dest_path, stream).await?;
-
-        if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
-            debug!("File with same hash exists as {}", source.location);
-            state
-                .store()
-                .delete(&store_info.final_path)
-                .await
-                .inspect_err(|e| error!("Error deleting file {e}"))
-                .ok();
-            return Err(ApiError::ResourceAlreadyExists(format!(
-                "File with same hash exists as {}",
-                source.location
-            )));
-        }
-
-        let info = UploadInfo::from_store_info(store_info, Some(file_name));
-
-        Ok((StatusCode::CREATED, Json(info)))
-    } else {
-        Err(ApiError::InvalidRequest("Missing file field".into()))
     }
+
+    Err(ApiError::InvalidRequest(
+        "Invalid multipart request body".into(),
+    ))
 }
 
 #[cfg_attr(

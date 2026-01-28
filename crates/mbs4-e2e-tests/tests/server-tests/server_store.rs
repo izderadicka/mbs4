@@ -42,8 +42,9 @@ async fn test_store() {
     let url = base_url.join("files/upload/form").unwrap();
     let file = File::open(&test_file_path).await.unwrap();
     let stream = ReaderStream::new(file);
-    let part = Part::stream(Body::wrap_stream(stream)).file_name("my_test.txt");
-    let form = Form::new().part("file", part);
+    let kind_part = Part::text("Ebook");
+    let file_part = Part::stream(Body::wrap_stream(stream)).file_name("my_test.txt");
+    let form = Form::new().part("kind", kind_part).part("file", file_part);
 
     let response = client.post(url).multipart(form).send().await.unwrap();
     assert_eq!(response.status().as_u16(), 201);
