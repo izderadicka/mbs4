@@ -1,9 +1,11 @@
+use std::str::FromStr;
+
 use super::download::download_file;
 use crate::{
     auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::download::get_icon,
 };
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Request, State},
+    extract::{multipart::Field, DefaultBodyLimit, Multipart, Path, Request, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post},
@@ -17,21 +19,33 @@ use tracing::{debug, error};
 
 use super::ValidPath;
 
-#[cfg(feature = "openapi")]
-#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[allow(unused)]
 enum UploadKind {
     Ebook,
     Cover,
 }
 
+impl FromStr for UploadKind {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ebook" | "Ebook" => Ok(UploadKind::Ebook),
+            "cover" | "Cover" => Ok(UploadKind::Cover),
+            _ => Err(ApiError::InvalidRequest(
+                "Imvalid kind of uploaded file".into(),
+            )),
+        }
+    }
+}
+
 #[cfg(feature = "openapi")]
-#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[derive(utoipa::ToSchema)]
 #[allow(unused)]
 struct UploadForm {
+    kind: UploadKind,
     #[schema(value_type = String, format = Binary, content_media_type = "application/octet-stream")]
     file: String,
-    kind: Option<UploadKind>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, garde::Validate)]
@@ -64,6 +78,57 @@ impl UploadInfo {
     }
 }
 
+async fn upload_file(
+    kind: UploadKind,
+    field: Field<'_>,
+    state: &AppState,
+    format_repository: FormatRepository,
+    source_repository: SourceRepository,
+) -> Result<UploadInfo, ApiError> {
+    let file_name = field
+        .file_name()
+        .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?
+        .to_string();
+    let ext = file_ext(&file_name)
+        .ok_or_else(|| ApiError::UnprocessableRequest("Missing file extension".into()))?;
+
+    let format = format_repository
+        .get_by_extension(&ext)
+        .await
+        .map_err(|e| {
+            ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
+        })?;
+    // TODO: More check?
+    let mime_type = format.mime_type;
+
+    let dest_path = upload_path(&ext)?;
+    debug!(
+        "Uploading file {} to {:?}, mime {}",
+        file_name, dest_path, mime_type
+    );
+    let stream = field.map_err(|e| {
+        StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
+    });
+    let store_info = state.store().store_stream(&dest_path, stream).await?;
+
+    if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
+        debug!("File with same hash exists as {}", source.location);
+        state
+            .store()
+            .delete(&store_info.final_path)
+            .await
+            .inspect_err(|e| error!("Error deleting file {e}"))
+            .ok();
+        return Err(ApiError::ResourceAlreadyExists(format!(
+            "File with same hash exists as {}",
+            source.location
+        )));
+    }
+
+    let info = UploadInfo::from_store_info(store_info, Some(file_name));
+    Ok(info)
+}
+
 #[cfg_attr(
     feature = "openapi",
     utoipa::path(post, path = "/upload/form", tag = "File Store", operation_id = "uploadForm",
@@ -79,7 +144,17 @@ pub async fn upload_form(
     source_repository: SourceRepository,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
+    let mut kind: Option<UploadKind> = None;
+
     if let Some(field) = multipart.next_field().await? {
+        let field_name = field.name();
+        match field_name {
+            Some("kind") => {}
+            Some("file") => {}
+            _ => {
+                debug!("Ignoring field {:?}", field_name)
+            }
+        }
         let file_name = field
             .file_name()
             .ok_or_else(|| ApiError::InvalidRequest("Missing file name".into()))?
