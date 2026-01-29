@@ -233,6 +233,7 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
     }
 
     #[cfg_attr(feature = "openapi", utoipa::path(put, path = "/{id}/cover", tag = "Ebook", operation_id = "updateEbookCover",
+    request_body = EbookCoverInfo,
     responses((status = StatusCode::OK, description = "Updated Ebook Cover", body = Ebook))))]
     pub async fn update_ebook_cover(
         Path(id): Path<i64>,
@@ -257,9 +258,20 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
                 let new_path = state.store().rename(&from_path, &to_path).await?;
                 let new_path = new_path.without_prefix(StorePrefix::Books).unwrap();
 
-                repository
+                let record = repository
                     .update_cover(id, Some(new_path.into()), payload.ebook_version)
-                    .await?
+                    .await?;
+
+                // delete icon if exists
+                let icon_path = ValidPath::new(format!("{}.png", id))
+                    .unwrap()
+                    .with_prefix(StorePrefix::Icons);
+                state
+                    .store()
+                    .delete(&icon_path)
+                    .await
+                    .inspect_err(|e| debug!("Failed to delete icon id {id}: {e}"))?;
+                record
             }
             None => {
                 repository
