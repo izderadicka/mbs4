@@ -43,7 +43,7 @@ impl FromStr for UploadKind {
 #[derive(utoipa::ToSchema)]
 #[allow(unused)]
 struct UploadForm {
-    kind: UploadKind,
+    kind: Option<UploadKind>,
     #[schema(value_type = String, format = Binary, content_media_type = "application/octet-stream")]
     file: String,
 }
@@ -78,6 +78,8 @@ impl UploadInfo {
     }
 }
 
+const ALLOWED_IMAGES: &[&str] = &["png", "jpeg", "webp", "avif"];
+
 async fn upload_file(
     kind: UploadKind,
     field: Field<'_>,
@@ -91,15 +93,36 @@ async fn upload_file(
         .to_string();
     let ext = file_ext(&file_name)
         .ok_or_else(|| ApiError::UnprocessableRequest("Missing file extension".into()))?;
+    let mime_type = match kind {
+        UploadKind::Ebook => {
+            let format = format_repository
+                .get_by_extension(&ext)
+                .await
+                .map_err(|e| {
+                    ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
+                })?;
+            // TODO: More check?
+            format.mime_type
+        }
+        UploadKind::Cover => {
+            let mime = new_mime_guess::from_ext(&ext).first().ok_or_else(|| {
+                ApiError::UnprocessableRequest("Invalid cover file extension".into())
+            })?;
+            if mime.type_().as_str() != "image" {
+                return Err(ApiError::UnprocessableRequest(format!(
+                    "Invalid cover file extension - not image but {}",
+                    mime.type_().as_str()
+                )));
+            }
 
-    let format = format_repository
-        .get_by_extension(&ext)
-        .await
-        .map_err(|e| {
-            ApiError::UnprocessableRequest(format!("Invalid file extension, error: {e}"))
-        })?;
-    // TODO: More check?
-    let mime_type = format.mime_type;
+            if !ALLOWED_IMAGES.contains(&mime.subtype().as_str()) {
+                return Err(ApiError::UnprocessableRequest(
+                    "Invalid cover file extension/mime".into(),
+                ));
+            }
+            mime.to_string()
+        }
+    };
 
     let dest_path = upload_path(&ext)?;
     debug!(
@@ -144,23 +167,18 @@ pub async fn upload_form(
     source_repository: SourceRepository,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
-    let mut kind: Option<UploadKind> = None; //Some(UploadKind::Ebook);
+    let mut kind: UploadKind = UploadKind::Ebook;
 
     while let Some(field) = multipart.next_field().await? {
         let field_name = field.name();
         match field_name {
             Some("kind") => {
-                kind = Some(field.text().await?.parse()?);
+                kind = field.text().await?.parse()?;
             }
             Some("file") => {
-                if let Some(kind) = kind {
-                    let info =
-                        upload_file(kind, field, &state, format_repository, source_repository)
-                            .await?;
-                    return Ok((StatusCode::CREATED, Json(info)));
-                } else {
-                    return Err(ApiError::InvalidRequest("File kind not defined".into()));
-                }
+                let info =
+                    upload_file(kind, field, &state, format_repository, source_repository).await?;
+                return Ok((StatusCode::CREATED, Json(info)));
             }
             _ => {
                 debug!("Ignoring field {:?}", field_name)

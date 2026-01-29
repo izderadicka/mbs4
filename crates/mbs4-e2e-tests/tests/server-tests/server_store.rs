@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use mbs4_app::store::rest_api::{RenameResult, UploadInfo};
 use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, random_text_file};
 use reqwest::{
@@ -5,7 +7,7 @@ use reqwest::{
     header::CONTENT_TYPE,
     multipart::{Form, Part},
 };
-use tokio::fs::File;
+use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
 use tracing_test::traced_test;
 
@@ -15,8 +17,36 @@ fn create_format(name: &str, extension: &str, mime_type: &str) -> serde_json::Va
 
 #[tokio::test]
 #[traced_test]
+async fn test_cover_upload() {
+    let (args, _config_guard) = prepare_env("test_cover_upload").await.unwrap();
+    let base_url = args.base_url.clone();
+
+    let test_file_path = Path::new("../../test-data/samples/cover.jpg");
+    assert!(fs::try_exists(test_file_path).await.unwrap());
+    let file_size = fs::metadata(test_file_path).await.unwrap().len();
+
+    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+
+    let url = base_url.join("files/upload/form").unwrap();
+    let file = File::open(&test_file_path).await.unwrap();
+    let stream = ReaderStream::new(file);
+    let kind_part = Part::text("Cover");
+    let file_part = Part::stream(Body::wrap_stream(stream))
+        .file_name(test_file_path.file_name().unwrap().to_str().unwrap());
+    let form = Form::new().part("kind", kind_part).part("file", file_part);
+
+    let response = client.post(url).multipart(form).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 201);
+    let info: UploadInfo = response.json().await.unwrap();
+    assert_eq!(info.size, file_size);
+    assert!(info.final_path.ends_with(".jpg"));
+    assert!(!info.final_path.contains('/'));
+}
+
+#[tokio::test]
+#[traced_test]
 async fn test_store() {
-    let (args, config_guard) = prepare_env("test_health").await.unwrap();
+    let (args, config_guard) = prepare_env("test_store").await.unwrap();
     let base_url = args.base_url.clone();
     let tmp_dir = config_guard.path();
 
