@@ -1,4 +1,5 @@
 use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs};
+use garde::Validate;
 #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
 use mbs4_dal::series::{Series, SeriesRepository, SeriesShort};
 use mbs4_types::claim::Role;
@@ -11,9 +12,17 @@ publish_api_docs!(
     extra_crud_api::list_ebooks,
     extra_crud_api::create,
     extra_crud_api::update,
-    extra_crud_api::delete
+    extra_crud_api::delete,
+    extra_crud_api::merge
 );
 crud_api!(Series, RO);
+
+#[derive(serde::Deserialize, Debug, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeriesMergeRequest {
+    #[garde(range(min = 0))]
+    series_id: i64,
+}
 
 mod extra_crud_api {
     use axum::{
@@ -32,6 +41,7 @@ mod extra_crud_api {
         error::ApiResult,
         rest_api::{
             indexing::{reindex_books, DependentId},
+            series::SeriesMergeRequest,
             Paging,
         },
         state::AppState,
@@ -129,11 +139,34 @@ mod extra_crud_api {
 
         Ok((StatusCode::NO_CONTENT, ()))
     }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}/merge", tag = "Series", operation_id = "mergeSeries",
+        request_body = SeriesMergeRequest,
+        responses((status = StatusCode::OK, description = "Merge series to other series"))))]
+    pub async fn merge(
+        Path(id): Path<i64>,
+        repository: SeriesRepository,
+        ebook_repo: EbookRepository,
+        State(state): State<AppState>,
+        Garde(Json(merge_request)): Garde<Json<SeriesMergeRequest>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let from_id = merge_request.series_id;
+        repository.merge(from_id, id).await?;
+
+        if let Err(e) = state.search().delete_series(id) {
+            tracing::error!("Failed to delete in series index: {}", e);
+        }
+        if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Series(id)).await {
+            tracing::error!("Error reindexing ebooks based on series update: {e}");
+        }
+        Ok((StatusCode::OK, ()))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/{id}", delete(extra_crud_api::delete))
+        .route("/{id}/merge", put(extra_crud_api::merge))
         .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/", post(extra_crud_api::create))
         .route("/{id}", put(extra_crud_api::update))
