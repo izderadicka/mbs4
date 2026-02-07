@@ -30,6 +30,13 @@ pub struct EbookCoverInfo {
     pub ebook_version: i64,
 }
 
+#[derive(serde::Deserialize, Debug, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EbookMergeRequest {
+    #[garde(range(min = 1))]
+    ebook_id: i64,
+}
+
 publish_api_docs!(
     crud_api_extra::create,
     crud_api_extra::update,
@@ -63,7 +70,7 @@ mod crud_api_extra {
 
     use crate::{
         error::{ApiError, ApiResult},
-        rest_api::ebook::{EbookCoverInfo, EbookFileInfo},
+        rest_api::ebook::{EbookCoverInfo, EbookFileInfo, EbookMergeRequest},
         state::AppState,
     };
 
@@ -283,14 +290,16 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
         Ok((StatusCode::OK, Json(record)))
     }
 
-    #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/{id}/merge/{to_id}", tag = "Ebook", operation_id = "mergeEbook",
+    #[cfg_attr(feature = "openapi", utoipa::path(put, path = "/{id}/merge", tag = "Ebook", operation_id = "mergeEbook",
     responses((status = StatusCode::OK, description = "Merge ebook to other ebook"))))]
     pub async fn merge(
-        Path((id, to_id)): Path<(i64, i64)>,
+        Path(id): Path<i64>,
         repository: EbookRepository,
         state: State<AppState>,
+        Garde(Json(merge_request)): Garde<Json<EbookMergeRequest>>,
     ) -> ApiResult<impl IntoResponse> {
-        repository.merge(id, to_id).await?;
+        let from_id = merge_request.ebook_id;
+        repository.merge(from_id, id).await?;
         if let Err(e) = state.search().delete_book(id) {
             tracing::error!("Failed to delete book: {}", e);
         }
@@ -302,7 +311,7 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/{id}", delete(crud_api_extra::delete))
         .layer(RequiredRolesLayer::new([Role::Admin]))
-        .route("/{id}/merge/{to_id}", post(crud_api_extra::merge))
+        .route("/{id}/merge", put(crud_api_extra::merge))
         .route("/", post(crud_api_extra::create))
         .route("/{id}", put(crud_api_extra::update))
         .route(
