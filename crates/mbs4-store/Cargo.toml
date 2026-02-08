@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bytes = "1.10.1"
+bytes = "1.11.1"
 futures = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
@@ -12,10 +12,10 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 sha2 = { workspace = true }
 tokio-util = { workspace = true, features = ["io"] }
-libc = "0.2.174"
+libc = "0.2.180"
 tempfile = { workspace = true }
 base16ct = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
-tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
+tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
 rand = { workspace = true }

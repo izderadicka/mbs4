@@ -7,15 +7,15 @@ edition = "2021"
 serde = { workspace = true }
 anyhow = { workspace = true }
 garde = { workspace = true, features = ["full"] }
-unicode-normalization = "0.1.24"
+unicode-normalization = "0.1.25"
 phf = { version = "0.12", features = ["macros"] }
 clap = { workspace = true, features = ["derive", "env"] }
 dirs = "6.0.0"
 
 [dev-dependencies]
-fake = { version = "4.2.0", features = ["email_address"] }
+fake = { version = "4.4.0", features = ["email_address"] }
 quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
+quickcheck_macros = "1.1.0"
 
 
 [features]

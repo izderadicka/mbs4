@@ -7,8 +7,8 @@ edition = "2021"
 serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
-openidconnect = "4.0.0"
-config = "0.15.8"
+openidconnect = "4.0.1"
+config = "0.15.19"
 reqwest = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
@@ -20,4 +20,4 @@ base64 = "0.22.1"
 rand = { workspace = true }
 
 [dev-dependencies]
-tracing-test = "0.2.5"
+tracing-test = "0.2.6"

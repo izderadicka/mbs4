@@ -11,7 +11,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
-http = "1.2.0"
+http = "1.4.0"
 mbs4-types = { path = "../mbs4-types" }
 mbs4-auth = { path = "../mbs4-auth" }
 mbs4-dal = { path = "../mbs4-dal" }
@@ -28,8 +28,8 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 cookie = "0.18.1"
 tower-cookies = { workspace = true }
-headers = "0.4.0"
-axum-extra = { version = "0.10.0", features = ["typed-header"] }
+headers = "0.4.1"
+axum-extra = { version = "0.10.3", features = ["typed-header"] }
 tower = { workspace = true }
 new_mime_guess = "4.0.4"
 axum-valid = { version = "0.23.0", default-features = false, features = [
@@ -44,7 +44,7 @@ utoipa = { workspace = true, features = [
     "time",
 ], optional = true }
 paste = "1.0.15"
-tokio-stream = { version = "0.1.17", features = ["sync"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 uuid = { workspace = true }
 num_cpus = "1.17.0"
 # tempfile = { workspace = true }
@@ -55,4 +55,4 @@ openapi = ["utoipa", "mbs4-dal/openapi", "mbs4-search/openapi"]
 
 [dev-dependencies]
 rand = { workspace = true }
-tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
+tracing-test = { version = "0.2.6", features = ["no-env-filter"] }

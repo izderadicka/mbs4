@@ -6,6 +6,6 @@ description.workspace = true
 license.workspace = true
 
 [dependencies]
-image = { version = "0.25.8" }
+image = { version = "0.25.9" }
 anyhow = { workspace = true }
-fast_image_resize = { version = "5.3.0", features = ["image"] }
+fast_image_resize = { version = "5.5.0", features = ["image"] }

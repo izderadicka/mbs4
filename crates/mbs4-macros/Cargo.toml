@@ -9,7 +9,7 @@ proc-macro = true
 [dev-dependencies]
 garde = { workspace = true, features = ["derive", "serde"] }
 serde = { workspace = true, features = ["derive"] }
-trybuild = { version = "1.0.49", features = ["diff"] }
+trybuild = { version = "1.0.115", features = ["diff"] }
 sqlx = { workspace = true }
 mbs4-dal = { path = "../mbs4-dal" }
 tracing = { workspace = true }
@@ -18,9 +18,9 @@ time = { workspace = true }
 utoipa = { workspace = true, features = ["time", "preserve_order"] }
 
 [dependencies]
-proc-macro2 = "1.0.94"
-quote = "1.0.39"
-syn = "2.0.99"
+proc-macro2 = "1.0.106"
+quote = "1.0.44"
+syn = "2.0.114"
 
 [features]
 debug-macros = []
