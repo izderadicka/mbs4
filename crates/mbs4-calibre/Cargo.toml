@@ -15,7 +15,7 @@ phf = { version = "0.13.1", features = ["macros"] }
 
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.30.1", features = ["signal", "process"] }
+nix = { version = "0.31.1", features = ["signal", "process"] }
 
 [dev-dependencies]
 uuid = { workspace = true }

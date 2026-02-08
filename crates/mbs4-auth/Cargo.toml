@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hmac = "0.12.1"
 serde = { workspace = true }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 tokio = { workspace = true }
 url = { workspace = true }
 openidconnect = "4.0.1"
@@ -13,8 +15,6 @@ reqwest = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
-jsonwebtoken = "9.3.1"
-hmac = "0.12.1"
 sha2 = { workspace = true }
 base64 = "0.22.1"
 rand = { workspace = true }

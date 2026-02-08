@@ -29,10 +29,10 @@ futures = { workspace = true }
 cookie = "0.18.1"
 tower-cookies = { workspace = true }
 headers = "0.4.1"
-axum-extra = { version = "0.10.3", features = ["typed-header"] }
+axum-extra = { version = "0.12.5", features = ["typed-header"] }
 tower = { workspace = true }
 new_mime_guess = "4.0.4"
-axum-valid = { version = "0.23.0", default-features = false, features = [
+axum-valid = { version = "0.24.0", default-features = false, features = [
     "garde",
     "basic",
     "full_garde",

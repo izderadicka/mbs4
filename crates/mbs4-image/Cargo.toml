@@ -8,4 +8,4 @@ license.workspace = true
 [dependencies]
 image = { version = "0.25.9" }
 anyhow = { workspace = true }
-fast_image_resize = { version = "5.5.0", features = ["image"] }
+fast_image_resize = { version = "6.0.0", features = ["image"] }
