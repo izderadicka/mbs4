@@ -265,20 +265,9 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
                 let new_path = state.store().rename(&from_path, &to_path).await?;
                 let new_path = new_path.without_prefix(StorePrefix::Books).unwrap();
 
-                let record = repository
+                repository
                     .update_cover(id, Some(new_path.into()), payload.ebook_version)
-                    .await?;
-
-                // delete icon if exists
-                let icon_path = ValidPath::new(format!("{}.png", id))
-                    .unwrap()
-                    .with_prefix(StorePrefix::Icons);
-                state
-                    .store()
-                    .delete(&icon_path)
-                    .await
-                    .inspect_err(|e| debug!("Failed to delete icon id {id}: {e}"))?;
-                record
+                    .await?
             }
             None => {
                 repository
@@ -286,6 +275,17 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
                     .await?
             }
         };
+
+        // delete icon if exists
+        let icon_path = ValidPath::new(format!("{}.png", id))
+            .unwrap()
+            .with_prefix(StorePrefix::Icons);
+        state
+            .store()
+            .delete(&icon_path)
+            .await
+            .inspect_err(|e| debug!("Failed to delete icon id {id}: {e}"))
+            .ok();
 
         Ok((StatusCode::OK, Json(record)))
     }
