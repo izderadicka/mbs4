@@ -300,7 +300,7 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
     ) -> ApiResult<impl IntoResponse> {
         let from_id = merge_request.ebook_id;
         repository.merge(from_id, id).await?;
-        if let Err(e) = state.search().delete_book(id) {
+        if let Err(e) = state.search().delete_book(from_id) {
             tracing::error!("Failed to delete book: {}", e);
         }
         Ok((StatusCode::NO_CONTENT, ()))

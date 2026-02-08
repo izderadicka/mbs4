@@ -6,7 +6,7 @@ use mbs4_dal::author::AuthorShort;
 use mbs4_dal::series::SeriesShort;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
@@ -314,10 +314,13 @@ impl SqlIndexerRunner {
             SearchTarget::Series => "DELETE FROM idx_series WHERE rowid = ?",
         };
         for id in items {
-            sqlx::query(query)
+            let res = sqlx::query(query)
                 .bind(id)
                 .execute(&mut *transaction)
                 .await?;
+            if res.rows_affected() == 0 {
+                warn!("Failed to delete {what} with id {id}");
+            }
         }
         transaction.commit().await?;
         Ok(())
@@ -354,7 +357,7 @@ impl SqlIndexerRunner {
                 IndexingJob::Delete { ids, sender, what } => {
                     let res = self.delete_batch(ids, what).await;
                     if let Err(ref e) = res {
-                        error!("Deleting form index failed: {e}");
+                        error!("Deleting from index failed: {e}");
                     }
                     if let Err(_) = sender.send(res) {
                         debug!("Failed to send deleting from index result");

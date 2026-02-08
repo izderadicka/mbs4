@@ -155,7 +155,7 @@ mod extra_crud_api {
         let from_id = merge_request.author_id;
         repository.merge(from_id, id).await?;
 
-        if let Err(e) = state.search().delete_author(id) {
+        if let Err(e) = state.search().delete_author(from_id) {
             tracing::error!("Failed to delete in author index: {}", e);
         }
         if let Err(e) = reindex_books(&ebook_repo, state.search(), DependentId::Author(id)).await {
