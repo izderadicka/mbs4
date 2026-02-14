@@ -120,7 +120,7 @@ impl ProvidersCache {
 }
 
 pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResponse, StatusCode> {
-    let (url, secrets) = client.auth_url();
+    let (url, secrets) = client.auth_url_with_scopes(["email", "profile"]);
     session
         .insert(SESSION_SECRETS_KEY, secrets)
         .await
