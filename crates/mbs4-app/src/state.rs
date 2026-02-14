@@ -153,6 +153,7 @@ struct AppStateInner {
     shutdown: tokio_util::sync::CancellationToken,
 }
 
+#[derive(Debug)]
 pub struct AppConfig {
     pub base_url: Url,
     pub base_backend_url: Url,

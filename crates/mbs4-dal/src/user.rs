@@ -4,7 +4,7 @@ use argon2::{
 };
 
 use futures::StreamExt as _;
-use garde::{Validate, rules::email};
+use garde::Validate;
 use mbs4_types::{claim::Role, general::ValidEmail};
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;

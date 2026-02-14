@@ -45,7 +45,6 @@ pub struct ServerConfig {
     #[arg(
         long,
         env = "MBS4_BASE_URL",
-        default_value = "http://localhost:3000",
         help = "Base URL of server, if different from base_url, defaults to base_url"
     )]
     pub base_backend_url: Option<Url>,
