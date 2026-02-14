@@ -15,7 +15,7 @@ pub struct ServerConfig {
         long,
         default_value_t = 3000,
         env = "MBS4_LISTEN_PORT",
-        help = "Port to listen on"
+        help = "Port to listen on, consider changing base-url, if changing port and connecting locally"
     )]
     pub port: u16,
     #[arg(
