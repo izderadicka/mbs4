@@ -4,7 +4,7 @@ use argon2::{
 };
 
 use futures::StreamExt as _;
-use garde::Validate;
+use garde::{Validate, rules::email};
 use mbs4_types::{claim::Role, general::ValidEmail};
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
@@ -203,6 +203,10 @@ where
     }
 
     pub async fn check_password(&self, email: &str, password: &str) -> Result<User> {
+        // fail on empty password
+        if password.is_empty() {
+            return Err(Error::InvalidCredentials);
+        }
         let (id, hashed_password): (i64, Option<String>) =
             sqlx::query_as("SELECT id, password FROM users WHERE email = ?")
                 .bind(email)
@@ -221,5 +225,18 @@ where
             }
         }
         Err(Error::InvalidCredentials)
+    }
+
+    pub async fn change_password(&self, email: &str, password: &str) -> Result<()> {
+        let hashed_password = hash_password_async(password).await?;
+        let res = sqlx::query("UPDATE users SET password = ? WHERE email = ?")
+            .bind(hashed_password)
+            .bind(email)
+            .execute(&self.executor)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Err(Error::RecordNotFound("User".to_string()));
+        }
+        Ok(())
     }
 }

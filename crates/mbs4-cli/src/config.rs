@@ -2,7 +2,10 @@ use clap::{Args, Parser, Subcommand};
 use reqwest::Url;
 use serde_json::json;
 
-use crate::commands::{cleanup::CleanupCmd, create_user::CreateUserCmd, upload::UploadCmd};
+use crate::commands::{
+    change_password::ChangePasswordCmd, cleanup::CleanupCmd, create_user::CreateUserCmd,
+    upload::UploadCmd,
+};
 
 #[derive(Parser)]
 #[command(
@@ -56,6 +59,7 @@ pub enum Command {
     Cleanup(CleanupCmd),
     Upload(UploadCmd),
     CreateUser(CreateUserCmd),
+    ChangePassword(ChangePasswordCmd),
 }
 
 impl crate::commands::Executor for Command {
@@ -64,6 +68,7 @@ impl crate::commands::Executor for Command {
             Command::Cleanup(cmd) => cmd.run().await,
             Command::Upload(cmd) => cmd.run().await,
             Command::CreateUser(cmd) => cmd.run().await,
+            Command::ChangePassword(cmd) => cmd.run().await,
         }
     }
 }

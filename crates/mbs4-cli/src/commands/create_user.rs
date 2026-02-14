@@ -1,7 +1,7 @@
 use clap::Parser;
 use mbs4_types::{claim::Role, config::BackendConfig, general::ValidEmail};
 
-use crate::commands::Executor;
+use crate::commands::{create_user_repository, Executor};
 
 #[derive(Parser, Debug)]
 pub struct CreateUserCmd {
@@ -24,9 +24,7 @@ pub struct CreateUserCmd {
 
 impl Executor for CreateUserCmd {
     async fn run(self) -> anyhow::Result<()> {
-        let db_url = self.backend.database_url();
-        let pool = sqlx::sqlite::SqlitePool::connect(&db_url).await?;
-        let repository = mbs4_dal::user::UserRepository::new(pool);
+        let repository = create_user_repository(&self.backend.database_url()).await?;
         let roles: Vec<String> = self.roles.iter().map(|r| r.to_string()).collect();
         let new_user = mbs4_dal::user::CreateUser {
             name: self.name,
