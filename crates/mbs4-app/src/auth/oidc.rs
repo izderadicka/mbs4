@@ -135,7 +135,7 @@ pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResp
 pub struct CallbackQuery {
     pub code: String,
     pub state: String,
-    pub iss: String,
+    pub iss: Option<String>,
     pub session_state: Option<String>,
 }
 
