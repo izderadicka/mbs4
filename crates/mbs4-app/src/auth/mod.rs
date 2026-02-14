@@ -63,6 +63,8 @@ pub fn auth_router() -> axum::Router<AppState> {
     let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
         .with_name(SESSION_COOKIE_NAME)
         .with_secure(true)
+        .with_http_only(true)
+        .with_same_site(cookie::SameSite::Lax) // Lax is needed for OIDC
         .with_expiry(tower_sessions::Expiry::OnInactivity(
             time::Duration::seconds(SESSION_EXPIRY_SECS),
         ));
