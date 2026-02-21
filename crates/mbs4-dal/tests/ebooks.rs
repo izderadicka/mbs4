@@ -159,3 +159,33 @@ async fn test_ebooks() {
     assert_eq!(series_ebooks.rows.len(), 1);
     assert_eq!(series_ebooks.total, 1);
 }
+
+#[tokio::test]
+async fn test_rate_ebook() {
+    let conn = init_db().await;
+    let repo = mbs4_dal::ebook::EbookRepositoryImpl::new(conn.clone());
+    let user_name = "ivan".to_string();
+    let ebook = repo.get(1).await.unwrap();
+    let rated = repo
+        .rate(ebook.id, 20.0, user_name.clone(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(rated.rating, Some(20.0));
+    assert_eq!(rated.rating_count, Some(1));
+
+    let rated = repo.rate(ebook.id, 40.0, user_name, None).await.unwrap();
+    assert_eq!(rated.rating_count, Some(1));
+    assert_eq!(rated.rating, Some(40.0));
+
+    let rated = repo
+        .rate(ebook.id, 60.0, "kulisak".into(), None)
+        .await
+        .unwrap();
+    assert_eq!(rated.rating, Some(50.0));
+    assert_eq!(rated.rating_count, Some(2));
+
+    let rating_repo = mbs4_dal::ebook_rating::EbookRatingRepositoryImpl::new(conn);
+    let ratings = rating_repo.list(ListingParams::default()).await.unwrap();
+    assert_eq!(ratings.rows.len(), 2);
+}

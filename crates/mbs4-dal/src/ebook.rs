@@ -831,27 +831,32 @@ where
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
+        let timestamp = now();
+        let existing: Option<(i64, i64)> = sqlx::query_as(
+            "SELECT id, version FROM ebook_rating WHERE ebook_id = ? AND created_by = ?",
+        )
+        .bind(id)
+        .bind(user.clone())
+        .fetch_one(&mut *tx)
+        .await
+        .ok();
 
-        let existing: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM ebook_rating WHERE ebook_id = ? AND user = ?")
-                .bind(id)
-                .bind(user.clone())
-                .fetch_one(&mut *tx)
-                .await
-                .ok();
-
-        if let Some(existing_id) = existing {
+        if let Some((existing_id, existing_version)) = existing {
             let res = if let Some(description) = description {
-                sqlx::query("UPDATE ebook_rating SET rating = ?, description = ? WHERE id = ?")
+                sqlx::query("UPDATE ebook_rating SET rating = ?, description = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
                     .bind(rating)
                     .bind(description)
+                    .bind(timestamp)
                     .bind(existing_id)
+                    .bind(existing_version)
                     .execute(&mut *tx)
                     .await?
             } else {
-                sqlx::query("UPDATE ebook_rating SET rating = ? WHERE id = ?")
+                sqlx::query("UPDATE ebook_rating SET rating = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
                     .bind(rating)
+                    .bind(timestamp)
                     .bind(existing_id)
+                    .bind(existing_version)
                     .execute(&mut *tx)
                     .await?
             };
@@ -860,12 +865,14 @@ where
             }
         } else {
             sqlx::query(
-                "INSERT INTO ebook_rating (ebook_id, user, rating, description) VALUES (?, ?, ?, ?)",
+                "INSERT INTO ebook_rating (ebook_id, created_by, rating, description, created, modified, version) VALUES (?, ?, ?, ?, ?, ?, 1)",
             )
             .bind(id)
             .bind(user)
             .bind(rating)
             .bind(description)
+            .bind(timestamp)
+            .bind(timestamp)
             .execute(&mut *tx)
             .await?;
         }
@@ -877,7 +884,7 @@ where
         .fetch_one(&mut *tx)
         .await?;
 
-        sqlx::query("UPDATE ebook SET rating = ?, num_ratings = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
+        sqlx::query("UPDATE ebook SET rating = ?, rating_count = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
             .bind(new_rating)
             .bind(num_ratings)
             .bind(now())
