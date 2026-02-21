@@ -117,6 +117,10 @@ impl ProvidersCache {
     pub fn set_provider(&self, name: impl Into<String>, client: OIDCClient) {
         self.providers.write().unwrap().insert(name.into(), client);
     }
+
+    pub fn remove_provider(&self, name: impl AsRef<str>) {
+        self.providers.write().unwrap().remove(name.as_ref());
+    }
 }
 
 pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResponse, StatusCode> {
@@ -141,6 +145,7 @@ pub struct CallbackQuery {
 
 pub async fn callback(
     client: OIDCClient,
+    Extension(providers_cache): Extension<ProvidersCache>,
     session: Session,
     State(state): State<AppState>,
     user_registry: UserRepository,
@@ -159,13 +164,26 @@ pub async fn callback(
             StatusCode::BAD_REQUEST
         })?;
 
-    let token = client
-        .token(params.code, params.state, secrets)
-        .await
-        .map_err(|e| {
+    let token = match client.token(params.code, params.state, secrets).await {
+        Ok(token) => token,
+        Err(e) => {
+            if let Some(oidc_provider) = session
+                .get::<String>(SESSION_PROVIDER_KEY)
+                .await
+                .inspect_err(|e| error!("Error getting provider from session: {e}"))
+                .ok()
+                .flatten()
+            {
+                providers_cache.remove_provider(&oidc_provider);
+                debug!(
+                    "Removed provider {} from cache, because of token validation error",
+                    oidc_provider
+                );
+            }
             error!("Failed to get token: {e}");
-            StatusCode::BAD_REQUEST
-        })?;
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
     debug!("Token: {:#?}", token.claims);
     let user_info = UserClaim::try_from(&token).map_err(|e| {
         error!("Failed to get user info: {e}");
