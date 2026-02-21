@@ -818,6 +818,77 @@ where
 
         Ok(())
     }
+
+    pub async fn rate(
+        &self,
+        id: i64,
+        rating: f32,
+        user: String,
+        description: Option<String>,
+    ) -> crate::error::Result<Ebook> {
+        let mut tx = self.executor.begin().await?;
+        let ebook_version: i64 = sqlx::query_scalar("SELECT version FROM ebook WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+        let existing: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM ebook_rating WHERE ebook_id = ? AND user = ?")
+                .bind(id)
+                .bind(user.clone())
+                .fetch_one(&mut *tx)
+                .await
+                .ok();
+
+        if let Some(existing_id) = existing {
+            let res = if let Some(description) = description {
+                sqlx::query("UPDATE ebook_rating SET rating = ?, description = ? WHERE id = ?")
+                    .bind(rating)
+                    .bind(description)
+                    .bind(existing_id)
+                    .execute(&mut *tx)
+                    .await?
+            } else {
+                sqlx::query("UPDATE ebook_rating SET rating = ? WHERE id = ?")
+                    .bind(rating)
+                    .bind(existing_id)
+                    .execute(&mut *tx)
+                    .await?
+            };
+            if res.rows_affected() == 0 {
+                return Err(Error::RecordNotFound("Ebook rating".to_string()));
+            }
+        } else {
+            sqlx::query(
+                "INSERT INTO ebook_rating (ebook_id, user, rating, description) VALUES (?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(user)
+            .bind(rating)
+            .bind(description)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        let (new_rating, num_ratings): (f32, i64) = sqlx::query_as(
+            "SELECT AVG(rating), COUNT(rating) FROM ebook_rating WHERE ebook_id = ?",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        sqlx::query("UPDATE ebook SET rating = ?, num_ratings = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
+            .bind(new_rating)
+            .bind(num_ratings)
+            .bind(now())
+            .bind(id)
+            .bind(ebook_version)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        self.get(id).await
+    }
 }
 
 async fn insert_ebook_dependencies(

@@ -99,6 +99,21 @@ fn filter_field(f: &Field, omit: Option<&str>, keep_spec: &[&str]) -> bool {
     true
 }
 
+fn to_snake_case(s: &str) -> String {
+    let mut snake_case = String::with_capacity(s.len());
+    for (i, c) in s.char_indices() {
+        if c.is_uppercase() {
+            if i > 0 {
+                snake_case.push('_');
+            }
+            snake_case.push(c.to_ascii_lowercase());
+        } else {
+            snake_case.push(c);
+        }
+    }
+    snake_case
+}
+
 pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -106,7 +121,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let entity_ident = input.ident.clone();
         let entity_name = entity_ident.to_string();
 
-        let table_name = entity_name.to_lowercase();
+        let table_name = to_snake_case(&entity_name);
         let base_fields = data.fields.iter().filter(|f| f.ident.is_some());
 
         let common_input_atts = quote! {

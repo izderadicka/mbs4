@@ -3,6 +3,7 @@ pub mod error;
 pub mod author;
 pub mod conversion;
 pub mod ebook;
+pub mod ebook_rating;
 pub mod format;
 pub mod genre;
 pub mod language;
