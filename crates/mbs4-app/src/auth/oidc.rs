@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{auth::after_ok_login, state::AppState};
+use anyhow::{anyhow, bail};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
@@ -16,7 +17,7 @@ use serde::Deserialize;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
 
-use mbs4_auth::oidc::{OIDCClient, OIDCSecrets};
+use mbs4_auth::oidc::{IDToken, OIDCClient, OIDCSecrets};
 
 const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
@@ -51,13 +52,10 @@ impl FromRequestParts<AppState> for OIDCClient {
                     })?;
                 params.oidc_provider
             }
-            Err(_e) => match session.get(SESSION_PROVIDER_KEY).await {
-                Ok(Some(provider_id)) => provider_id,
-                _ => {
-                    error!("Missing OIDC provider in session");
-                    return Err(StatusCode::BAD_REQUEST);
-                }
-            },
+            Err(_e) => provider_id(&session).await.ok_or_else(|| {
+                error!("Missing OIDC provider in session");
+                StatusCode::BAD_REQUEST
+            })?,
         };
 
         let Extension(cache) = parts
@@ -71,23 +69,16 @@ impl FromRequestParts<AppState> for OIDCClient {
             return Ok(client);
         }
 
-        let provider_config = state.get_oidc_provider(&provider_id);
-        if let Some(provider) = provider_config {
-            let redirect_url = state.build_backend_url("auth/callback").map_err(|e| {
-                error!("Failed to build auth callback URL: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-            let client = OIDCClient::discover(&provider, redirect_url)
-                .await
-                .map_err(|e| {
-                    error!("Failed to discover OIDC provider {}: {}", provider_id, e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-            cache.set_provider(&provider_id, client.clone());
-            Ok(client)
-        } else {
-            error!("Unknown OIDC provider: {}", provider_id);
-            Err(StatusCode::BAD_REQUEST)
+        match cache.prepare_provider(&provider_id, state).await {
+            Ok(Some(client)) => Ok(client),
+            Ok(None) => {
+                error!("Unknown OIDC provider: {}", provider_id);
+                Err(StatusCode::BAD_REQUEST)
+            }
+            Err(e) => {
+                error!("Failed to prepare OIDC provider: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
         }
     }
 }
@@ -121,6 +112,22 @@ impl ProvidersCache {
     pub fn remove_provider(&self, name: impl AsRef<str>) {
         self.providers.write().unwrap().remove(name.as_ref());
     }
+
+    pub async fn prepare_provider(
+        &self,
+        provider_id: &str,
+        state: &AppState,
+    ) -> anyhow::Result<Option<OIDCClient>> {
+        let provider_config = state.get_oidc_provider(&provider_id);
+        if let Some(provider) = provider_config {
+            let redirect_url = state.build_backend_url("auth/callback")?;
+            let client = OIDCClient::discover(&provider, redirect_url).await?;
+            self.set_provider(provider_id, client.clone());
+            Ok(Some(client))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResponse, StatusCode> {
@@ -143,15 +150,31 @@ pub struct CallbackQuery {
     pub session_state: Option<String>,
 }
 
-pub async fn callback(
-    client: OIDCClient,
-    Extension(providers_cache): Extension<ProvidersCache>,
-    session: Session,
-    State(state): State<AppState>,
-    user_registry: UserRepository,
-    Query(params): Query<CallbackQuery>,
-) -> Result<impl IntoResponse, StatusCode> {
-    debug!("Received callback: {:#?}", params);
+async fn provider_id(session: &Session) -> Option<String> {
+    session
+        .get::<String>(SESSION_PROVIDER_KEY)
+        .await
+        .inspect_err(|e| error!("Error getting provider from session: {e}"))
+        .ok()
+        .flatten()
+}
+
+async fn refresh_provider(
+    cache: &ProvidersCache,
+    state: &AppState,
+    session: &Session,
+) -> anyhow::Result<(String, OIDCClient)> {
+    let oidc_provider = provider_id(session)
+        .await
+        .ok_or_else(|| anyhow!("Failed to get provider id from session"))?;
+    let client = cache
+        .prepare_provider(&oidc_provider, state)
+        .await?
+        .ok_or_else(|| anyhow!("Unknown OIDC provider: {}", oidc_provider))?;
+    Ok((oidc_provider, client))
+}
+
+async fn get_secrets(session: &Session) -> Result<OIDCSecrets, StatusCode> {
     let secrets = session
         .get::<OIDCSecrets>(SESSION_SECRETS_KEY)
         .await
@@ -163,27 +186,57 @@ pub async fn callback(
             error!("Cannot retrieve session in callback");
             StatusCode::BAD_REQUEST
         })?;
+    Ok(secrets)
+}
 
-    let token = match client.token(params.code, params.state, secrets).await {
-        Ok(token) => token,
+async fn get_token_with_retry(
+    client: OIDCClient,
+    providers_cache: ProvidersCache,
+    session: &Session,
+    state: &AppState,
+    params: CallbackQuery,
+    secrets: OIDCSecrets,
+) -> anyhow::Result<IDToken> {
+    match client
+        .token(params.code.clone(), params.state.clone(), secrets.clone())
+        .await
+    {
+        Ok(token) => Ok(token),
         Err(e) => {
-            if let Some(oidc_provider) = session
-                .get::<String>(SESSION_PROVIDER_KEY)
-                .await
-                .inspect_err(|e| error!("Error getting provider from session: {e}"))
-                .ok()
-                .flatten()
-            {
-                providers_cache.remove_provider(&oidc_provider);
-                debug!(
-                    "Removed provider {} from cache, because of token validation error",
-                    oidc_provider
-                );
-            }
             error!("Failed to get token: {e}");
-            return Err(StatusCode::BAD_REQUEST);
+            // Lets retry with newly initiated provider - configuration might be stalled
+            let (oidc_provider, new_client) =
+                refresh_provider(&providers_cache, state, session).await?;
+            match new_client.token(params.code, params.state, secrets).await {
+                Ok(token) => Ok(token),
+                Err(e) => {
+                    providers_cache.remove_provider(&oidc_provider);
+                    debug!(
+                        "Removed provider {} from cache, because of token validation error",
+                        oidc_provider
+                    );
+                    bail!("Failed to get token in retry: {e}");
+                }
+            }
         }
-    };
+    }
+}
+
+pub async fn callback(
+    client: OIDCClient,
+    Extension(providers_cache): Extension<ProvidersCache>,
+    session: Session,
+    State(state): State<AppState>,
+    user_registry: UserRepository,
+    Query(params): Query<CallbackQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    debug!("Received callback: {:#?}", params);
+    let secrets = get_secrets(&session).await?;
+
+    let token = get_token_with_retry(client, providers_cache, &session, &state, params, secrets)
+        .await
+        .inspect_err(|e| error!("Error retrieving ID token {e}"))
+        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
     debug!("Token: {:#?}", token.claims);
     let user_info = UserClaim::try_from(&token).map_err(|e| {
         error!("Failed to get user info: {e}");

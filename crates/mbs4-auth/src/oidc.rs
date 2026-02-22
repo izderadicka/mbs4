@@ -199,6 +199,17 @@ pub struct OIDCSecrets {
     pkce_verifier: PkceCodeVerifier,
 }
 
+impl Clone for OIDCSecrets {
+    fn clone(&self) -> Self {
+        let pkce_verifier = PkceCodeVerifier::new(self.pkce_verifier.secret().to_string());
+        Self {
+            csrf_token: self.csrf_token.clone(),
+            nonce: self.nonce.clone(),
+            pkce_verifier,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::OIDCConfig;
