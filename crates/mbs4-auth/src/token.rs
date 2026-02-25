@@ -5,7 +5,7 @@ use mbs4_types::claim::TimeLimited;
 use rand::{rng, RngCore};
 use serde::de::DeserializeOwned;
 
-use crate::error::Result;
+use crate::{error::Result, Error};
 
 struct Keys {
     encoding: EncodingKey,
@@ -79,9 +79,11 @@ impl TokenManager {
     }
 
     pub fn create_tr_token(&self) -> Result<String> {
-        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)?;
+        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
+            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
             .as_secs();
         let validity = timestamp + Self::RETRIEVAL_TOKEN_VALIDITY_SECS;
         let mut msg = [0u8; 8 + 32 + 32];
@@ -96,20 +98,25 @@ impl TokenManager {
         Ok(token)
     }
     pub fn validate_tr_token(&self, token: &str) -> Result<()> {
-        let msg = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(token.as_bytes())?;
+        let msg = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(token.as_bytes())
+            .map_err(|e| Error::tr_token_error("Error decoding token", e))?;
         if msg.len() != 8 + 32 + 32 {
-            return Err(anyhow::anyhow!("Invalid token length"));
+            return Err(Error::tr_token_error_msg("Invalid token length"));
         }
         let timestamp = u64::from_be_bytes(msg[0..8].try_into().unwrap());
-        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)?;
+        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
+            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         mac.update(&msg[0..40]);
-        mac.verify_slice(&msg[40..])?;
+        mac.verify_slice(&msg[40..])
+            .map_err(|e| Error::tr_token_error("HMAC verification failed", e))?;
 
         let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
             .as_secs();
         if now > timestamp {
-            return Err(anyhow::anyhow!("Token expired"));
+            return Err(Error::tr_token_error_msg("Token expired"));
         }
         Ok(())
     }
@@ -154,15 +161,12 @@ mod tests {
         assert!(res.is_err());
         let err = res.unwrap_err();
 
-        match err
-            .root_cause()
-            .downcast_ref::<jsonwebtoken::errors::Error>()
-        {
-            Some(e) => assert!(matches!(
+        match err {
+            Error::JwtError(e) => assert!(matches!(
                 e.kind(),
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature
             )),
-            None => panic!("Unexpected error: {}", err),
+            _ => panic!("Unexpected error: {}", err),
         }
     }
 

@@ -5,8 +5,8 @@ use anyhow::anyhow;
 use mbs4_types::claim::UserClaim;
 use openidconnect::{
     core::{
-        CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm,
-        CoreJwsSigningAlgorithm, CoreProviderMetadata,
+        CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreIdToken,
+        CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
     },
     AccessToken, AccessTokenHash, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     EmptyAdditionalClaims, EndpointMaybeSet, EndpointNotSet, EndpointSet, IdToken, IdTokenClaims,
@@ -136,14 +136,21 @@ impl OIDCClient {
             if actual_access_token_hash != *expected_access_token_hash {
                 return Err(anyhow!("Invalid access token"));
             }
-            return Ok(IDToken {
+            Ok(IDToken {
                 claims: claims.clone(),
                 id_token: id_token.clone(),
                 access_token: Some(token_response.access_token().clone()),
                 refresh_token: token_response.refresh_token().cloned(),
-            });
+            })
+        } else {
+            debug!("Access token hash is missing - skipping verification");
+            Ok(IDToken {
+                claims: claims.clone(),
+                id_token: id_token.clone(),
+                access_token: None,
+                refresh_token: token_response.refresh_token().cloned(),
+            })
         }
-        Err(anyhow!("Access token hash is missing"))
     }
 }
 
