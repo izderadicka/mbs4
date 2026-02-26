@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct OIDCProviderConfig {
@@ -28,8 +28,11 @@ impl OIDCConfig {
     pub fn load_config(file_source: &str) -> Result<Self> {
         let config = config::Config::builder()
             .add_source(config::File::with_name(file_source))
-            .build()?;
-        let config = config.try_deserialize::<OIDCConfig>()?;
+            .build()
+            .map_err(|e| Error::config_error("Error loading config", e))?;
+        let config = config
+            .try_deserialize::<OIDCConfig>()
+            .map_err(|e| Error::config_error("Error deserializing config", e))?;
         Ok(config)
     }
 }

@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use crate::config::OIDCProviderConfig;
-use anyhow::anyhow;
 use mbs4_types::claim::UserClaim;
 use openidconnect::{
     core::{
@@ -41,12 +40,15 @@ impl OIDCClient {
         let http_client = reqwest::ClientBuilder::new()
             // Following redirects opens the client up to SSRF vulnerabilities.
             .redirect(reqwest::redirect::Policy::none())
-            .build()?;
+            .build()
+            .map_err(|e| Error::oidc_error("Error creating http client", e))?;
         let provider_metadata = CoreProviderMetadata::discover_async(
-            IssuerUrl::new(provider.issuer_url.clone())?,
+            IssuerUrl::new(provider.issuer_url.clone())
+                .map_err(|e| Error::oidc_error("Invalid issuer URL", e))?,
             &http_client,
         )
-        .await?;
+        .await
+        .map_err(|e| Error::oidc_error("Error discovering provider", e))?;
 
         let client = CoreClient::from_provider_metadata(
             provider_metadata,
@@ -57,7 +59,10 @@ impl OIDCClient {
                 .map(|s| ClientSecret::new(s.to_string())),
         )
         // Set the URL the user will be redirected to after the authorization process.
-        .set_redirect_uri(RedirectUrl::new(redirect_url.into())?);
+        .set_redirect_uri(
+            RedirectUrl::new(redirect_url.into())
+                .map_err(|e| Error::oidc_error("Invalid redirect URL", e))?,
+        );
 
         debug!("Discovered OIDC provider: {:?}", client);
 
@@ -108,20 +113,22 @@ impl OIDCClient {
         secrets: OIDCSecrets,
     ) -> Result<IDToken> {
         if &state != secrets.csrf_token.secret() {
-            return Err(anyhow!("CSRF token mismatch"));
+            return Err(Error::oidc_error_msg("CSRF token mismatch"));
         }
         let token_response = self
             .client
-            .exchange_code(AuthorizationCode::new(code))?
+            .exchange_code(AuthorizationCode::new(code))
+            .map_err(|e| Error::oidc_error("Invalid returned authorization code", e))?
             // Set the PKCE code verifier.
             .set_pkce_verifier(secrets.pkce_verifier)
             .request_async(&self.http_client)
-            .await?;
+            .await
+            .map_err(|e| Error::oidc_error("Error exchanging authorization code for token", e))?;
 
         // Extract the ID token claims after verifying its authenticity and nonce.
         let id_token = token_response
             .id_token()
-            .ok_or_else(|| anyhow!("Server did not return an ID token"))?;
+            .ok_or_else(|| Error::oidc_error_msg("Server did not return an ID token"))?;
         let id_token_verifier = self.client.id_token_verifier();
         let claims = id_token.claims(&id_token_verifier, &secrets.nonce)?;
 
@@ -130,11 +137,16 @@ impl OIDCClient {
         if let Some(expected_access_token_hash) = claims.access_token_hash() {
             let actual_access_token_hash = AccessTokenHash::from_token(
                 token_response.access_token(),
-                id_token.signing_alg()?,
-                id_token.signing_key(&id_token_verifier)?,
-            )?;
+                id_token.signing_alg().map_err(|e| {
+                    Error::oidc_error("Invalid signing algorithm for access token", e)
+                })?,
+                id_token.signing_key(&id_token_verifier).map_err(|e| {
+                    Error::oidc_error("Error retrieving signing key for access token", e)
+                })?,
+            )
+            .map_err(|e| Error::oidc_error("Access token signature error", e))?;
             if actual_access_token_hash != *expected_access_token_hash {
-                return Err(anyhow!("Invalid access token"));
+                return Err(Error::oidc_error_msg("Invalid access token hash"));
             }
             Ok(IDToken {
                 claims: claims.clone(),
@@ -175,7 +187,7 @@ impl TryFrom<&IDToken> for UserClaim {
             .email()
             .as_ref()
             .map(|s| s.to_string())
-            .ok_or_else(|| Error::msg("Missing email"))?;
+            .ok_or_else(|| Error::IdTokenError("Missing email"))?;
         let username = value
             .claims
             .name()
