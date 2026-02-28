@@ -4,13 +4,13 @@ use crate::config::OIDCProviderConfig;
 use mbs4_types::claim::UserClaim;
 use openidconnect::{
     core::{
-        CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreIdToken,
-        CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
+        CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm, CoreProviderMetadata, CoreTokenResponse,
     },
-    AccessToken, AccessTokenHash, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    EmptyAdditionalClaims, EndpointMaybeSet, EndpointNotSet, EndpointSet, IdToken, IdTokenClaims,
-    IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl,
-    RefreshToken, Scope, TokenResponse,
+    AccessToken, AccessTokenHash, AuthorizationCode, ClaimsVerificationError, ClientId,
+    ClientSecret, CsrfToken, EmptyAdditionalClaims, EndpointMaybeSet, EndpointNotSet, EndpointSet,
+    IdToken, IdTokenClaims, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, SignatureVerificationError, TokenResponse,
 };
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -106,31 +106,47 @@ impl OIDCClient {
         )
     }
 
-    pub async fn token(
+    pub async fn retrieve_id_token(
         &self,
         code: String,
         state: String,
         secrets: OIDCSecrets,
-    ) -> Result<IDToken> {
+    ) -> Result<CoreTokenResponse> {
         if &state != secrets.csrf_token.secret() {
             return Err(Error::oidc_error_msg("CSRF token mismatch"));
         }
-        let token_response = self
-            .client
+        self.client
             .exchange_code(AuthorizationCode::new(code))
             .map_err(|e| Error::oidc_error("Invalid returned authorization code", e))?
             // Set the PKCE code verifier.
             .set_pkce_verifier(secrets.pkce_verifier)
             .request_async(&self.http_client)
             .await
-            .map_err(|e| Error::oidc_error("Error exchanging authorization code for token", e))?;
+            .map_err(|e| Error::oidc_error("Error exchanging authorization code for token", e))
+    }
 
+    pub async fn verify_id_token(
+        &self,
+        token_response: CoreTokenResponse,
+        nonce: &Nonce,
+    ) -> Result<IDToken> {
         // Extract the ID token claims after verifying its authenticity and nonce.
         let id_token = token_response
             .id_token()
             .ok_or_else(|| Error::oidc_error_msg("Server did not return an ID token"))?;
+
+        // Verify the ID token signature and extract the claims.
         let id_token_verifier = self.client.id_token_verifier();
-        let claims = id_token.claims(&id_token_verifier, &secrets.nonce)?;
+        let claims = id_token.claims(&id_token_verifier, nonce).map_err(|e| {
+            if let ClaimsVerificationError::SignatureVerification(
+                SignatureVerificationError::NoMatchingKey,
+            ) = e
+            {
+                Error::MissingKeyError
+            } else {
+                Error::OidcClaimError(e)
+            }
+        })?;
 
         // Verify the access token hash to ensure that the access token hasn't been substituted for
         // another user's.
@@ -226,6 +242,12 @@ impl Clone for OIDCSecrets {
             nonce: self.nonce.clone(),
             pkce_verifier,
         }
+    }
+}
+
+impl OIDCSecrets {
+    pub fn nonce(&self) -> Nonce {
+        self.nonce.clone()
     }
 }
 

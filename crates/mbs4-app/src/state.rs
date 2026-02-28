@@ -56,6 +56,14 @@ impl AppState {
             .and_then(|c| c.get_provider(name).cloned())
     }
 
+    pub fn known_oidc_providers(&self) -> Vec<String> {
+        self.state
+            .oidc_providers_config
+            .as_ref()
+            .map(|c| c.available_providers())
+            .unwrap_or_default()
+    }
+
     pub fn config(&self) -> &AppConfig {
         &self.state.app_config
     }

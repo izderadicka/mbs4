@@ -12,6 +12,8 @@ pub enum Error {
     TrTokenError(&'static str, #[source] Option<GenericError>),
     #[error("OIDC claim validation error: {0}")]
     OidcClaimError(#[from] openidconnect::ClaimsVerificationError),
+    #[error("Missing key for claim")]
+    MissingKeyError,
     #[error("OIDC error: {0}: {1:?}")]
     OidcError(&'static str, #[source] Option<GenericError>),
     #[error("ID token error: {0}")]
@@ -50,14 +52,3 @@ impl Error {
         Error::ConfigError(msg, Some(Box::new(e)))
     }
 }
-
-// these should be included in TRTokenError
-
-// #[error("Time value error: {0}")]
-//     TimeValueError(#[from] SystemTimeError),
-//     #[error("Invalid HMAC length: {0}")]
-//     InvalidHmacLength(#[from] InvalidLength),
-//     #[error("Invalid TR token: {0}")]
-//     InvalidTrToken(String),
-//     #[error("Base64 error: {0}")]
-//     Base64Error(#[from] base64::DecodeError),

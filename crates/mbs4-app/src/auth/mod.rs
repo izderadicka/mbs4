@@ -73,6 +73,7 @@ pub fn auth_router() -> axum::Router<AppState> {
         .route("/callback", get(oidc::callback))
         .route("/logout", get(logout))
         .route("/token", get(token::token))
+        .route("/providers", get(oidc::known_providers))
         .layer(session_layer)
         .layer(Extension(oidc::ProvidersCache::new()))
 }
@@ -81,7 +82,7 @@ pub fn auth_router() -> axum::Router<AppState> {
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(db_login))]
+    #[openapi(paths(db_login, oidc::known_providers, oidc::login))]
     struct ApiDocs;
 
     ApiDocs::openapi()

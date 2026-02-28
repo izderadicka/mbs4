@@ -8,7 +8,7 @@ use anyhow::{anyhow, bail};
 use axum::{
     extract::{FromRequestParts, Query, State},
     response::{IntoResponse, Redirect},
-    Extension, RequestPartsExt,
+    Extension, Json, RequestPartsExt,
 };
 use http::{request::Parts, StatusCode};
 use mbs4_dal::user::UserRepository;
@@ -23,6 +23,8 @@ const SESSION_SECRETS_KEY: &str = "oidc_secrets";
 const SESSION_PROVIDER_KEY: &str = "oidc_provider";
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi",into_params(parameter_in = Query))]
 pub struct LoginParams {
     oidc_provider: String,
 }
@@ -130,6 +132,16 @@ impl ProvidersCache {
     }
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/login",
+        tag = "auth",
+        operation_id = "startOIDCLogin",
+        params(LoginParams),
+    )
+)]
 pub async fn login(client: OIDCClient, session: Session) -> Result<impl IntoResponse, StatusCode> {
     let (url, secrets) = client.auth_url_with_scopes(["email", "profile"]);
     session
@@ -197,27 +209,40 @@ async fn get_token_with_retry(
     params: CallbackQuery,
     secrets: OIDCSecrets,
 ) -> anyhow::Result<IDToken> {
+    let nonce = secrets.nonce();
     match client
-        .token(params.code.clone(), params.state.clone(), secrets.clone())
+        .retrieve_id_token(params.code.clone(), params.state.clone(), secrets.clone())
         .await
     {
-        Ok(token) => Ok(token),
-        Err(e) => {
-            error!("Failed to get token: {e}");
-            // Lets retry with newly initiated provider - configuration might be stalled
-            let (oidc_provider, new_client) =
-                refresh_provider(&providers_cache, state, session).await?;
-            match new_client.token(params.code, params.state, secrets).await {
+        Ok(token_response) => {
+            debug!("Token response: {token_response:#?}");
+            match client.verify_id_token(token_response.clone(), &nonce).await {
                 Ok(token) => Ok(token),
                 Err(e) => {
-                    providers_cache.remove_provider(&oidc_provider);
-                    debug!(
-                        "Removed provider {} from cache, because of token validation error",
-                        oidc_provider
-                    );
-                    bail!("Failed to get token in retry: {e}");
+                    error!("Failed to validate token: {e}");
+                    if let mbs4_auth::Error::MissingKeyError = e {
+                        debug!("No matching key for token validation, try refresh client");
+                        let (oidc_provider, new_client) =
+                            refresh_provider(&providers_cache, state, session).await?;
+                        match new_client.verify_id_token(token_response, &nonce).await {
+                            Ok(token) => Ok(token),
+                            Err(e) => {
+                                providers_cache.remove_provider(&oidc_provider);
+                                debug!(
+                                "Removed provider {} from cache, because of token validation error",
+                                oidc_provider
+                            );
+                                bail!("Failed to verify token in retry: {e}");
+                            }
+                        }
+                    } else {
+                        bail!("Token validation error: {e}")
+                    }
                 }
             }
+        }
+        Err(e) => {
+            bail!("Failed to retrieve token: {e}");
         }
     }
 }
@@ -239,8 +264,8 @@ pub async fn callback(
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
     debug!("Token: {:#?}", token.claims);
     let user_info = UserClaim::try_from(&token).map_err(|e| {
-        error!("Failed to get user info: {e}");
-        StatusCode::BAD_REQUEST
+        error!("Failed to get user info from token: {e}");
+        StatusCode::UNAUTHORIZED
     })?;
 
     match user_registry.find_by_email(&user_info.email).await {
@@ -251,4 +276,14 @@ pub async fn callback(
             Err(StatusCode::UNAUTHORIZED)
         }
     }
+}
+
+#[cfg_attr(feature = "openapi", utoipa::path(get, path = "/providers", tag = "auth", 
+operation_id = "getProviders",
+responses((status = StatusCode::OK, description = "Success", body = Vec<String> ),)))]
+pub async fn known_providers(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let known_providers = state.known_oidc_providers();
+    Ok(Json(known_providers))
 }
