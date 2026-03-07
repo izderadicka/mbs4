@@ -1,6 +1,7 @@
 pub use paging::{Page, Paging};
 
 pub mod author;
+pub mod bookshelf;
 pub mod conversion;
 pub mod ebook;
 pub mod format;

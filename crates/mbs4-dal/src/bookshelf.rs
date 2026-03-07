@@ -67,14 +67,14 @@ impl QueryBuilder {
     }
 
     fn private(&mut self, user: impl Into<String>) -> &mut Self {
-        self.builder.push(" WHERE created_by = ? ");
+        self.builder.push(" WHERE created_by =  ");
         self.builder.push_bind(user.into());
         self
     }
 
     fn public(&mut self, user: impl Into<String>) -> &mut Self {
         self.builder
-            .push(" WHERE public = true AND created_by != ? ");
+            .push(" WHERE public = true AND created_by !=  ");
         self.builder.push_bind(user.into());
         self
     }
@@ -87,8 +87,9 @@ impl QueryBuilder {
         if !order.is_empty() {
             self.builder.push(format!(" {order} "));
         }
-        self.builder.push(" LIMIT ? OFFSET ?");
+        self.builder.push(" LIMIT ");
         self.builder.push_bind(params.limit);
+        self.builder.push(" OFFSET ");
         self.builder.push_bind(params.offset);
 
         Ok(self)
@@ -142,7 +143,7 @@ where
             builder.public(user);
         }
 
-        let count_query = builder.private(user).build_count_query();
+        let count_query = builder.build_count_query();
         let count = count_query.fetch_one(&self.executor).await?;
         let batch = Batch {
             rows: res,
