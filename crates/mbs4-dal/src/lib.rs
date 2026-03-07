@@ -1,6 +1,7 @@
 pub mod error;
 
 pub mod author;
+pub mod bookshelf;
 pub mod conversion;
 pub mod ebook;
 pub mod ebook_rating;
