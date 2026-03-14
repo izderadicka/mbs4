@@ -39,6 +39,8 @@ pub enum ApiError {
     InvalidQuery(String),
     #[error("Runtime error: {0}")]
     RuntimeError(#[from] tokio::task::JoinError),
+    #[error("Access denied: {0}")]
+    Denied(String),
 }
 
 impl IntoResponse for ApiError {
@@ -99,6 +101,10 @@ impl IntoResponse for ApiError {
                 mbs4_dal::Error::InvalidFilter(msg) => {
                     tracing::error!("Invalid filter: {msg}");
                     (StatusCode::BAD_REQUEST, "Invalid filter".into())
+                }
+                mbs4_dal::Error::InvalidPageSize(msg) => {
+                    tracing::error!("Invalid page size: {msg}");
+                    (StatusCode::BAD_REQUEST, "Invalid page size".into())
                 }
             },
             ApiError::ResourceNotFound(r) => (
@@ -161,6 +167,10 @@ impl IntoResponse for ApiError {
             ApiError::InvalidQuery(msg) => {
                 tracing::debug!("Invalid query: {msg}");
                 (StatusCode::BAD_REQUEST, msg.into())
+            }
+            ApiError::Denied(msg) => {
+                tracing::debug!("Access denied: {msg}");
+                (StatusCode::FORBIDDEN, msg.into())
             }
         };
         let body = serde_json::json!({"error": error_message});

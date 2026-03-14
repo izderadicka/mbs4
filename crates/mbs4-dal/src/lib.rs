@@ -71,6 +71,13 @@ impl FromStr for Filter {
     }
 }
 
+fn quote_name(name: &str) -> String {
+    name.split('.')
+        .map(|s| format!("\"{}\"", s))
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
 #[derive(Debug, Clone)]
 pub enum Order {
     Asc(String),
@@ -80,8 +87,8 @@ pub enum Order {
 impl Display for Order {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Order::Asc(s) => write!(f, "{}", s),
-            Order::Desc(s) => write!(f, "{} DESC", s),
+            Order::Asc(s) => write!(f, "{}", quote_name(s)),
+            Order::Desc(s) => write!(f, "{} DESC", quote_name(s)),
         }
     }
 }

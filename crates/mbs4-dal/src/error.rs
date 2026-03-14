@@ -37,6 +37,9 @@ pub enum Error {
 
     #[error("Invalid filter: {0}")]
     InvalidFilter(String),
+
+    #[error("Invalid page size: {0}")]
+    InvalidPageSize(String),
 }
 
 impl From<sqlx::Error> for Error {
