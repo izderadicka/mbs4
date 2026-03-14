@@ -1,6 +1,7 @@
 pub mod error;
 
 pub mod author;
+pub(crate) mod author_utils;
 pub mod bookshelf;
 pub mod conversion;
 pub mod ebook;

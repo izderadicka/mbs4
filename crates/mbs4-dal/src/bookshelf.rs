@@ -1,19 +1,15 @@
-use std::collections::HashMap;
-
 use mbs4_macros::Repository;
-use mbs4_types::utils::naming::Author;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     Acquire, Database, Executor, FromRow, Row,
-    query::{Query, QueryAs, QueryScalar},
+    query::{QueryAs, QueryScalar},
 };
 
 use crate::{
     Batch, ChosenDB, ChosenRow, Error,
     author::AuthorShort,
-    ebook::{self, EbookShort},
+    author_utils::{AuthorsQueryBuilder, SeriesAuthorsQueryBuilder, query_authors},
     error::Result,
-    series::{self, SeriesShort},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
@@ -169,141 +165,6 @@ impl BookshelfQueryBuilder {
     }
 }
 
-struct SeriesAuthorsQueryBuilder {
-    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
-    has_limit: bool,
-}
-
-impl SeriesAuthorsQueryBuilder {
-    fn new() -> Self {
-        let builder = sqlx::query_builder::QueryBuilder::new(
-            "
-SELECT x.series_id,
-    a.id,
-    a.first_name,
-    a.last_name
-FROM (
-        SELECT series_id,
-            author_id
-        FROM (
-                SELECT series_id,
-                    author_id,
-                    row_number() OVER (
-                        PARTITION BY series_id
-                        ORDER BY author_id
-                    ) AS rn
-                FROM (
-                        SELECT DISTINCT e.series_id AS series_id,
-                            ea.author_id AS author_id
-                        FROM ebook_authors ea
-                            JOIN ebook e ON e.id = ea.ebook_id",
-        );
-        SeriesAuthorsQueryBuilder {
-            builder,
-            has_limit: false,
-        }
-    }
-
-    fn limit_for<I>(&mut self, ids: I)
-    where
-        I: IntoIterator<Item = i64>,
-    {
-        self.builder.push(" WHERE e.series_id IN ( ");
-        let mut list = self.builder.separated(", ");
-        for id in ids {
-            list.push_bind(id);
-            self.has_limit = true;
-        }
-        self.builder.push(" ) ");
-    }
-
-    fn _finish(&mut self) {
-        self.builder.push(
-            "
-    ) d
-            ) t
-        WHERE rn <= 3
-    ) x
-    JOIN author a ON a.id = x.author_id;",
-        );
-    }
-
-    fn build_query<'q>(
-        &'q mut self,
-    ) -> Query<'q, ChosenDB, <ChosenDB as Database>::Arguments<'static>> {
-        self._finish();
-        self.builder.build()
-    }
-
-    fn is_empty(&self) -> bool {
-        !self.has_limit
-    }
-}
-
-struct AuthorsQueryBuilder {
-    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
-    has_limit: bool,
-}
-
-impl AuthorsQueryBuilder {
-    fn new() -> Self {
-        let builder = sqlx::query_builder::QueryBuilder::new(
-            "
-SELECT ebook_id,
-    id,
-    first_name,
-    last_name
-FROM (
-        SELECT ea.ebook_id,
-            a.id,
-            a.first_name,
-            a.last_name,
-            row_number() OVER (
-                PARTITION BY ea.ebook_id
-                ORDER BY a.id
-            ) AS rn
-        FROM ebook_authors ea
-            JOIN author a ON a.id = ea.author_id ",
-        );
-        AuthorsQueryBuilder {
-            builder,
-            has_limit: false,
-        }
-    }
-
-    fn limit_for<I>(&mut self, ids: I)
-    where
-        I: IntoIterator<Item = i64>,
-    {
-        self.builder.push(" WHERE ea.ebook_id IN ( ");
-        let mut list = self.builder.separated(", ");
-        for id in ids {
-            list.push_bind(id);
-            self.has_limit = true;
-        }
-        self.builder.push(" ) ");
-    }
-
-    fn _finish(&mut self) {
-        self.builder.push(
-            "
-    ) t
-WHERE rn <= 3;",
-        );
-    }
-
-    fn build_query<'q>(
-        &'q mut self,
-    ) -> Query<'q, ChosenDB, <ChosenDB as Database>::Arguments<'static>> {
-        self._finish();
-        self.builder.build()
-    }
-
-    fn is_empty(&self) -> bool {
-        !self.has_limit
-    }
-}
-
 impl<'c, E> BookshelfRepositoryImpl<E>
 where
     for<'a> &'a E: Executor<'c, Database = ChosenDB> + Acquire<'c, Database = ChosenDB>,
@@ -433,43 +294,23 @@ from (
                 .fetch_one(&self.executor)
                 .await?;
 
-        let mut authors_query = AuthorsQueryBuilder::new();
-        authors_query.limit_for(res.iter().filter_map(|e| e.ebook_id));
-        let mut authors_map = HashMap::new();
-        if !authors_query.is_empty() {
-            let mut authors = authors_query.build_query().fetch(&self.executor);
-            while let Some(author_row) = authors.try_next().await? {
-                let ebook_id: i64 = author_row.try_get("ebook_id")?;
-                let author = AuthorShort {
-                    id: author_row.try_get("id")?,
-                    first_name: author_row.try_get("first_name")?,
-                    last_name: author_row.try_get("last_name")?,
-                };
-                authors_map
-                    .entry(ebook_id)
-                    .or_insert_with(Vec::new)
-                    .push(author);
-            }
-        }
+        let authors_query = AuthorsQueryBuilder::new();
+        let mut authors_map = query_authors(
+            authors_query,
+            res.iter().filter_map(|e| e.ebook_id),
+            &self.executor,
+            "ebook_id",
+        )
+        .await?;
 
-        let mut authors_query = SeriesAuthorsQueryBuilder::new();
-        authors_query.limit_for(res.iter().filter_map(|e| e.series_id));
-        let mut series_authors_map = HashMap::new();
-        if !authors_query.is_empty() {
-            let mut authors = authors_query.build_query().fetch(&self.executor);
-            while let Some(author_row) = authors.try_next().await? {
-                let series_id: i64 = author_row.try_get("series_id")?;
-                let author = AuthorShort {
-                    id: author_row.try_get("id")?,
-                    first_name: author_row.try_get("first_name")?,
-                    last_name: author_row.try_get("last_name")?,
-                };
-                series_authors_map
-                    .entry(series_id)
-                    .or_insert_with(Vec::new)
-                    .push(author);
-            }
-        }
+        let authors_query = SeriesAuthorsQueryBuilder::new();
+        let mut series_authors_map = query_authors(
+            authors_query,
+            res.iter().filter_map(|e| e.series_id),
+            &self.executor,
+            "series_id",
+        )
+        .await?;
 
         for item in res.iter_mut() {
             if let Some(ebook_id) = item.ebook_id {
