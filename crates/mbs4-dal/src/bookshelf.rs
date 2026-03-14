@@ -59,7 +59,7 @@ pub struct BookshelfItemListing {
     pub item_type: String,
     pub ebook_id: Option<i64>,
     pub series_id: Option<i64>,
-    pub ebook_title: String,
+    pub title: String,
     pub has_cover: bool,
     pub authors: Option<Vec<AuthorShort>>,
     pub series_title: Option<String>,
@@ -77,7 +77,8 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
         let series_id: Option<i64> = row.try_get("series_id")?;
 
         let ebook_cover: Option<String> = row.try_get("ebook_cover")?;
-        let ebook_title = row.try_get("ebook_title")?;
+        let ebook_title: Option<String> = row.try_get("ebook_title")?;
+        let series_title: Option<String> = row.try_get("series_title")?;
         let has_cover = ebook_cover.is_some();
         let ebook_series_title: Option<String> = row.try_get("ebook_series_title")?;
         let ebook_series_index: Option<i64> = row.try_get("ebook_series_index")?;
@@ -90,7 +91,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
             item_type,
             ebook_id,
             series_id,
-            ebook_title,
+            title: ebook_title.or(series_title).unwrap_or_default(),
             has_cover,
             authors,
             series_title: ebook_series_title,
@@ -165,6 +166,77 @@ impl BookshelfQueryBuilder {
         &mut self,
     ) -> QueryScalar<'_, ChosenDB, u64, <ChosenDB as Database>::Arguments<'static>> {
         self.builder.build_query_scalar()
+    }
+}
+
+struct SeriesAuthorsQueryBuilder {
+    builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
+    has_limit: bool,
+}
+
+impl SeriesAuthorsQueryBuilder {
+    fn new() -> Self {
+        let builder = sqlx::query_builder::QueryBuilder::new(
+            "
+SELECT x.series_id,
+    a.id,
+    a.first_name,
+    a.last_name
+FROM (
+        SELECT series_id,
+            author_id
+        FROM (
+                SELECT series_id,
+                    author_id,
+                    row_number() OVER (
+                        PARTITION BY series_id
+                        ORDER BY author_id
+                    ) AS rn
+                FROM (
+                        SELECT DISTINCT e.series_id AS series_id,
+                            ea.author_id AS author_id
+                        FROM ebook_authors ea
+                            JOIN ebook e ON e.id = ea.ebook_id",
+        );
+        SeriesAuthorsQueryBuilder {
+            builder,
+            has_limit: false,
+        }
+    }
+
+    fn limit_for<I>(&mut self, ids: I)
+    where
+        I: IntoIterator<Item = i64>,
+    {
+        self.builder.push(" WHERE e.series_id IN ( ");
+        let mut list = self.builder.separated(", ");
+        for id in ids {
+            list.push_bind(id);
+            self.has_limit = true;
+        }
+        self.builder.push(" ) ");
+    }
+
+    fn _finish(&mut self) {
+        self.builder.push(
+            "
+    ) d
+            ) t
+        WHERE rn <= 3
+    ) x
+    JOIN author a ON a.id = x.author_id;",
+        );
+    }
+
+    fn build_query<'q>(
+        &'q mut self,
+    ) -> Query<'q, ChosenDB, <ChosenDB as Database>::Arguments<'static>> {
+        self._finish();
+        self.builder.build()
+    }
+
+    fn is_empty(&self) -> bool {
+        !self.has_limit
     }
 }
 
@@ -380,9 +452,31 @@ from (
             }
         }
 
+        let mut authors_query = SeriesAuthorsQueryBuilder::new();
+        authors_query.limit_for(res.iter().filter_map(|e| e.series_id));
+        let mut series_authors_map = HashMap::new();
+        if !authors_query.is_empty() {
+            let mut authors = authors_query.build_query().fetch(&self.executor);
+            while let Some(author_row) = authors.try_next().await? {
+                let series_id: i64 = author_row.try_get("series_id")?;
+                let author = AuthorShort {
+                    id: author_row.try_get("id")?,
+                    first_name: author_row.try_get("first_name")?,
+                    last_name: author_row.try_get("last_name")?,
+                };
+                series_authors_map
+                    .entry(series_id)
+                    .or_insert_with(Vec::new)
+                    .push(author);
+            }
+        }
+
         for item in res.iter_mut() {
             if let Some(ebook_id) = item.ebook_id {
                 item.authors = authors_map.remove(&ebook_id);
+            }
+            if let Some(series_id) = item.series_id {
+                item.authors = series_authors_map.remove(&series_id);
             }
         }
 
