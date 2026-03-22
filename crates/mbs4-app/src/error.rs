@@ -40,7 +40,9 @@ pub enum ApiError {
     #[error("Runtime error: {0}")]
     RuntimeError(#[from] tokio::task::JoinError),
     #[error("Access denied: {0}")]
-    Denied(String),
+    DeniedAccess(String),
+    #[error("Authentication error: {0}")]
+    AuthenticationError(String),
 }
 
 impl IntoResponse for ApiError {
@@ -168,9 +170,13 @@ impl IntoResponse for ApiError {
                 tracing::debug!("Invalid query: {msg}");
                 (StatusCode::BAD_REQUEST, msg.into())
             }
-            ApiError::Denied(msg) => {
+            ApiError::DeniedAccess(msg) => {
                 tracing::debug!("Access denied: {msg}");
                 (StatusCode::FORBIDDEN, msg.into())
+            }
+            ApiError::AuthenticationError(msg) => {
+                tracing::debug!("Authentication error: {msg}");
+                (StatusCode::UNAUTHORIZED, "Authentication failed".into())
             }
         };
         let body = serde_json::json!({"error": error_message});

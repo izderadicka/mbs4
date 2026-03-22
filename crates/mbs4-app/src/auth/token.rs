@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::state::AppState;
+use crate::{error::ApiError, state::AppState};
 use axum::{
     extract::{FromRequestParts, Query, Request, State},
     response::{IntoResponse, Response},
@@ -188,7 +188,7 @@ where
 }
 
 impl FromRequestParts<AppState> for ApiClaim {
-    type Rejection = StatusCode;
+    type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut Parts,
@@ -208,7 +208,7 @@ impl FromRequestParts<AppState> for ApiClaim {
             trace!("No token found in headers");
             let cookies = parts.extract::<Cookies>().await.map_err(|e| {
                 error!("Cannot get cookies: {}", e.1);
-                e.0
+                ApiError::AuthenticationError("Invalid cookies".into())
             })?;
             header_token = cookies.get(TOKEN_COOKIE_NAME).map(|t| t.to_string());
         }
@@ -218,7 +218,7 @@ impl FromRequestParts<AppState> for ApiClaim {
                 debug("Token found, validating");
                 let claim = state.tokens().validate::<ApiClaim>(&token).map_err(|e| {
                     error!("Failed to validate token: {}", e);
-                    StatusCode::UNAUTHORIZED
+                    ApiError::AuthenticationError("Invalid token".into())
                 })?;
                 // store as extension for later use
                 parts.extensions.insert(claim.clone());
@@ -226,7 +226,7 @@ impl FromRequestParts<AppState> for ApiClaim {
             }
             None => {
                 debug!("No token found");
-                Err(StatusCode::UNAUTHORIZED)
+                Err(ApiError::AuthenticationError("Missing token".into()))
             }
         }
     }

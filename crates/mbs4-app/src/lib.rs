@@ -12,7 +12,7 @@ pub mod user;
 macro_rules! repository_from_request {
     ($repo:ty) => {
         impl axum::extract::FromRequestParts<$crate::state::AppState> for $repo {
-            type Rejection = http::StatusCode;
+            type Rejection = crate::error::ApiError;
 
             fn from_request_parts(
                 _parts: &mut http::request::Parts,
