@@ -14,13 +14,15 @@ pub fn api_docs() -> utoipa::openapi::OpenApi {
 
 mod crud_api_extra {
     use axum::{
-        extract::{FromRequestParts, Path, Query, State},
+        extract::{Path, Query, State},
         response::IntoResponse,
         Json,
     };
     use axum_valid::Garde;
-    use http::{request::Parts, StatusCode};
-    use mbs4_dal::bookshelf::{Bookshelf, BookshelfListing, BookshelfRepository};
+    use http::StatusCode;
+    use mbs4_dal::bookshelf::{
+        Bookshelf, BookshelfItemListing, BookshelfListing, BookshelfRepository,
+    };
     use mbs4_types::claim::ApiClaim;
 
     use crate::{
@@ -29,35 +31,23 @@ mod crud_api_extra {
         state::AppState,
     };
 
-    pub struct AccessibleBookshelf(pub Bookshelf);
-    impl FromRequestParts<AppState> for AccessibleBookshelf {
-        type Rejection = ApiError;
-
-        async fn from_request_parts(
-            parts: &mut Parts,
-            state: &AppState,
-        ) -> Result<Self, Self::Rejection> {
-            let Path(bookshelf_id) = Path::<i64>::from_request_parts(parts, state)
-                .await
-                .map_err(|_| ApiError::InvalidRequest("Invalid bookshelf id".into()))?;
-
-            let api_user = ApiClaim::from_request_parts(parts, state).await?;
-            let repo = BookshelfRepository::from_request_parts(parts, state).await?;
-
-            let shelf = repo.get(bookshelf_id).await?;
-            if !shelf.public && shelf.created_by != Some(api_user.sub) {
-                return Err(ApiError::DeniedAccess(
-                    "You don't have access to this bookshelf".into(),
-                ));
-            }
-
-            Ok(AccessibleBookshelf(shelf))
+    async fn get_accessible_bookshelf(
+        bookshelf_id: i64,
+        api_user: ApiClaim,
+        repo: &BookshelfRepository,
+    ) -> ApiResult<Bookshelf> {
+        let bookshelf = repo.get(bookshelf_id).await?;
+        if !bookshelf.public && bookshelf.created_by != Some(api_user.sub) {
+            return Err(ApiError::DeniedAccess(
+                "You don't have access to this bookshelf".into(),
+            ));
         }
+        Ok(bookshelf)
     }
 
     #[cfg(feature = "openapi")]
     #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
-    #[openapi(paths(list_mine, list_public, list_items))]
+    #[openapi(paths(list_mine, list_public, list_items, get))]
     pub(super) struct ApiDocs;
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/mine", tag = "Bookshelf", operation_id = "listMyBookshelves",
@@ -97,14 +87,15 @@ mod crud_api_extra {
     }
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/items", tag = "Bookshelf", operation_id = "listBookshelfItems",
-        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<BookshelfListing>))))]
+        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<BookshelfItemListing>))))]
     pub async fn list_items(
         Path(bookshelf_id): Path<i64>,
-        AccessibleBookshelf(_shelf): AccessibleBookshelf,
+        api_user: ApiClaim,
         repo: BookshelfRepository,
         State(state): State<AppState>,
         Garde(Query(paging)): Garde<Query<Paging>>,
     ) -> ApiResult<impl IntoResponse> {
+        get_accessible_bookshelf(bookshelf_id, api_user, &repo).await?;
         let default_page_size: u32 = state.config().default_page_size;
         let page_size = paging.page_size(default_page_size);
         let listing_params = paging.into_listing_params(default_page_size)?;
@@ -118,8 +109,11 @@ mod crud_api_extra {
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}", tag = "Bookshelf", operation_id = "getBookshelf",
          responses((status = StatusCode::OK, description = "Get bookshelf", body = Bookshelf))))]
     pub async fn get(
-        AccessibleBookshelf(shelf): AccessibleBookshelf,
+        Path(bookshelf_id): Path<i64>,
+        api_user: ApiClaim,
+        repo: BookshelfRepository,
     ) -> ApiResult<impl IntoResponse> {
+        let shelf = get_accessible_bookshelf(bookshelf_id, api_user, &repo).await?;
         Ok((StatusCode::OK, Json(shelf)))
     }
 }
