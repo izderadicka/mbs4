@@ -73,8 +73,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
         let series_id: Option<i64> = row.try_get("series_id")?;
 
         let ebook_cover: Option<String> = row.try_get("ebook_cover")?;
-        let ebook_title: Option<String> = row.try_get("ebook_title")?;
-        let series_title: Option<String> = row.try_get("series_title")?;
+        let title: Option<String> = row.try_get("title")?;
         let has_cover = ebook_cover.is_some();
         let ebook_series_title: Option<String> = row.try_get("ebook_series_title")?;
         let ebook_series_index: Option<i64> = row.try_get("ebook_series_index")?;
@@ -87,7 +86,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
             item_type,
             ebook_id,
             series_id,
-            title: ebook_title.or(series_title).unwrap_or_default(),
+            title: title.unwrap_or_default(),
             has_cover,
             authors,
             series_title: ebook_series_title,
@@ -96,7 +95,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
     }
 }
 
-const ITEM_VALID_ORDER_FIELDS: &[&str] = &["created", "modified", "order", "id"];
+const ITEM_VALID_ORDER_FIELDS: &[&str] = &["created", "modified", "order", "id", "title"];
 
 struct BookshelfQueryBuilder {
     builder: sqlx::query_builder::QueryBuilder<'static, ChosenDB>,
@@ -256,29 +255,21 @@ select i.id as id,
     i.type as item_type,
     i.ebook_id as ebook_id,
     i.series_id as series_id,
-    e.title as ebook_title,
+    CASE
+        WHEN i.type = 'EBOOK' THEN e.title
+        WHEN i.type = 'SERIES' THEN s.title
+        ELSE NULL
+    END AS title,
     e.cover as ebook_cover,
     e.series_index as ebook_series_index,
-    s.title as series_title,
     ebs.title as ebook_series_title
-from (
-        select id,
-            note,
-            created,
-            modified,
-            type,
-            ebook_id,
-            series_id,
-            \"order\"
-        from bookshelf_item i
-        where bookshelf_id = ?
-        {order}
-        limit ? offset ?
-    ) i
-    left join ebook e on i.ebook_id = e.id
-    left join series s on i.series_id = s.id
-    left join series ebs on e.series_id = ebs.id
-{order};"
+from bookshelf_item i
+    LEFT OUTER JOIN ebook e ON i.ebook_id = e.id
+    LEFT OUTER JOIN series s ON i.series_id = s.id
+    LEFT OUTER JOIN series ebs ON e.series_id = ebs.id
+where i.bookshelf_id = ?
+{order}
+limit ? offset ?;"
         );
         let mut res: Vec<BookshelfItemListing> = sqlx::query_as(&query)
             .bind(bookshelf_id)
