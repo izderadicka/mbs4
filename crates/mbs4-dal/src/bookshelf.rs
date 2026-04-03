@@ -129,8 +129,9 @@ impl BookshelfQueryBuilder {
 
     fn public(&mut self, user: impl Into<String>) -> &mut Self {
         self.builder
-            .push(" WHERE public = true AND created_by !=  ");
+            .push(" WHERE public = true AND ( created_by IS NULL OR created_by !=  ");
         self.builder.push_bind(user.into());
+        self.builder.push(" ) ");
         self
     }
 

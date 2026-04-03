@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{get, post, put};
 use mbs4_dal::bookshelf::BookshelfRepository;
 use mbs4_types::claim::Role;
 
@@ -21,7 +21,8 @@ mod crud_api_extra {
     use axum_valid::Garde;
     use http::StatusCode;
     use mbs4_dal::bookshelf::{
-        Bookshelf, BookshelfItemListing, BookshelfListing, BookshelfRepository,
+        Bookshelf, BookshelfItemListing, BookshelfListing, BookshelfRepository, CreateBookshelf,
+        UpdateBookshelf,
     };
     use mbs4_types::claim::ApiClaim;
 
@@ -47,7 +48,7 @@ mod crud_api_extra {
 
     #[cfg(feature = "openapi")]
     #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
-    #[openapi(paths(list_mine, list_public, list_items, get))]
+    #[openapi(paths(list_mine, list_public, list_items, get, create, update))]
     pub(super) struct ApiDocs;
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/mine", tag = "Bookshelf", operation_id = "listMyBookshelves",
@@ -116,6 +117,33 @@ mod crud_api_extra {
         let shelf = get_accessible_bookshelf(bookshelf_id, api_user, &repo).await?;
         Ok((StatusCode::OK, Json(shelf)))
     }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Bookshelf", operation_id = "createBookshelf",
+            responses((status = StatusCode::CREATED, description = "Created Bookshelf", body = Bookshelf))))]
+    pub async fn create(
+        repository: BookshelfRepository,
+        api_user: ApiClaim,
+        Garde(Json(mut payload)): Garde<Json<CreateBookshelf>>,
+    ) -> ApiResult<impl IntoResponse> {
+        payload.created_by = Some(api_user.sub);
+        let record = repository.create(payload).await?;
+
+        Ok((StatusCode::CREATED, Json(record)))
+    }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Bookshelf", operation_id = "updateBookshelf",
+            responses((status = StatusCode::OK, description = "Updated Bookshelf", body = Bookshelf))))]
+    pub async fn update(
+        Path(id): Path<i64>,
+        api_user: ApiClaim,
+        repository: BookshelfRepository,
+        Garde(Json(payload)): Garde<Json<UpdateBookshelf>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let _shelf = get_accessible_bookshelf(id, api_user, &repository).await?;
+        let record = repository.update(id, payload).await?;
+
+        Ok((StatusCode::OK, Json(record)))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
@@ -123,6 +151,8 @@ pub fn router() -> axum::Router<AppState> {
         // .route("/{id}", delete(crud_api_extra::delete))
         // .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/mine", get(crud_api_extra::list_mine))
+        .route("/", post(crud_api_extra::create))
+        .route("/{id}", put(crud_api_extra::update))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/{id}/items", get(crud_api_extra::list_items))
         .route("/public", get(crud_api_extra::list_public))
