@@ -24,7 +24,7 @@ mod crud_api_extra {
         Bookshelf, BookshelfItemListing, BookshelfListing, BookshelfRepository, CreateBookshelf,
         UpdateBookshelf,
     };
-    use mbs4_types::claim::ApiClaim;
+    use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 
     use crate::{
         error::{ApiError, ApiResult},
@@ -48,7 +48,7 @@ mod crud_api_extra {
 
     #[cfg(feature = "openapi")]
     #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
-    #[openapi(paths(list_mine, list_public, list_items, get, create, update))]
+    #[openapi(paths(list_mine, list_public, list_items, get, create, update, delete))]
     pub(super) struct ApiDocs;
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/mine", tag = "Bookshelf", operation_id = "listMyBookshelves",
@@ -144,6 +144,28 @@ mod crud_api_extra {
 
         Ok((StatusCode::OK, Json(record)))
     }
+
+    #[cfg_attr(
+        feature = "openapi",
+        utoipa::path(
+            delete,
+            path = "/{id}",
+            tag = "Bookshelf",
+            operation_id = "deleteBookshelf"
+        )
+    )]
+    pub async fn delete(
+        Path(id): Path<i64>,
+        api_user: ApiClaim,
+        repository: BookshelfRepository,
+    ) -> ApiResult<impl IntoResponse> {
+        if !api_user.has_role(Role::Admin) {
+            get_accessible_bookshelf(id, api_user, &repository).await?;
+        }
+        repository.delete(id).await?;
+
+        Ok((StatusCode::NO_CONTENT, ()))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
@@ -152,7 +174,10 @@ pub fn router() -> axum::Router<AppState> {
         // .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/mine", get(crud_api_extra::list_mine))
         .route("/", post(crud_api_extra::create))
-        .route("/{id}", put(crud_api_extra::update))
+        .route(
+            "/{id}",
+            put(crud_api_extra::update).delete(crud_api_extra::delete),
+        )
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
         .route("/{id}/items", get(crud_api_extra::list_items))
         .route("/public", get(crud_api_extra::list_public))

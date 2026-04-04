@@ -10,6 +10,7 @@ use crate::{
     author::AuthorShort,
     author_utils::{AuthorsQueryBuilder, SeriesAuthorsQueryBuilder, query_authors},
     error::Result,
+    now,
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone, sqlx::FromRow, Repository)]
@@ -60,6 +61,36 @@ pub struct BookshelfItemListing {
     pub authors: Option<Vec<AuthorShort>>,
     pub series_title: Option<String>,
     pub series_index: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Clone, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CreateBookshelfItem {
+    #[garde(length(min = 1, max = 255))]
+    pub note: Option<String>,
+    #[garde(pattern("^(EBOOK|SERIES)$"))]
+    pub item_type: String,
+    #[garde(range(min = 0))]
+    pub ebook_id: Option<i64>,
+    #[garde(range(min = 0))]
+    pub series_id: Option<i64>,
+    #[garde(skip)]
+    pub order: Option<i64>,
+    #[garde(length(min = 1, max = 255))]
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, garde::Validate, sqlx::FromRow)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateBookshelfItem {
+    #[garde(range(min = 0))]
+    pub id: i64,
+    #[garde(length(min = 1, max = 255))]
+    pub note: Option<String>,
+    #[garde(skip)]
+    pub order: Option<i64>,
+    #[garde(range(min = 0))]
+    pub version: i64,
 }
 
 impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
@@ -322,11 +353,80 @@ limit ? offset ?;"
         Ok(batch)
     }
 
-    // Get bookshelf item
+    // Add item to bookshelf
+    pub async fn add_item(&self, bookshelf_id: i64, item: CreateBookshelfItem) -> Result<i64> {
+        let mut tx = self.executor.begin().await?;
+        let existing_id: Option<UpdateBookshelfItem> = sqlx::query_as("SELECT id, note, \"order\", version FROM bookshelf_item WHERE bookshelf_id = ? AND type = ? AND ( ebook_id IS NOT NULL AND ebook_id = ? OR series_id IS NOT NULL AND series_id = ?)")
+            .bind(bookshelf_id)
+            .bind(&item.item_type)
+            .bind(item.ebook_id)
+            .bind(item.series_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let now = now();
+        if let Some(existing) = existing_id {
+            if existing.note != item.note || existing.order != item.order {
+                sqlx::query("UPDATE bookshelf_item SET note = ?, \"order\" = ?, modified = ?, version = version + 1 WHERE id = ? and version = ?")
+                    .bind(item.note)
+                    .bind(item.order)
+                    .bind(now)
+                    .bind(existing.id)
+                    .bind(existing.version)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            tx.commit().await?;
+            return Ok(existing.id);
+        }
 
-    // Add item to bookshelf - can only add to owned bookshelf
+        let id = sqlx::query(r#"INSERT INTO bookshelf_item (bookshelf_id, type, ebook_id, series_id, note, "order", created_by, created, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#)
+            .bind(bookshelf_id)
+            .bind(item.item_type)
+            .bind(item.ebook_id)
+            .bind(item.series_id)
+            .bind(item.note)
+            .bind(item.order)
+            .bind(item.created_by)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?
+            .last_insert_rowid();
+        tx.commit().await?;
+        Ok(id)
+    }
 
-    // Remove item from bookshelf - can only remove from owned bookshelf
+    // Remove item from bookshelf
+    pub async fn remove_item(&self, bookshelf_id: i64, id: i64) -> Result<()> {
+        let removed = sqlx::query("DELETE FROM bookshelf_item WHERE bookshelf_id = ? AND id = ?")
+            .bind(bookshelf_id)
+            .bind(id)
+            .execute(&self.executor)
+            .await?
+            .rows_affected();
 
-    // Update item in bookshelf - can only update owned bookshelf
+        if removed == 0 {
+            return Err(Error::RecordNotFound("Bookshelf item".to_string()));
+        }
+        Ok(())
+    }
+
+    // Update item in bookshelf
+    pub async fn update_item(&self, bookshelf_id: i64, item: UpdateBookshelfItem) -> Result<i64> {
+        let updated = sqlx::query("UPDATE bookshelf_item SET note = ?, \"order\" = ?, modified = ?, version = version + 1 WHERE bookshelf_id = ? AND id = ? and version = ?")
+            .bind(item.note)
+            .bind(item.order)
+            .bind(now())
+            .bind(bookshelf_id)
+            .bind(item.id)
+            .bind(item.version)
+            .execute(&self.executor)
+            .await?
+            .rows_affected();
+
+        if updated == 0 {
+            return Err(Error::RecordNotFound("Bookshelf item".to_string()));
+        }
+        Ok(item.id)
+    }
 }
