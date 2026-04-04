@@ -137,15 +137,13 @@ where
         };
         let email = payload.email.as_ref();
         let roles = payload.roles.map(|roles| roles.join(","));
-        let result = sqlx::query!(
-            "INSERT INTO users (name, email, password, roles) VALUES (?, ?, ?, ?)",
-            payload.name,
-            email,
-            password,
-            roles
-        )
-        .execute(&self.executor)
-        .await?;
+        let result = sqlx::query("INSERT INTO users (name, email, password, roles) VALUES (?, ?, ?, ?)")
+            .bind(payload.name)
+            .bind(email)
+            .bind(password)
+            .bind(roles)
+            .execute(&self.executor)
+            .await?;
 
         let id = result.last_insert_rowid();
         self.get(id).await
@@ -182,14 +180,11 @@ where
     }
 
     pub async fn get(&self, id: i64) -> Result<User> {
-        let user: User = sqlx::query_as!(
-            UserInt,
-            "SELECT id, name, email, roles FROM users WHERE id = ?",
-            id
-        )
-        .fetch_one(&self.executor)
-        .await?
-        .into();
+        let user: User = sqlx::query_as::<_, UserInt>("SELECT id, name, email, roles FROM users WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.executor)
+            .await?
+            .into();
         Ok(user)
     }
 
