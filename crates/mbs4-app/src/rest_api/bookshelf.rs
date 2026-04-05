@@ -20,9 +20,11 @@ mod crud_api_extra {
     };
     use axum_valid::Garde;
     use http::StatusCode;
+    #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
+    use mbs4_dal::bookshelf::{BookshelfItemListing, BookshelfListing};
     use mbs4_dal::bookshelf::{
-        Bookshelf, BookshelfItemListing, BookshelfListing, BookshelfRepository, CreateBookshelf,
-        UpdateBookshelf,
+        Bookshelf, BookshelfRepository, CreateBookshelf, CreateBookshelfItem, UpdateBookshelf,
+        UpdateBookshelfItem,
     };
     use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 
@@ -31,6 +33,12 @@ mod crud_api_extra {
         rest_api::Paging,
         state::AppState,
     };
+
+    #[derive(serde::Serialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+    pub struct BookshelfItemMutationResponse {
+        pub id: i64,
+    }
 
     async fn get_accessible_bookshelf(
         bookshelf_id: i64,
@@ -46,9 +54,34 @@ mod crud_api_extra {
         Ok(bookshelf)
     }
 
+    async fn get_owned_bookshelf(
+        bookshelf_id: i64,
+        api_user: ApiClaim,
+        repo: &BookshelfRepository,
+    ) -> ApiResult<Bookshelf> {
+        let bookshelf = repo.get(bookshelf_id).await?;
+        if bookshelf.created_by != Some(api_user.sub) {
+            return Err(ApiError::DeniedAccess(
+                "You don't have access to modify this bookshelf".into(),
+            ));
+        }
+        Ok(bookshelf)
+    }
+
     #[cfg(feature = "openapi")]
     #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
-    #[openapi(paths(list_mine, list_public, list_items, get, create, update, delete))]
+    #[openapi(paths(
+        list_mine,
+        list_public,
+        list_items,
+        add_item,
+        update_item,
+        delete_item,
+        get,
+        create,
+        update,
+        delete
+    ))]
     pub(super) struct ApiDocs;
 
     #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/mine", tag = "Bookshelf", operation_id = "listMyBookshelves",
@@ -131,6 +164,25 @@ mod crud_api_extra {
         Ok((StatusCode::CREATED, Json(record)))
     }
 
+    #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "/{id}/items", tag = "Bookshelf", operation_id = "addBookshelfItem",
+            responses((status = StatusCode::CREATED, description = "Created Bookshelf item", body = BookshelfItemMutationResponse))))]
+    pub async fn add_item(
+        Path(bookshelf_id): Path<i64>,
+        api_user: ApiClaim,
+        repository: BookshelfRepository,
+        Garde(Json(mut payload)): Garde<Json<CreateBookshelfItem>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let user = api_user.sub.clone();
+        let _shelf = get_owned_bookshelf(bookshelf_id, api_user, &repository).await?;
+        payload.created_by = Some(user);
+        let id = repository.add_item(bookshelf_id, payload).await?;
+
+        Ok((
+            StatusCode::CREATED,
+            Json(BookshelfItemMutationResponse { id }),
+        ))
+    }
+
     #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}", tag = "Bookshelf", operation_id = "updateBookshelf",
             responses((status = StatusCode::OK, description = "Updated Bookshelf", body = Bookshelf))))]
     pub async fn update(
@@ -139,10 +191,29 @@ mod crud_api_extra {
         repository: BookshelfRepository,
         Garde(Json(payload)): Garde<Json<UpdateBookshelf>>,
     ) -> ApiResult<impl IntoResponse> {
-        let _shelf = get_accessible_bookshelf(id, api_user, &repository).await?;
+        let _shelf = get_owned_bookshelf(id, api_user, &repository).await?;
         let record = repository.update(id, payload).await?;
 
         Ok((StatusCode::OK, Json(record)))
+    }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(put, path = "/{id}/items/{item_id}", tag = "Bookshelf", operation_id = "updateBookshelfItem",
+            responses((status = StatusCode::OK, description = "Updated Bookshelf item", body = BookshelfItemMutationResponse))))]
+    pub async fn update_item(
+        Path((bookshelf_id, item_id)): Path<(i64, i64)>,
+        api_user: ApiClaim,
+        repository: BookshelfRepository,
+        Garde(Json(payload)): Garde<Json<UpdateBookshelfItem>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let _shelf = get_owned_bookshelf(bookshelf_id, api_user, &repository).await?;
+        if payload.id != item_id {
+            return Err(ApiError::InvalidRequest(
+                "Bookshelf item id mismatch".into(),
+            ));
+        }
+        let id = repository.update_item(bookshelf_id, payload).await?;
+
+        Ok((StatusCode::OK, Json(BookshelfItemMutationResponse { id })))
     }
 
     #[cfg_attr(
@@ -160,9 +231,29 @@ mod crud_api_extra {
         repository: BookshelfRepository,
     ) -> ApiResult<impl IntoResponse> {
         if !api_user.has_role(Role::Admin) {
-            get_accessible_bookshelf(id, api_user, &repository).await?;
+            get_owned_bookshelf(id, api_user, &repository).await?;
         }
         repository.delete(id).await?;
+
+        Ok((StatusCode::NO_CONTENT, ()))
+    }
+
+    #[cfg_attr(
+        feature = "openapi",
+        utoipa::path(
+            delete,
+            path = "/{id}/items/{item_id}",
+            tag = "Bookshelf",
+            operation_id = "deleteBookshelfItem"
+        )
+    )]
+    pub async fn delete_item(
+        Path((bookshelf_id, item_id)): Path<(i64, i64)>,
+        api_user: ApiClaim,
+        repository: BookshelfRepository,
+    ) -> ApiResult<impl IntoResponse> {
+        let _shelf = get_owned_bookshelf(bookshelf_id, api_user, &repository).await?;
+        repository.remove_item(bookshelf_id, item_id).await?;
 
         Ok((StatusCode::NO_CONTENT, ()))
     }
@@ -174,6 +265,11 @@ pub fn router() -> axum::Router<AppState> {
         // .layer(RequiredRolesLayer::new([Role::Admin]))
         .route("/mine", get(crud_api_extra::list_mine))
         .route("/", post(crud_api_extra::create))
+        .route("/{id}/items", post(crud_api_extra::add_item))
+        .route(
+            "/{id}/items/{item_id}",
+            put(crud_api_extra::update_item).delete(crud_api_extra::delete_item),
+        )
         .route(
             "/{id}",
             put(crud_api_extra::update).delete(crud_api_extra::delete),
