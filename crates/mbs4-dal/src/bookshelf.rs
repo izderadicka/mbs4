@@ -379,7 +379,7 @@ limit ? offset ?;"
             return Ok(existing.id);
         }
 
-        let id = sqlx::query(r#"INSERT INTO bookshelf_item (bookshelf_id, type, ebook_id, series_id, note, "order", created_by, created, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#)
+        let id = sqlx::query(r#"INSERT INTO bookshelf_item (version, bookshelf_id, type, ebook_id, series_id, note, "order", created_by, created, modified) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#)
             .bind(bookshelf_id)
             .bind(item.item_type)
             .bind(item.ebook_id)
