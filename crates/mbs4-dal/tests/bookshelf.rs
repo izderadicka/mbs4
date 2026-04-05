@@ -76,13 +76,19 @@ async fn test_bookshelf_crud_and_items() {
     assert!(created.public);
     assert_eq!(created.created_by.as_deref(), Some("ivan"));
 
-    let mine = repo.list_for_user("ivan", ListingParams::default()).await.unwrap();
+    let mine = repo
+        .list_for_user("ivan", ListingParams::default())
+        .await
+        .unwrap();
     assert_eq!(mine.total, 2);
     assert_eq!(mine.rows.len(), 2);
     assert!(mine.rows.iter().any(|row| row.id == 10));
     assert!(mine.rows.iter().any(|row| row.id == created.id));
 
-    let public = repo.list_public("ivan", ListingParams::default()).await.unwrap();
+    let public = repo
+        .list_public("ivan", ListingParams::default())
+        .await
+        .unwrap();
     assert_eq!(public.total, 1);
     assert_eq!(public.rows.len(), 1);
     assert_eq!(public.rows[0].id, 11);
@@ -198,11 +204,12 @@ async fn test_bookshelf_crud_and_items() {
 
     assert_eq!(updated_item_id, series_item_id);
 
-    let updated_note: Option<String> = sqlx::query_scalar("SELECT note FROM bookshelf_item WHERE id = ?")
-        .bind(series_item_id)
-        .fetch_one(&conn)
-        .await
-        .unwrap();
+    let updated_note: Option<String> =
+        sqlx::query_scalar("SELECT note FROM bookshelf_item WHERE id = ?")
+            .bind(series_item_id)
+            .fetch_one(&conn)
+            .await
+            .unwrap();
     assert_eq!(updated_note.as_deref(), Some("series updated"));
 
     repo.remove_item(created.id, series_item_id).await.unwrap();

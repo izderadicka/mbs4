@@ -20,12 +20,12 @@ mod crud_api_extra {
     };
     use axum_valid::Garde;
     use http::StatusCode;
-    #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
-    use mbs4_dal::bookshelf::{BookshelfItemListing, BookshelfListing};
     use mbs4_dal::bookshelf::{
         Bookshelf, BookshelfRepository, CreateBookshelf, CreateBookshelfItem, UpdateBookshelf,
         UpdateBookshelfItem,
     };
+    #[cfg_attr(not(feature = "openapi"), allow(unused_imports))]
+    use mbs4_dal::bookshelf::{BookshelfItemListing, BookshelfListing};
     use mbs4_types::claim::{ApiClaim, Authorization as _, Role};
 
     use crate::{
