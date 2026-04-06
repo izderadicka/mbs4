@@ -175,6 +175,7 @@ async fn test_bookshelf_crud_and_items() {
     assert_eq!(items.rows[0].title, "Kniha knih");
     assert!(items.rows[0].has_cover);
     assert_eq!(items.rows[0].note.as_deref(), Some("replaced note"));
+    assert_eq!(items.rows[0].order, Some(3));
     assert_eq!(items.rows[0].version, 2);
     assert_eq!(items.rows[0].series_title.as_deref(), Some("Serie"));
     assert_eq!(items.rows[0].series_index, Some(1));
@@ -182,6 +183,7 @@ async fn test_bookshelf_crud_and_items() {
     assert_eq!(items.rows[1].id, series_item_id);
     assert_eq!(items.rows[1].title, "Serie");
     assert!(!items.rows[1].has_cover);
+    assert_eq!(items.rows[1].order, Some(1));
     assert_eq!(items.rows[1].version, 1);
     assert_eq!(items.rows[1].authors.as_ref().map(Vec::len), Some(3));
 
@@ -223,6 +225,7 @@ async fn test_bookshelf_crud_and_items() {
         .iter()
         .find(|item| item.id == series_item_id)
         .unwrap();
+    assert_eq!(updated_series.order, Some(5));
     assert_eq!(updated_series.version, item_version + 1);
 
     repo.remove_item(created.id, series_item_id).await.unwrap();

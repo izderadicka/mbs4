@@ -51,6 +51,7 @@ pub struct BookshelfListing {
 pub struct BookshelfItemListing {
     pub id: i64,
     pub note: Option<String>,
+    pub order: Option<i64>,
     pub version: i64,
     pub created: time::PrimitiveDateTime,
     pub modified: time::PrimitiveDateTime,
@@ -98,6 +99,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
     fn from_row(row: &'_ ChosenRow) -> std::result::Result<Self, sqlx::Error> {
         let id = row.try_get("id")?;
         let note = row.try_get("note")?;
+        let order = row.try_get("order")?;
         let version = row.try_get("version")?;
         let created = row.try_get("created")?;
         let modified = row.try_get("modified")?;
@@ -114,6 +116,7 @@ impl sqlx::FromRow<'_, ChosenRow> for BookshelfItemListing {
         Ok(BookshelfItemListing {
             id,
             note,
+            order,
             version,
             created,
             modified,
@@ -285,6 +288,7 @@ where
             "
 select i.id as id,
     i.note as note,
+    i.\"order\" as \"order\",
     i.version as version,
     i.created as created,
     i.modified as modified,
