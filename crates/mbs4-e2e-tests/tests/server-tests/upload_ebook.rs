@@ -84,9 +84,11 @@ fn catch_event(
 #[tokio::test]
 #[traced_test]
 async fn test_upload() {
-    let (args, _config_guard) = prepare_env("test_upload").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_upload").await.unwrap();
     let base_url = args.base_url.clone();
-    let (client, _state) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _state) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     // create format
 

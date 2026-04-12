@@ -18,14 +18,16 @@ fn create_format(name: &str, extension: &str, mime_type: &str) -> serde_json::Va
 #[tokio::test]
 #[traced_test]
 async fn test_cover_upload() {
-    let (args, _config_guard) = prepare_env("test_cover_upload").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_cover_upload").await.unwrap();
     let base_url = args.base_url.clone();
 
     let test_file_path = Path::new("../../test-data/samples/cover.jpg");
     assert!(fs::try_exists(test_file_path).await.unwrap());
     let file_size = fs::metadata(test_file_path).await.unwrap().len();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let url = base_url.join("files/upload/form").unwrap();
     let file = File::open(&test_file_path).await.unwrap();
@@ -46,7 +48,7 @@ async fn test_cover_upload() {
 #[tokio::test]
 #[traced_test]
 async fn test_store() {
-    let (args, config_guard) = prepare_env("test_store").await.unwrap();
+    let (args, mut config_guard) = prepare_env("test_store").await.unwrap();
     let base_url = args.base_url.clone();
     let tmp_dir = config_guard.path();
 
@@ -54,7 +56,9 @@ async fn test_store() {
     const FILE_SIZE: u64 = 50 * 1024;
     random_text_file(&test_file_path, FILE_SIZE).await.unwrap();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut config_guard)
+        .await
+        .unwrap();
 
     let url = base_url.join("api/format").unwrap();
     let response = client

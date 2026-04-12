@@ -16,7 +16,7 @@ use tracing_test::traced_test;
 #[tokio::test]
 #[traced_test]
 async fn test_paging() {
-    let (args, _config_guard) = prepare_env("test_languages").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_languages").await.unwrap();
 
     let base_url = args.base_url.clone();
 
@@ -41,7 +41,9 @@ async fn test_paging() {
     transaction.commit().await.unwrap();
     info!("Created {} languages", count);
 
-    let (client, _) = launch_env(args, TestUser::User).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::User, &mut _config_guard)
+        .await
+        .unwrap();
     let api_url = base_url.join("api/language").unwrap();
 
     let count_url = extend_url(&api_url, "count");
@@ -94,11 +96,13 @@ async fn test_paging() {
 #[tokio::test]
 #[traced_test]
 async fn test_languages() {
-    let (args, _config_guard) = prepare_env("test_languages").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_languages").await.unwrap();
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let api_url = base_url.join("api/language").unwrap();
     let langs = [

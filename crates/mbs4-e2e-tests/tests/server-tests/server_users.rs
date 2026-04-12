@@ -8,7 +8,7 @@ use tracing_test::traced_test;
 #[tokio::test]
 #[traced_test]
 async fn test_invalid_user_email() {
-    let (args, _config_guard) = prepare_env("test_user_invalid_email").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_user_invalid_email").await.unwrap();
     let user_email = "invalid";
     let user_password = "password";
 
@@ -22,7 +22,9 @@ async fn test_invalid_user_email() {
     assert!(new_user.email.validate().is_err());
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};
@@ -36,7 +38,7 @@ async fn test_invalid_user_email() {
 #[tokio::test]
 #[traced_test]
 async fn test_valid_user() {
-    let (args, _config_guard) = prepare_env("test_valid_user").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_valid_user").await.unwrap();
     let new_user = user::CreateUser {
         name: "admin".to_string(),
         email: "admin@example.com".parse().unwrap(),
@@ -46,7 +48,9 @@ async fn test_valid_user() {
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};
@@ -60,7 +64,7 @@ async fn test_valid_user() {
 #[tokio::test]
 #[traced_test]
 async fn test_invalid_role() {
-    let (args, _config_guard) = prepare_env("test_invalid_role").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_invalid_role").await.unwrap();
     let new_user = user::CreateUser {
         name: "admin".to_string(),
         email: "admin@example.com".parse().unwrap(),
@@ -74,7 +78,9 @@ async fn test_invalid_role() {
 
     let base_url = args.base_url.clone();
 
-    let (client, _) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, _) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let url = base_url.join("users").unwrap();
     info! {"Users URL: {:#?}", url};

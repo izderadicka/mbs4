@@ -8,11 +8,13 @@ use tracing_test::traced_test;
 #[tokio::test]
 #[traced_test]
 async fn test_authors() {
-    let (args, _config_guard) = prepare_env("test_authors").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_authors").await.unwrap();
 
     let base_url = args.base_url.clone();
 
-    let (client, state) = launch_env(args, TestUser::TrustedUser).await.unwrap();
+    let (client, state) = launch_env(args, TestUser::TrustedUser, &mut _config_guard)
+        .await
+        .unwrap();
 
     let new_author: Author = create_author(&client, &base_url, "Usak", Some("Kulisak"))
         .await

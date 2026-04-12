@@ -93,11 +93,38 @@ pub async fn random_text_file(file_path: &Path, size: u64) -> Result<()> {
 
 pub struct ConfigGuard {
     data_dir: TempDir,
+    server: Option<TestServerHandle>,
+}
+
+struct TestServerHandle {
+    shutdown: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<Result<()>>,
 }
 
 impl ConfigGuard {
     pub fn path(&self) -> &Path {
         self.data_dir.path()
+    }
+
+    fn set_server(&mut self, server: TestServerHandle) {
+        self.server = Some(server);
+    }
+}
+
+impl Drop for ConfigGuard {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.take() {
+            server.shutdown.cancel();
+            tokio::spawn(async move {
+                let mut task = server.task;
+                tokio::select! {
+                    _ = &mut task => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
+                        task.abort();
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -112,31 +139,27 @@ pub async fn prepare_env(test_name: &str) -> Result<(ServerConfig, ConfigGuard)>
     Ok((args, config_guard))
 }
 
-pub async fn spawn_server(args: ServerConfig) -> Result<()> {
-    let port = args.port;
-    let listener = take_reserved_listener(port)?;
-    tokio::spawn(async move {
-        println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
-        let state = build_state(&args).await.unwrap();
-        run_with_state_and_listener(args, state, listener)
-            .await
-            .unwrap();
-    });
-
-    test_port(port).await
+pub async fn spawn_server(args: ServerConfig, guard: &mut ConfigGuard) -> Result<()> {
+    let state = build_state(&args).await?;
+    spawn_server_with_state(args, state, guard).await
 }
 
-pub async fn spawn_server_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+pub async fn spawn_server_with_state(
+    args: ServerConfig,
+    state: AppState,
+    guard: &mut ConfigGuard,
+) -> Result<()> {
     let port = args.port;
     let listener = take_reserved_listener(port)?;
-    tokio::spawn(async move {
+    let shutdown = state.shutdown_signal().clone();
+    let task = tokio::spawn(async move {
         println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
-        run_with_state_and_listener(args, state, listener)
-            .await
-            .unwrap();
+        run_with_state_and_listener(args, state, listener).await
     });
 
-    test_port(port).await
+    test_port(port).await?;
+    guard.set_server(TestServerHandle { shutdown, task });
+    Ok(())
 }
 
 pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, ConfigGuard)> {
@@ -165,6 +188,7 @@ pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, Co
         config,
         ConfigGuard {
             data_dir: tmp_data_dir,
+            server: None,
         },
     ))
 }
@@ -220,10 +244,14 @@ impl TestUser {
     }
 }
 
-pub async fn launch_env(args: ServerConfig, user: TestUser) -> Result<(Client, AppState)> {
+pub async fn launch_env(
+    args: ServerConfig,
+    user: TestUser,
+    guard: &mut ConfigGuard,
+) -> Result<(Client, AppState)> {
     let state = build_state(&args).await?;
     let auth_headers = user.auth_header(&state)?;
-    spawn_server_with_state(args, state.clone()).await?;
+    spawn_server_with_state(args, state.clone(), guard).await?;
 
     let client = reqwest::Client::builder()
         .cookie_store(true)

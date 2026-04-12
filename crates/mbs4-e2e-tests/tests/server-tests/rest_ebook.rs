@@ -58,9 +58,11 @@ async fn _search(
 #[tokio::test]
 #[traced_test]
 async fn test_ebook() {
-    let (args, _config_guard) = prepare_env("test_ebook").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_ebook").await.unwrap();
     let base_url = args.base_url.clone();
-    let (client, state) = launch_env(args, TestUser::Admin).await.unwrap();
+    let (client, state) = launch_env(args, TestUser::Admin, &mut _config_guard)
+        .await
+        .unwrap();
 
     let author1 = create_author(&client, &base_url, "Usak", Some("Kulisak"))
         .await

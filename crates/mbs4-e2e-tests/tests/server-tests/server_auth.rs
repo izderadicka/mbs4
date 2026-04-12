@@ -8,7 +8,7 @@ use tracing_test::traced_test;
 #[tokio::test]
 #[traced_test]
 async fn test_auth() {
-    let (args, _config_guard) = prepare_env("test_auth").await.unwrap();
+    let (args, mut _config_guard) = prepare_env("test_auth").await.unwrap();
     let pool = mbs4_dal::new_pool(&args.database_url()).await.unwrap();
     let user_registry = user::UserRepository::new(pool);
     let user_email = "admin@localhost";
@@ -23,7 +23,7 @@ async fn test_auth() {
     let _user = user_registry.create(new_user).await.unwrap();
     let base_url = args.base_url.clone();
 
-    spawn_server(args).await.unwrap();
+    spawn_server(args, &mut _config_guard).await.unwrap();
     let client = reqwest::Client::builder()
         .cookie_store(true)
         .redirect(reqwest::redirect::Policy::none())
