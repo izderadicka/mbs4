@@ -55,7 +55,7 @@ macro_rules! crud_api {
         pub mod crud_api {
             use super::*;
             use $crate::error::ApiResult;
-            use crate::rest_api::Paging;
+            use $crate::rest_api::Paging;
             use crate::state::AppState;
             use axum::{
                 extract::{Path, Query, State},
