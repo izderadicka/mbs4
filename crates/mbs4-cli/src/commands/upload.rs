@@ -306,7 +306,7 @@ impl UploadHelper {
     fn title(&self) -> Option<&str> {
         self.book
             .title.as_deref()
-            .or_else(|| self.meta.title.as_deref())
+            .or(self.meta.title.as_deref())
     }
 
     fn description(&self) -> Option<String> {

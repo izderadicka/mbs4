@@ -56,7 +56,7 @@ impl Ebook {
                         })
                         .collect()
                 })
-                .unwrap_or_else(std::vec::Vec::new),
+                .unwrap_or_default(),
             language_code: self.language.code.as_str(),
             series_name: self.series.as_ref().map(|s| s.title.as_str()),
             series_index: self.series_index,

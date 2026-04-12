@@ -16,7 +16,7 @@ macro_rules! api_read_only {
             let batch = repository.list(listing_params).await?;
             Ok((
                 StatusCode::OK,
-                Json(crate::rest_api::Page::from_batch(batch, page_size)),
+                Json($crate::rest_api::Page::from_batch(batch, page_size)),
             ))
         }
 
@@ -54,7 +54,7 @@ macro_rules! crud_api {
         $crate::repository_from_request!(EntityRepository);
         pub mod crud_api {
             use super::*;
-            use crate::error::ApiResult;
+            use $crate::error::ApiResult;
             use crate::rest_api::Paging;
             use crate::state::AppState;
             use axum::{
@@ -178,7 +178,7 @@ macro_rules! publish_api_docs {
 macro_rules! value_router {
     () => {
         pub fn router() -> axum::Router<$crate::state::AppState> {
-            use crate::auth::token::RequiredRolesLayer;
+            use $crate::auth::token::RequiredRolesLayer;
             use axum::routing::{delete, get, post};
             use mbs4_types::claim::Role;
             axum::Router::new()

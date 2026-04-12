@@ -27,7 +27,7 @@ const CONVERSION_TIMEOUT: u64 = 300;
 const META_EXTRACTION_TIMEOUT: u64 = 120;
 
 async fn wait_output_with_timeout(
-    mut cmd: &mut Command,
+    cmd: &mut Command,
     timeout_limit: Duration,
 ) -> anyhow::Result<std::process::Output> {
     async fn read_to_end<A: AsyncRead + Unpin>(pipe: &mut Option<A>) -> anyhow::Result<Vec<u8>> {
@@ -84,12 +84,12 @@ pub fn set_new_process_group(cmd: &mut Command) {
             // Pure nix: setpgid(pid=0, pgid=0) => set this process's PGID to its PID.
             // That makes the child the leader of a new process group.
             nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-                .map_err(|e| std::io::Error::other(e))?;
+                .map_err(std::io::Error::other)?;
 
             // Linux-only: set this process's death signal to SIGTERM
             #[cfg(target_os = "linux")]
             nix::sys::prctl::set_pdeathsig(nix::sys::signal::Signal::SIGTERM)
-                .map_err(|e| std::io::Error::other(e))?;
+                .map_err(std::io::Error::other)?;
 
             Ok(())
         });
