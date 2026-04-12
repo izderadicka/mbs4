@@ -181,7 +181,5 @@ pub struct AppConfig {
 pub struct AppStateVolatile {}
 
 impl FromRef<AppState> for () {
-    fn from_ref(_input: &AppState) -> Self {
-        
-    }
+    fn from_ref(_input: &AppState) -> Self {}
 }

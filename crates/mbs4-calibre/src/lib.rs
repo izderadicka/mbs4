@@ -118,7 +118,10 @@ fn terminate_process(mut child: Child) {
 
     kill_process(&child, false);
     tokio::spawn(async move {
-        if let Err(_) = timeout(Duration::from_secs(10), child.wait()).await {
+        if timeout(Duration::from_secs(10), child.wait())
+            .await
+            .is_err()
+        {
             kill_process(&child, true);
         }
     });
@@ -209,9 +212,10 @@ async fn extract_metadata(
     let stdout = std::str::from_utf8(&output.stdout)?;
     let mut meta = parse_metadata(stdout);
     if let Some(cover_file) = cover_file
-        && tokio::fs::metadata(&cover_file).await.is_ok() {
-            meta.cover_file = Some(cover_file.to_string_lossy().into());
-        }
+        && tokio::fs::metadata(&cover_file).await.is_ok()
+    {
+        meta.cover_file = Some(cover_file.to_string_lossy().into());
+    }
     Ok(meta)
 }
 
@@ -235,9 +239,10 @@ async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<Pat
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase());
     if let Some(ext) = input_ext
-        && (ext == "pdb" || ext == "txt") {
-            cmd.arg("--input-encoding=windows-1250");
-        }
+        && (ext == "pdb" || ext == "txt")
+    {
+        cmd.arg("--input-encoding=windows-1250");
+    }
 
     let _output = run_command(&mut cmd, Duration::from_secs(CONVERSION_TIMEOUT)).await?;
     let file_meta = tokio::fs::metadata(&output_file).await?;

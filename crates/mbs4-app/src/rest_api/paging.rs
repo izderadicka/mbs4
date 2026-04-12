@@ -63,9 +63,7 @@ where
         Ok(Self {
             page: u32::try_from(batch.offset)? / page_size + 1,
             page_size,
-            total_pages: u32::try_from(
-                u64::try_from(batch.total)?.div_ceil(page_size as u64),
-            )?,
+            total_pages: u32::try_from(batch.total.div_ceil(page_size as u64))?,
             total: batch.total,
             rows: batch.rows,
         })

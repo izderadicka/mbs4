@@ -54,10 +54,13 @@ impl FromStr for Filter {
                 let ids = value
                     .split(',')
                     .map(|s| s.parse())
-                    .collect::<Result<Vec<i64>, _>>().map_err(|e| Error::InvalidFilter(format!(
+                    .collect::<Result<Vec<i64>, _>>()
+                    .map_err(|e| {
+                        Error::InvalidFilter(format!(
                             "Invalid genre filters value: {}, error {}",
                             s, e
-                        )))?;
+                        ))
+                    })?;
 
                 Ok(Filter::Genres(ids))
             }

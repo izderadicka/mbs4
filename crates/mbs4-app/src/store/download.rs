@@ -50,26 +50,21 @@ pub async fn get_icon(
     let exiting_stream = store.load_data(&path).await;
 
     let body = match exiting_stream {
-        Ok(stream) => {
-            
-            Body::from_stream(stream)
-        }
-        Err(e) if matches!(e, mbs4_store::error::StoreError::NotFound(_)) => {
-            match repository.get(icon_id).await {
-                Ok(ebook) => match ebook.cover {
-                    Some(cover) => {
-                        let icon_data = create_and_save_icon(&state, cover, icon_id).await?;
-                        Body::from(icon_data)
-                    }
-                    None => return Err(ApiError::ResourceNotFound("Cover".to_string())),
-                },
-                Err(e) if matches!(e, mbs4_dal::error::Error::RecordNotFound(_)) => {
-                    return Err(ApiError::ResourceNotFound("Cover".to_string()));
+        Ok(stream) => Body::from_stream(stream),
+        Err(mbs4_store::error::StoreError::NotFound(_)) => match repository.get(icon_id).await {
+            Ok(ebook) => match ebook.cover {
+                Some(cover) => {
+                    let icon_data = create_and_save_icon(&state, cover, icon_id).await?;
+                    Body::from(icon_data)
                 }
-
-                Err(e) => return Err(e.into()),
+                None => return Err(ApiError::ResourceNotFound("Cover".to_string())),
+            },
+            Err(mbs4_dal::error::Error::RecordNotFound(_)) => {
+                return Err(ApiError::ResourceNotFound("Cover".to_string()));
             }
-        }
+
+            Err(e) => return Err(e.into()),
+        },
         Err(e) => return Err(e.into()),
     };
 

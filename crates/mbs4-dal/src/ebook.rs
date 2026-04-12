@@ -245,10 +245,11 @@ impl<'a> EbookQuery<'a> {
 
     fn _build(&mut self) -> crate::error::Result<()> {
         if let Some(where_clause) = self.where_clause
-            && where_clause.author_id.is_some() {
-                self.builder
-                    .push(" JOIN ebook_authors ea ON e.id = ea.ebook_id ");
-            }
+            && where_clause.author_id.is_some()
+        {
+            self.builder
+                .push(" JOIN ebook_authors ea ON e.id = ea.ebook_id ");
+        }
 
         if genres_filter(self.filter)
             .map(|g| !g.is_empty())

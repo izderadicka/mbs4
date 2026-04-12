@@ -350,7 +350,6 @@ pub async fn move_upload(
 }
 
 pub fn router(limit_mb: usize) -> Router<AppState> {
-    
     Router::new()
         .route("/upload/form", post(upload_form))
         .route("/upload/direct", post(upload_direct))

@@ -31,8 +31,9 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
     let db_path = index_db_path.as_ref();
     let db_existed = tokio::fs::try_exists(db_path).await?;
     let db_url = db_path
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid path"))?.to_string();
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid path"))?
+        .to_string();
     if !db_existed {
         info!("Fulltext index does not exist at {db_url}. Creating it now.");
         sqlx::Sqlite::create_database(&db_url).await?;
@@ -347,7 +348,7 @@ impl SqlIndexerRunner {
                     if let Err(ref e) = res {
                         error!("Indexing failed: {e}");
                     }
-                    if let Err(_) = sender.send(res) {
+                    if sender.send(res).is_err() {
                         debug!("Failed to send indexing result"); // no problem, can happen if initiator does not wait for result
                     }
                 }
@@ -356,7 +357,7 @@ impl SqlIndexerRunner {
                     if let Err(ref e) = res {
                         error!("Deleting from index failed: {e}");
                     }
-                    if let Err(_) = sender.send(res) {
+                    if sender.send(res).is_err() {
                         debug!("Failed to send deleting from index result");
                     }
                 }
@@ -365,7 +366,7 @@ impl SqlIndexerRunner {
                     if let Err(ref e) = res {
                         error!("Index reset failed failed: {e}");
                     }
-                    if let Err(_) = sender.send(res) {
+                    if sender.send(res).is_err() {
                         debug!("Failed to send index reset result");
                     }
                 }
@@ -541,7 +542,7 @@ impl Searcher for SqlSearcher {
             if let Err(ref e) = res {
                 error!("Search failed: {e}");
             }
-            if let Err(_) = sender.send(res) {
+            if sender.send(res).is_err() {
                 error!("Failed to send search result");
             }
         });
@@ -552,13 +553,12 @@ impl Searcher for SqlSearcher {
 // Very primitive query normalization
 // TODO - need to be more complex
 fn normalize_query(query: &str) -> String {
-    
     query
         .chars()
-        .filter_map(|c| match c {
-            ' ' | '+' | '*' => Some(c),
-            _ if c.is_alphanumeric() => Some(c),
-            _ => Some(' '),
+        .map(|c| match c {
+            ' ' | '+' | '*' => c,
+            _ if c.is_alphanumeric() => c,
+            _ => ' ',
         })
         .collect::<String>()
 }

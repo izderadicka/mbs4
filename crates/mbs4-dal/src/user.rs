@@ -49,9 +49,7 @@ async fn verify_password_async(
 }
 
 fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
-    role.parse::<Role>()
-        .map_err(garde::Error::new)
-        .map(|_| ())
+    role.parse::<Role>().map_err(garde::Error::new).map(|_| ())
 }
 
 #[cfg(feature = "openapi")]
@@ -217,9 +215,9 @@ where
             && verify_password_async(password, hashed_password)
                 .await
                 .unwrap_or(false)
-            {
-                return self.get(id).await;
-            }
+        {
+            return self.get(id).await;
+        }
         Err(Error::InvalidCredentials)
     }
 

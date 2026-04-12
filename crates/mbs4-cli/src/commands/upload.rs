@@ -262,10 +262,7 @@ impl UploadHelper {
     }
 
     async fn prepare_genres(&self, genres: &[&str]) -> Result<Vec<GenreShort>> {
-        let genres: HashSet<String> = genres
-            .iter()
-            .map(|s| s.trim().to_lowercase())
-            .collect();
+        let genres: HashSet<String> = genres.iter().map(|s| s.trim().to_lowercase()).collect();
         let genre_url = self.server.url.join("api/genre/all")?;
         let res = self.client.get(genre_url).send().await?;
         check_response!(res, "Get genres");
@@ -304,9 +301,7 @@ impl UploadHelper {
         Ok(source)
     }
     fn title(&self) -> Option<&str> {
-        self.book
-            .title.as_deref()
-            .or(self.meta.title.as_deref())
+        self.book.title.as_deref().or(self.meta.title.as_deref())
     }
 
     fn description(&self) -> Option<String> {
@@ -559,7 +554,7 @@ fn filter_found_authors(
 }
 
 impl UploadCmd {
-    fn to_executor(
+    fn into_executor(
         self,
         meta: EbookMetadata,
         upload_info: UploadInfo,
@@ -622,7 +617,7 @@ impl UploadCmd {
             }
         }
         let meta: EbookMetadata = serde_json::from_value(meta).context("Failed to parse meta")?;
-        let upload = self.to_executor(meta, upload_info, client);
+        let upload = self.into_executor(meta, upload_info, client);
         Ok(upload)
     }
 }

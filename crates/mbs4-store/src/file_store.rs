@@ -54,10 +54,9 @@ const MAX_SAME_FILES: usize = 10;
 /// This is compensated later by using lock
 fn find_unique_path(path: &Path) -> StoreResult<PathBuf> {
     let (base_path, ext) = rsplit_file_at_dot(path.as_os_str());
-    let new_path = if ext.is_some() && base_path.is_some() {
-        base_path.unwrap()
-    } else {
-        path.as_os_str()
+    let new_path = match (base_path, ext) {
+        (Some(base_path), Some(_)) => base_path,
+        _ => path.as_os_str(),
     };
 
     for i in 1..=MAX_SAME_FILES {
@@ -110,13 +109,13 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<PathBuf> {
         Err(StoreError::InvalidPath)
     } else {
         let res_path = if final_path.exists() {
-            
             find_unique_path(&final_path)?
         } else {
             if let Some(parent_dir) = final_path.parent()
-                && !parent_dir.exists() {
-                    std::fs::create_dir_all(parent_dir)?;
-                }
+                && !parent_dir.exists()
+            {
+                std::fs::create_dir_all(parent_dir)?;
+            }
 
             final_path
         };

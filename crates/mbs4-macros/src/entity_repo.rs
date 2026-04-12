@@ -75,8 +75,7 @@ fn special_field_name<'a>(
 
 fn filter_field(f: &Field, omit: Option<&str>, keep_spec: &[&str]) -> bool {
     for attr in &f.attrs {
-        if omit.is_some() && attr.path().is_ident(OMIT) {
-            let omit = omit.unwrap();
+        if let Some(omit) = omit.filter(|_| attr.path().is_ident(OMIT)) {
             if params_contains(attr, omit) {
                 return false;
             }
