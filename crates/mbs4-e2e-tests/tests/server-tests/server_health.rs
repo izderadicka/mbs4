@@ -37,9 +37,9 @@ async fn test_metrics_endpoint() {
     assert!(metrics_response.status().is_success());
 
     let metrics_body = metrics_response.text().await.unwrap();
-    assert!(metrics_body.contains("mbs4_http_requests"));
-    assert!(metrics_body.contains("mbs4_http_request_duration_seconds"));
-    assert!(metrics_body.contains("http_method=\"GET\""));
+    assert!(metrics_body.contains("http_server_request_duration_seconds"));
+    assert!(!metrics_body.contains("seconds_seconds"));
+    assert!(metrics_body.contains("http_request_method=\"GET\""));
     assert!(metrics_body.contains("http_route=\"/health\""));
-    assert!(metrics_body.contains("http_status_code=\"200\""));
+    assert!(metrics_body.contains("http_response_status_code=\"200\""));
 }

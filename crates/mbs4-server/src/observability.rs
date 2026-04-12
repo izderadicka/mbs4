@@ -7,18 +7,21 @@ use std::{
 use axum::{extract::MatchedPath, http::Request, response::Response};
 use futures::future::BoxFuture;
 use opentelemetry::{
-    metrics::{Counter, Histogram, MeterProvider as _},
+    metrics::{Histogram, MeterProvider as _},
     KeyValue,
 };
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry, TextEncoder};
 use tower::{Layer, Service};
 
+const HTTP_DURATION_BUCKETS_SECONDS: [f64; 15] = [
+    0.0, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+];
+
 #[derive(Clone)]
 pub struct HttpMetrics {
     registry: Registry,
     _meter_provider: Arc<SdkMeterProvider>,
-    request_counter: Counter<u64>,
     request_duration: Histogram<f64>,
 }
 
@@ -30,20 +33,16 @@ impl HttpMetrics {
             .build()?;
         let meter_provider = Arc::new(SdkMeterProvider::builder().with_reader(exporter).build());
         let meter = meter_provider.meter("mbs4-server");
-        let request_counter = meter
-            .u64_counter("mbs4_http_requests")
-            .with_description("Number of HTTP requests handled by the server")
-            .build();
         let request_duration = meter
-            .f64_histogram("mbs4_http_request_duration_seconds")
+            .f64_histogram("http.server.request.duration")
             .with_unit("s")
+            .with_boundaries(HTTP_DURATION_BUCKETS_SECONDS.into())
             .with_description("HTTP request duration in seconds")
             .build();
 
         Ok(Self {
             registry,
             _meter_provider: meter_provider,
-            request_counter,
             request_duration,
         })
     }
@@ -55,14 +54,15 @@ impl HttpMetrics {
         Ok(String::from_utf8(encoded)?)
     }
 
-    fn record_request(&self, method: &str, route: &str, status: u16, duration: Duration) {
-        let attrs = [
-            KeyValue::new("http_method", method.to_owned()),
-            KeyValue::new("http_route", route.to_owned()),
-            KeyValue::new("http_status_code", status.to_string()),
+    fn record_request(&self, method: &str, route: Option<&str>, status: u16, duration: Duration) {
+        let mut attrs = vec![
+            KeyValue::new("http.request.method", method.to_owned()),
+            KeyValue::new("http.response.status_code", i64::from(status)),
         ];
+        if let Some(route) = route {
+            attrs.push(KeyValue::new("http.route", route.to_owned()));
+        }
 
-        self.request_counter.add(1, &attrs);
         self.request_duration.record(duration.as_secs_f64(), &attrs);
     }
 }
@@ -117,18 +117,17 @@ where
             .extensions()
             .get::<MatchedPath>()
             .map(MatchedPath::as_str)
-            .unwrap_or_else(|| request.uri().path())
-            .to_owned();
+            .map(str::to_owned);
         let metrics = self.metrics.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
             let response = inner.call(request).await?;
 
-            if route != "/metrics" {
+            if route.as_deref() != Some("/metrics") {
                 metrics.record_request(
                     &method,
-                    &route,
+                    route.as_deref(),
                     response.status().as_u16(),
                     started_at.elapsed(),
                 );
