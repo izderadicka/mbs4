@@ -56,7 +56,7 @@ macro_rules! crud_api {
             use super::*;
             use $crate::error::ApiResult;
             use $crate::rest_api::Paging;
-            use crate::state::AppState;
+            use $crate::state::AppState;
             use axum::{
                 extract::{Path, Query, State},
                 response::IntoResponse,
@@ -69,7 +69,7 @@ macro_rules! crud_api {
             type CreateEntity = paste::paste! {[<Create $entity>]};
             type UpdateEntity = paste::paste! {[<Update $entity>]};
 
-            crate::api_read_only!($entity);
+            $crate::api_read_only!($entity);
 
 
             #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = stringify!($entity), operation_id = concat!("create", stringify!($entity)),
@@ -120,12 +120,12 @@ macro_rules! crud_api {
 
     ($entity:ty, RO) => {
         type EntityRepository = paste::paste! {[<$entity Repository>]};
-        crate::repository_from_request!(EntityRepository);
+        $crate::repository_from_request!(EntityRepository);
         pub mod crud_api {
             use super::*;
-            use crate::error::ApiResult;
-            use crate::rest_api::Paging;
-            use crate::state::AppState;
+            use $crate::error::ApiResult;
+            use $crate::rest_api::Paging;
+            use $crate::state::AppState;
             use axum::{
                 extract::{Path, Query, State},
                 response::IntoResponse,
@@ -135,7 +135,7 @@ macro_rules! crud_api {
             use http::StatusCode;
             // use tracing::debug;
 
-            crate::api_read_only!($entity);
+            $crate::api_read_only!($entity);
 
             #[cfg(feature = "openapi")]
             #[cfg_attr(feature = "openapi", derive(utoipa::OpenApi))]
@@ -178,9 +178,9 @@ macro_rules! publish_api_docs {
 macro_rules! value_router {
     () => {
         pub fn router() -> axum::Router<$crate::state::AppState> {
-            use $crate::auth::token::RequiredRolesLayer;
             use axum::routing::{delete, get, post};
             use mbs4_types::claim::Role;
+            use $crate::auth::token::RequiredRolesLayer;
             axum::Router::new()
                 .route("/", post(crud_api::create))
                 .route("/{id}", delete(crud_api::delete).put(crud_api::update))
