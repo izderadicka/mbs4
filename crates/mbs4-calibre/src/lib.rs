@@ -38,7 +38,7 @@ async fn wait_output_with_timeout(
         Ok(vec)
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    set_new_process_group(&mut cmd);
+    set_new_process_group(cmd);
     let mut child = cmd.spawn()?;
 
     let mut stdout = child.stdout.take();
@@ -84,12 +84,12 @@ pub fn set_new_process_group(cmd: &mut Command) {
             // Pure nix: setpgid(pid=0, pgid=0) => set this process's PGID to its PID.
             // That makes the child the leader of a new process group.
             nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| std::io::Error::other(e))?;
 
             // Linux-only: set this process's death signal to SIGTERM
             #[cfg(target_os = "linux")]
             nix::sys::prctl::set_pdeathsig(nix::sys::signal::Signal::SIGTERM)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| std::io::Error::other(e))?;
 
             Ok(())
         });
@@ -208,11 +208,10 @@ async fn extract_metadata(
 
     let stdout = std::str::from_utf8(&output.stdout)?;
     let mut meta = parse_metadata(stdout);
-    if let Some(cover_file) = cover_file {
-        if tokio::fs::metadata(&cover_file).await.is_ok() {
+    if let Some(cover_file) = cover_file
+        && tokio::fs::metadata(&cover_file).await.is_ok() {
             meta.cover_file = Some(cover_file.to_string_lossy().into());
         }
-    }
     Ok(meta)
 }
 
@@ -235,11 +234,10 @@ async fn convert(path: impl AsRef<Path>, format_ext: &str) -> anyhow::Result<Pat
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase());
-    if let Some(ext) = input_ext {
-        if ext == "pdb" || ext == "txt" {
+    if let Some(ext) = input_ext
+        && (ext == "pdb" || ext == "txt") {
             cmd.arg("--input-encoding=windows-1250");
         }
-    }
 
     let _output = run_command(&mut cmd, Duration::from_secs(CONVERSION_TIMEOUT)).await?;
     let file_meta = tokio::fs::metadata(&output_file).await?;

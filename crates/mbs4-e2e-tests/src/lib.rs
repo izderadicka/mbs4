@@ -158,17 +158,17 @@ pub fn issue_token(state: &AppState, claim: ApiClaim) -> Result<String> {
 
 pub fn admin_token(state: &AppState) -> Result<String> {
     let claim = ApiClaim::new_expired("admin@localhost", [Role::Admin, Role::Trusted]);
-    issue_token(state, claim).map_err(|e| e.into())
+    issue_token(state, claim)
 }
 
 pub fn user_token(state: &AppState) -> Result<String> {
     let claim = ApiClaim::new_expired::<Role>("user@localhost", []);
-    issue_token(state, claim).map_err(|e| e.into())
+    issue_token(state, claim)
 }
 
 pub fn trusted_user_token(state: &AppState) -> Result<String> {
     let claim = ApiClaim::new_expired("trusted@localhost", [Role::Trusted]);
-    issue_token(state, claim).map_err(|e| e.into())
+    issue_token(state, claim)
 }
 
 pub fn auth_headers(token: String) -> Result<HeaderMap> {

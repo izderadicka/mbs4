@@ -50,7 +50,7 @@ async fn verify_password_async(
 
 fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
     role.parse::<Role>()
-        .map_err(|e| garde::Error::new(e))
+        .map_err(garde::Error::new)
         .map(|_| ())
 }
 
@@ -213,14 +213,13 @@ where
                     debug!("User check error: {e}");
                     Error::InvalidCredentials
                 })?;
-        if let Some(hashed_password) = hashed_password {
-            if verify_password_async(password, hashed_password)
+        if let Some(hashed_password) = hashed_password
+            && verify_password_async(password, hashed_password)
                 .await
                 .unwrap_or(false)
             {
                 return self.get(id).await;
             }
-        }
         Err(Error::InvalidCredentials)
     }
 

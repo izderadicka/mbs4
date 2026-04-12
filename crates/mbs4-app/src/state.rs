@@ -113,6 +113,12 @@ pub struct EventHub {
     sender: tokio::sync::broadcast::Sender<EventMessage>,
 }
 
+impl Default for EventHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventHub {
     pub fn new() -> Self {
         let (sender, mut receiver) = tokio::sync::broadcast::channel(1024);
@@ -176,6 +182,6 @@ pub struct AppStateVolatile {}
 
 impl FromRef<AppState> for () {
     fn from_ref(_input: &AppState) -> Self {
-        ()
+        
     }
 }

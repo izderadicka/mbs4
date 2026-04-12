@@ -22,5 +22,5 @@ static LANG_MAP: phf::Map<&'static str, &'static str> = phf_map! {
 };
 
 pub fn normalize_lang(lang: &str) -> Option<&'static str> {
-    LANG_MAP.get(lang).map(|l| *l)
+    LANG_MAP.get(lang).copied()
 }

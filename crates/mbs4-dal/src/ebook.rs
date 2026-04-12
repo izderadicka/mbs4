@@ -51,12 +51,12 @@ impl Ebook {
                     authors
                         .iter()
                         .map(|author| Author {
-                            first_name: author.first_name.as_ref().map(|s| s.as_str()),
+                            first_name: author.first_name.as_deref(),
                             last_name: author.last_name.as_str(),
                         })
                         .collect()
                 })
-                .unwrap_or_else(|| vec![]),
+                .unwrap_or_else(std::vec::Vec::new),
             language_code: self.language.code.as_str(),
             series_name: self.series.as_ref().map(|s| s.title.as_str()),
             series_index: self.series_index,
@@ -244,12 +244,11 @@ impl<'a> EbookQuery<'a> {
     }
 
     fn _build(&mut self) -> crate::error::Result<()> {
-        if let Some(where_clause) = self.where_clause {
-            if where_clause.author_id.is_some() {
+        if let Some(where_clause) = self.where_clause
+            && where_clause.author_id.is_some() {
                 self.builder
                     .push(" JOIN ebook_authors ea ON e.id = ea.ebook_id ");
             }
-        }
 
         if genres_filter(self.filter)
             .map(|g| !g.is_empty())
@@ -571,8 +570,7 @@ where
         let mut record: Ebook = sqlx::query_as::<_, Ebook>(SQL)
             .bind(id)
             .fetch_one(&self.executor)
-            .await?
-            .into();
+            .await?;
         record.authors = Some(
             sqlx::query_as(
                 r#"

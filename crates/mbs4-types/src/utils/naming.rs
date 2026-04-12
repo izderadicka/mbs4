@@ -40,7 +40,7 @@ impl<'a> Ebook<'a> {
             _ => {
                 let mut authors = vec![];
                 for a in self.authors.iter().take(3) {
-                    let s = if let Some(ref first_name) = a.first_name {
+                    let s = if let Some(first_name) = a.first_name {
                         format!("{} {}", a.last_name, initials(first_name))
                     } else {
                         a.last_name.to_string()
@@ -58,11 +58,11 @@ impl<'a> Ebook<'a> {
 
     fn norm_file_name_base(&self) -> String {
         let author = safe_file_name(&self.authors_str());
-        let title = safe_file_name(&self.title);
+        let title = safe_file_name(self.title);
         let language = self.language_code;
 
         let name = if let Some(series) = self.series_name {
-            let serie = safe_file_name(&series);
+            let serie = safe_file_name(series);
             let serie_index = self.series_index.unwrap_or(0);
             format!(
                 "{}/{}/{} {} - {}({})/{} - {} {} - {}",
@@ -136,7 +136,7 @@ fn remove_diacritics(text: &str) -> String {
 
     for c in text.nfkd() {
         if let Some(mapped) = ND_CHARMAP.get(&c) {
-            result.extend(mapped.chars()); // efficient: appends characters directly
+            result.push_str(mapped); // efficient: appends characters directly
         } else if c.is_ascii() {
             result.push(c);
         } else if c.is_alphabetic() {

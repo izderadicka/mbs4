@@ -12,5 +12,5 @@ pub(crate) async fn create_user_repository(
     database_url: &str,
 ) -> anyhow::Result<mbs4_dal::user::UserRepository> {
     let pool = sqlx::sqlite::SqlitePool::connect(database_url).await?;
-    return Ok(mbs4_dal::user::UserRepository::new(pool));
+    Ok(mbs4_dal::user::UserRepository::new(pool))
 }

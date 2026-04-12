@@ -4,7 +4,7 @@ macro_rules! api_read_only {
         #[cfg(feature = "openapi")]
         type EntityShort = paste::paste! {[<$entity Short>]};
         #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "", tag = stringify!($entity), operation_id = concat!("list", stringify!($entity)),
-        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = crate::rest_api::Page<EntityShort>))))]
+        params(Paging), responses((status = StatusCode::OK, description = "List paginated", body = $crate::rest_api::Page<EntityShort>))))]
         pub async fn list(
             repository: EntityRepository,
             State(state): State<AppState>,
@@ -51,7 +51,7 @@ macro_rules! api_read_only {
 macro_rules! crud_api {
     ($entity:ty) => {
         type EntityRepository = paste::paste! {[<$entity Repository>]};
-        crate::repository_from_request!(EntityRepository);
+        $crate::repository_from_request!(EntityRepository);
         pub mod crud_api {
             use super::*;
             use crate::error::ApiResult;
@@ -177,7 +177,7 @@ macro_rules! publish_api_docs {
 #[macro_export]
 macro_rules! value_router {
     () => {
-        pub fn router() -> axum::Router<crate::state::AppState> {
+        pub fn router() -> axum::Router<$crate::state::AppState> {
             use crate::auth::token::RequiredRolesLayer;
             use axum::routing::{delete, get, post};
             use mbs4_types::claim::Role;

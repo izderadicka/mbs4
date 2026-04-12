@@ -146,7 +146,7 @@ fn main_router(state: AppState) -> Router<()> {
 
     if let Some(ref static_path) = state.config().static_dir {
         let static_service =
-            ServeDir::new(&static_path).fallback(ServeFile::new(static_path.join("index.html")));
+            ServeDir::new(static_path).fallback(ServeFile::new(static_path.join("index.html")));
         router = router.fallback_service(static_service);
     }
 

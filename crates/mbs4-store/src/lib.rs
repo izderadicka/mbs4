@@ -116,9 +116,9 @@ impl AsRef<str> for ValidPath {
     }
 }
 
-impl Into<String> for ValidPath {
-    fn into(self) -> String {
-        self.0
+impl From<ValidPath> for String {
+    fn from(val: ValidPath) -> Self {
+        val.0
     }
 }
 

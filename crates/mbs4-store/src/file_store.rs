@@ -110,14 +110,13 @@ fn unique_path_sync(final_path: PathBuf) -> StoreResult<PathBuf> {
         Err(StoreError::InvalidPath)
     } else {
         let res_path = if final_path.exists() {
-            let new_path = find_unique_path(&final_path)?;
-            new_path
+            
+            find_unique_path(&final_path)?
         } else {
-            if let Some(parent_dir) = final_path.parent() {
-                if !parent_dir.exists() {
+            if let Some(parent_dir) = final_path.parent()
+                && !parent_dir.exists() {
                     std::fs::create_dir_all(parent_dir)?;
                 }
-            }
 
             final_path
         };
@@ -193,7 +192,7 @@ impl FileStore {
                 move || tmp.persist(dst).map(|_| ())
             })
             .await?
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.error))?;
+            .map_err(|e| io::Error::other(e.error))?;
             final_path
         };
 
@@ -271,7 +270,7 @@ impl Store for FileStore {
                     file.write_all(&chunk)
                         .or_else(|e| cleanup(&tmp_path, e))
                         .await?;
-                    size = size + chunk.len() as u64;
+                    size += chunk.len() as u64;
                     digester.update(&chunk);
                 }
                 Err(e) => {

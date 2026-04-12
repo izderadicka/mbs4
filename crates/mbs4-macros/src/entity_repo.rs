@@ -47,11 +47,11 @@ fn params_contains(attr: &Attribute, name: &str) -> bool {
 
 fn field_has_attr_with_value(f: &Field, attr_name: &str, value: &str) -> bool {
     for attr in &f.attrs {
-        if attr.path().is_ident(attr_name) && params_contains(&attr, value) {
+        if attr.path().is_ident(attr_name) && params_contains(attr, value) {
             return true;
         }
     }
-    return false;
+    false
 }
 
 fn special_field_name<'a>(
@@ -167,7 +167,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let short_struct_name = format_ident!("{}Short", entity_name);
         let row_impl_fields = short_fields.iter().map(|f| {
             let ident = f.ident.as_ref().unwrap();
-            let column_name = format!("{}_{}", table_name, ident.to_string());
+            let column_name = format!("{}_{}", table_name, ident);
             quote! { #ident:row.try_get(#column_name)?}
         });
         let from_row_impl = quote! {
@@ -274,7 +274,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         if let Some(created) = created_field {
             insert_fields.push(created);
-            placeholders.push("?".into());
+            placeholders.push("?");
             bound_fields_insert.push({
                 let now = format_ident!("now");
                 quote!(.bind(#now))
@@ -283,7 +283,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         if let Some(ref modified) = modified_field {
             insert_fields.push(modified.into());
-            placeholders.push("?".into());
+            placeholders.push("?");
             bound_fields_insert.push({
                 let now = format_ident!("now");
                 quote!(.bind(#now))
@@ -292,7 +292,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         if let Some(ref version) = version_field {
             insert_fields.push(version.into());
-            placeholders.push("1".into())
+            placeholders.push("1")
         }
 
         let placeholders = placeholders.join(",");
@@ -522,7 +522,7 @@ pub fn repository(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     } else {
         let e = syn::Error::new(
             input.ident.span(),
-            format!("Unexpected data type, should be struct"),
+            "Unexpected data type, should be struct".to_string(),
         );
         e.to_compile_error().into()
     }

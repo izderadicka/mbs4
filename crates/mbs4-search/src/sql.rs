@@ -30,12 +30,9 @@ CREATE VIRTUAL TABLE idx_author USING fts5(first_name, last_name, tokenize="trig
 pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlIndexer, SqlSearcher)> {
     let db_path = index_db_path.as_ref();
     let db_existed = tokio::fs::try_exists(db_path).await?;
-    let db_url = format!(
-        "{}",
-        db_path
+    let db_url = db_path
             .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid path"))?
-    );
+            .ok_or_else(|| anyhow::anyhow!("Invalid path"))?.to_string();
     if !db_existed {
         info!("Fulltext index does not exist at {db_url}. Creating it now.");
         sqlx::Sqlite::create_database(&db_url).await?;
@@ -151,7 +148,7 @@ async fn index_fill_ebook(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<
             .map_ids_to_ebooks(&page.rows)
             .await?
             .into_iter()
-            .map(|b| ItemToIndex::Ebook(b))
+            .map(ItemToIndex::Ebook)
             .collect();
 
         let res = indexer.index(ebooks, false)?;
@@ -534,7 +531,7 @@ impl Searcher for SqlSearcher {
     fn search(&self, query: &str, what: SearchTarget, num_results: usize) -> crate::SearchResult {
         let (res, sender) = crate::SearchResult::new();
         let searcher = self.clone();
-        let query = normalize_query(&query);
+        let query = normalize_query(query);
         tokio::spawn(async move {
             let res = match what {
                 SearchTarget::Ebook => searcher.search_ebook(&query, num_results).await,
@@ -555,13 +552,13 @@ impl Searcher for SqlSearcher {
 // Very primitive query normalization
 // TODO - need to be more complex
 fn normalize_query(query: &str) -> String {
-    let normalized = query
+    
+    query
         .chars()
         .filter_map(|c| match c {
             ' ' | '+' | '*' => Some(c),
             _ if c.is_alphanumeric() => Some(c),
             _ => Some(' '),
         })
-        .collect::<String>();
-    normalized
+        .collect::<String>()
 }

@@ -120,7 +120,7 @@ impl ProvidersCache {
         provider_id: &str,
         state: &AppState,
     ) -> anyhow::Result<Option<OIDCClient>> {
-        let provider_config = state.get_oidc_provider(&provider_id);
+        let provider_config = state.get_oidc_provider(provider_id);
         if let Some(provider) = provider_config {
             let redirect_url = state.build_backend_url("auth/callback")?;
             let client = OIDCClient::discover(&provider, redirect_url).await?;

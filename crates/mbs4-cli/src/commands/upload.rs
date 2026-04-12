@@ -128,9 +128,9 @@ impl Executor for UploadCmd {
                     .book
                     .language
                     .as_ref()
-                    .or_else(|| upload.meta.language.as_ref());
+                    .or(upload.meta.language.as_ref());
 
-                let language = if let Some(ref lang) = lang_code {
+                let language = if let Some(lang) = lang_code {
                     upload.prepare_language(lang).await?
                 } else {
                     anyhow::bail!("Missing language input");
@@ -263,7 +263,7 @@ impl UploadHelper {
 
     async fn prepare_genres(&self, genres: &[&str]) -> Result<Vec<GenreShort>> {
         let genres: HashSet<String> = genres
-            .into_iter()
+            .iter()
             .map(|s| s.trim().to_lowercase())
             .collect();
         let genre_url = self.server.url.join("api/genre/all")?;
@@ -305,17 +305,15 @@ impl UploadHelper {
     }
     fn title(&self) -> Option<&str> {
         self.book
-            .title
-            .as_ref()
-            .map(|t| t.as_str())
-            .or_else(|| self.meta.title.as_ref().map(|t| t.as_str()))
+            .title.as_deref()
+            .or_else(|| self.meta.title.as_deref())
     }
 
     fn description(&self) -> Option<String> {
         self.book
             .description
             .as_ref()
-            .or_else(|| self.meta.comments.as_ref())
+            .or(self.meta.comments.as_ref())
             .map(|s| s.to_string())
     }
 
@@ -341,7 +339,7 @@ impl UploadHelper {
         let mut query = title.to_string()
             + " "
             + authors
-                .into_iter()
+                .iter()
                 .map(|a| a.to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
@@ -479,7 +477,7 @@ impl UploadHelper {
         let res = self.client.get(search_url).send().await?;
         check_response!(res, "Search Author");
         let found_authors: Vec<SearchItem> = res.json().await?;
-        let matching_authors = filter_found_authors(found_authors, &author);
+        let matching_authors = filter_found_authors(found_authors, author);
         Ok(matching_authors)
     }
 
@@ -555,7 +553,7 @@ fn filter_found_authors(
     found
         .into_iter()
         .filter_map(|item| {
-            extract_author(item).filter(|found_author| author_matches(found_author, &author))
+            extract_author(item).filter(|found_author| author_matches(found_author, author))
         })
         .collect()
 }

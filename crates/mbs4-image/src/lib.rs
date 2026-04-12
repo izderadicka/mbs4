@@ -14,7 +14,7 @@ fn calculate_dimensions(required: (u32, u32), actual: (u32, u32)) -> (u32, u32) 
     );
     let nw = (actual.0 as f32 * scale).round() as u32;
     let nh = (actual.1 as f32 * scale).round() as u32;
-    return (nw.max(1), nh.max(1));
+    (nw.max(1), nh.max(1))
 }
 
 pub fn scale_icon(path: impl AsRef<Path> + std::fmt::Debug) -> Result<Vec<u8>> {

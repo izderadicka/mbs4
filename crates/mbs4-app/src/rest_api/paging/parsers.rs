@@ -35,6 +35,5 @@ pub(super) fn parse_filters(filters: String) -> ApiResult<Vec<Filter>> {
     filters
         .split(';')
         .map(|s| s.parse())
-        .collect::<Result<Vec<Filter>, _>>()
-        .or_else(|e| Err(ApiError::InvalidQuery(format!("Invalid filter error {e}"))))
+        .collect::<Result<Vec<Filter>, _>>().map_err(|e| ApiError::InvalidQuery(format!("Invalid filter error {e}")))
 }

@@ -350,7 +350,8 @@ pub async fn move_upload(
 }
 
 pub fn router(limit_mb: usize) -> Router<AppState> {
-    let app = Router::new()
+    
+    Router::new()
         .route("/upload/form", post(upload_form))
         .route("/upload/direct", post(upload_direct))
         .route("/move/upload", post(move_upload))
@@ -360,8 +361,7 @@ pub fn router(limit_mb: usize) -> Router<AppState> {
         .route("/icon/{id}", get(download_icon))
         .route("/download/{*path}", get(download))
         .route("/download/conversion/{*path}", get(download_conversion))
-        .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb));
-    app
+        .layer(DefaultBodyLimit::max(1024 * 1024 * limit_mb))
 }
 
 #[cfg(feature = "openapi")]

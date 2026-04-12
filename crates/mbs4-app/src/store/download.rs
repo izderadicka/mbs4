@@ -51,8 +51,8 @@ pub async fn get_icon(
 
     let body = match exiting_stream {
         Ok(stream) => {
-            let body = Body::from_stream(stream);
-            body
+            
+            Body::from_stream(stream)
         }
         Err(e) if matches!(e, mbs4_store::error::StoreError::NotFound(_)) => {
             match repository.get(icon_id).await {
@@ -127,7 +127,7 @@ pub async fn download_file(
         if let Some(file_name) = path
             .as_ref()
             .split('/')
-            .last()
+            .next_back()
             .filter(|s| s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()))
         {
             headers.insert(
