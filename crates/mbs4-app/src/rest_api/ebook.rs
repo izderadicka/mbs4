@@ -72,6 +72,7 @@ mod crud_api_extra {
         error::{ApiError, ApiResult},
         rest_api::ebook::{EbookCoverInfo, EbookFileInfo, EbookMergeRequest},
         state::AppState,
+        util::cleanup_file_on_error,
     };
 
     #[cfg_attr(feature = "openapi",  utoipa::path(post, path = "", tag = "Ebook", operation_id = "createEbook",
@@ -204,6 +205,7 @@ mod crud_api_extra {
         let from_path = ValidPath::new(file_info.uploaded_file)?.with_prefix(StorePrefix::Upload);
         let to_path = ValidPath::new(to_path)?.with_prefix(StorePrefix::Books);
         let new_path = state.store().rename(&from_path, &to_path).await?;
+        let source_path = new_path.clone();
 
         let new_source = CreateSource {
             location: new_path.without_prefix(StorePrefix::Books).unwrap().into(), // safe as we used this prefix above
@@ -215,7 +217,9 @@ mod crud_api_extra {
             created_by: Some(api_user.sub),
         };
 
-        let source = source_repo.create(new_source).await?;
+        let source =
+            cleanup_file_on_error(state.store(), source_path, source_repo.create(new_source))
+                .await?;
         Ok((StatusCode::CREATED, Json(source)))
     }
 
@@ -263,11 +267,15 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
                 let to_path = format!("{}/cover.{}", ebook.base_dir, ext);
                 let to_path = ValidPath::new(to_path)?.with_prefix(StorePrefix::Books);
                 let new_path = state.store().rename(&from_path, &to_path).await?;
+                let cover_path = new_path.clone();
                 let new_path = new_path.without_prefix(StorePrefix::Books).unwrap();
 
-                repository
-                    .update_cover(id, Some(new_path.into()), payload.ebook_version)
-                    .await?
+                cleanup_file_on_error(
+                    state.store(),
+                    cover_path,
+                    repository.update_cover(id, Some(new_path.into()), payload.ebook_version),
+                )
+                .await?
             }
             None => {
                 repository

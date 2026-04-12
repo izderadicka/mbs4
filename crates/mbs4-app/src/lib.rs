@@ -7,6 +7,7 @@ pub mod search;
 pub mod state;
 pub mod store;
 pub mod user;
+pub(crate) mod util;
 
 #[macro_export]
 macro_rules! repository_from_request {

@@ -6,6 +6,7 @@ use std::{
 use crate::{
     ebook_format::{ConversionResult, ErrorResult, MetaResult},
     events::EventMessage,
+    util::cleanup_file_on_error,
 };
 use mbs4_dal::conversion::{CreateConversion, EbookConversion};
 use mbs4_store::{file_store::FileStore, upload_path, Store, StorePrefix, ValidPath};
@@ -247,6 +248,7 @@ impl ConvertorInner {
             .store
             .import_file(&converted_file, &final_path, true)
             .await?;
+        let stored_path = new_path.clone();
         let new_path = new_path.without_prefix(StorePrefix::Conversions).unwrap();
 
         let create_conversion_result = CreateConversion {
@@ -257,9 +259,13 @@ impl ConvertorInner {
             created_by: Some(user),
         };
 
-        let conversion = mbs4_dal::conversion::ConversionRepository::new(self.pool.clone())
-            .create(create_conversion_result)
-            .await?;
+        let conversion = cleanup_file_on_error(
+            &self.store,
+            stored_path,
+            mbs4_dal::conversion::ConversionRepository::new(self.pool.clone())
+                .create(create_conversion_result),
+        )
+        .await?;
 
         let source_format = mbs4_dal::format::FormatRepository::new(self.pool.clone())
             .get(source.format_id)
