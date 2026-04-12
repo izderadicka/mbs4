@@ -184,6 +184,7 @@ impl FileStore {
 
         // persist atomically (blocking; wrap again)
         let final_path = {
+            let _lock = self.inner.lock.lock().await;
             let final_path = unique_path(&self.inner.root, to_path.as_ref()).await?;
             spawn_blocking({
                 let tmp = tmp;
