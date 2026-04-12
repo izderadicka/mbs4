@@ -1,11 +1,17 @@
-use std::{env, path::Path};
+use std::{
+    collections::HashMap,
+    env,
+    net::TcpListener,
+    path::Path,
+    sync::{Mutex, OnceLock},
+};
 
 use anyhow::{Result, anyhow};
 use axum::http::HeaderMap;
 use mbs4_app::state::AppState;
 use mbs4_server::{
     config::{Parser, ServerConfig},
-    run::{build_state, run, run_with_state},
+    run::{build_state, run_with_state_and_listener},
 };
 use mbs4_types::claim::{ApiClaim, Role};
 use rand::{Rng as _, distr::Alphanumeric};
@@ -15,6 +21,11 @@ use tokio::io::AsyncWriteExt as _;
 use tracing::debug;
 
 pub mod rest;
+
+fn reserved_listeners() -> &'static Mutex<HashMap<u16, TcpListener>> {
+    static RESERVED: OnceLock<Mutex<HashMap<u16, TcpListener>>> = OnceLock::new();
+    RESERVED.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub async fn test_port(port: u16) -> Result<()> {
     let retries = 3;
@@ -35,21 +46,21 @@ pub async fn test_port(port: u16) -> Result<()> {
     unreachable!()
 }
 
-fn random_port() -> Result<u16> {
-    let mut rng = rand::rng();
+fn reserve_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    reserved_listeners().lock().unwrap().insert(port, listener);
+    Ok(port)
+}
 
-    let mut retries = 3;
-    while retries > 0 {
-        let port: u16 = rng.random_range(3030..4030);
-        let addr: std::net::SocketAddr = format!("127.0.0.1:{}", port).parse()?;
-        match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(100)) {
-            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => return Ok(port),
-            Err(_) => retries -= 1,
-            Ok(_) => retries -= 1,
-        }
-    }
-
-    Err(anyhow!("Could not find a free port"))
+fn take_reserved_listener(port: u16) -> Result<tokio::net::TcpListener> {
+    let listener = reserved_listeners()
+        .lock()
+        .unwrap()
+        .remove(&port)
+        .ok_or_else(|| anyhow!("Reserved listener for port {port} not found"))?;
+    listener.set_nonblocking(true)?;
+    Ok(tokio::net::TcpListener::from_std(listener)?)
 }
 
 pub async fn random_text_file(file_path: &Path, size: u64) -> Result<()> {
@@ -103,9 +114,13 @@ pub async fn prepare_env(test_name: &str) -> Result<(ServerConfig, ConfigGuard)>
 
 pub async fn spawn_server(args: ServerConfig) -> Result<()> {
     let port = args.port;
+    let listener = take_reserved_listener(port)?;
     tokio::spawn(async move {
         println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
-        run(args).await.unwrap();
+        let state = build_state(&args).await.unwrap();
+        run_with_state_and_listener(args, state, listener)
+            .await
+            .unwrap();
     });
 
     test_port(port).await
@@ -113,9 +128,12 @@ pub async fn spawn_server(args: ServerConfig) -> Result<()> {
 
 pub async fn spawn_server_with_state(args: ServerConfig, state: AppState) -> Result<()> {
     let port = args.port;
+    let listener = take_reserved_listener(port)?;
     tokio::spawn(async move {
         println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
-        run_with_state(args, state).await.unwrap();
+        run_with_state_and_listener(args, state, listener)
+            .await
+            .unwrap();
     });
 
     test_port(port).await
@@ -124,7 +142,7 @@ pub async fn spawn_server_with_state(args: ServerConfig, state: AppState) -> Res
 pub fn test_config(test_name: &str, base_dir: &Path) -> Result<(ServerConfig, ConfigGuard)> {
     let tmp_data_dir = TempDir::with_prefix_in(format!("{}_", test_name), base_dir)?;
     let data_dir = tmp_data_dir.path().to_string_lossy().to_string();
-    let port = random_port()?;
+    let port = reserve_port()?;
     let port = port.to_string();
     let base_url = format!("http://localhost:{}", port);
     let db_url = format!(

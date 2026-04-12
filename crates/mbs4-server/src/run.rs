@@ -40,6 +40,17 @@ fn shutdown() -> tokio_util::sync::CancellationToken {
 }
 
 pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+    let ip: std::net::IpAddr = args.listen_address.parse()?;
+    let addr = std::net::SocketAddr::from((ip, args.port));
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    run_with_state_and_listener(args, state, listener).await
+}
+
+pub async fn run_with_state_and_listener(
+    args: ServerConfig,
+    state: AppState,
+    listener: tokio::net::TcpListener,
+) -> Result<()> {
     let shutdown = state.shutdown_signal().clone();
     let mut app = main_router(state);
 
@@ -50,9 +61,6 @@ pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
         );
     }
 
-    let ip: std::net::IpAddr = args.listen_address.parse()?;
-    let addr = std::net::SocketAddr::from((ip, args.port));
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
     debug!("Listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app)
