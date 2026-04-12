@@ -101,9 +101,23 @@ impl Future for SearchResult {
 pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
 
 pub enum ItemToIndex {
-    Ebook(Ebook),
+    Ebook(Box<Ebook>),
     Series(mbs4_dal::series::SeriesShort),
     Author(mbs4_dal::author::AuthorShort),
+}
+
+impl ItemToIndex {
+    pub fn ebook(ebook: Ebook) -> Self {
+        Self::Ebook(Box::new(ebook))
+    }
+
+    pub fn series(series: mbs4_dal::series::SeriesShort) -> Self {
+        Self::Series(series)
+    }
+
+    pub fn author(author: mbs4_dal::author::AuthorShort) -> Self {
+        Self::Author(author)
+    }
 }
 
 pub trait Indexer {

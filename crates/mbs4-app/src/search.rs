@@ -53,12 +53,12 @@ impl Search {
         let _res = self
             .inner
             .indexer
-            .index(vec![ItemToIndex::Ebook(book)], update)?;
+            .index(vec![ItemToIndex::ebook(book)], update)?;
         Ok(())
     }
 
     pub fn index_books(&self, books: Vec<mbs4_dal::ebook::Ebook>, update: bool) -> Result<()> {
-        let items = books.into_iter().map(ItemToIndex::Ebook).collect();
+        let items = books.into_iter().map(ItemToIndex::ebook).collect();
         let _res = self.inner.indexer.index(items, update)?;
         Ok(())
     }
@@ -72,7 +72,7 @@ impl Search {
         let _res = self
             .inner
             .indexer
-            .index(vec![ItemToIndex::Series(series)], update)?;
+            .index(vec![ItemToIndex::series(series)], update)?;
         Ok(())
     }
 
@@ -85,7 +85,7 @@ impl Search {
         let _res = self
             .inner
             .indexer
-            .index(vec![ItemToIndex::Author(author)], update)?;
+            .index(vec![ItemToIndex::author(author)], update)?;
         Ok(())
     }
 

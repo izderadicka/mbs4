@@ -149,7 +149,7 @@ async fn index_fill_ebook(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<
             .map_ids_to_ebooks(&page.rows)
             .await?
             .into_iter()
-            .map(ItemToIndex::Ebook)
+            .map(ItemToIndex::ebook)
             .collect();
 
         let res = indexer.index(ebooks, false)?;
@@ -290,7 +290,7 @@ impl SqlIndexerRunner {
         for item in items {
             match item {
                 ItemToIndex::Ebook(ebook) => {
-                    self.index_ebook(&mut transaction, ebook, update).await?
+                    self.index_ebook(&mut transaction, *ebook, update).await?
                 }
                 ItemToIndex::Series(series) => {
                     self.index_series(&mut transaction, series, update).await?
