@@ -1,7 +1,9 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::config::ServerConfig;
 use crate::error::Result;
+use crate::observability::{HttpMetrics, HttpMetricsLayer};
 use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
 use mbs4_app::auth::{auth_router, token::TokenLayer};
@@ -52,7 +54,8 @@ pub async fn run_with_state_and_listener(
     listener: tokio::net::TcpListener,
 ) -> Result<()> {
     let shutdown = state.shutdown_signal().clone();
-    let mut app = main_router(state);
+    let observability = Arc::new(HttpMetrics::new()?);
+    let mut app = main_router(state, observability.clone());
 
     if args.cors {
         app = app.layer(
@@ -116,7 +119,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/users", mbs4_app::user::api_docs())
 }
 
-fn main_router(state: AppState) -> Router<()> {
+fn main_router(state: AppState, observability: Arc<HttpMetrics>) -> Router<()> {
     // Not needed now
     // let session_store = tower_sessions::MemoryStore::default();
     // let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
@@ -126,6 +129,8 @@ fn main_router(state: AppState) -> Router<()> {
     //     ));
 
     #[allow(unused_mut)]
+    let metrics_endpoint = observability.clone();
+    let metrics_layer = observability.clone();
     let mut router = Router::new()
         .nest("/users", mbs4_app::user::router())
         .nest(
@@ -150,7 +155,9 @@ fn main_router(state: AppState) -> Router<()> {
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state.clone())
         // static and public resources
-        .route("/health", get(health));
+        .route("/health", get(health))
+        .route("/metrics", get(move || metrics(metrics_endpoint.clone())))
+        .layer(HttpMetricsLayer::new(metrics_layer));
 
     if let Some(ref static_path) = state.config().static_dir {
         let static_service =
@@ -170,6 +177,24 @@ fn main_router(state: AppState) -> Router<()> {
 
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "OK")
+}
+
+async fn metrics(observability: Arc<HttpMetrics>) -> impl IntoResponse {
+    match observability.render_prometheus() {
+        Ok(body) => (
+            StatusCode::OK,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; version=0.0.4; charset=utf-8",
+            )],
+            body,
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::error!("Failed to render metrics: {error}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {

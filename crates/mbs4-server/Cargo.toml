@@ -30,6 +30,10 @@ tower-cookies = { workspace = true }
 tower = { workspace = true }
 futures = { workspace = true }
 tower-http = { version = "0.6.8", features = ["cors", "fs"] }
+opentelemetry = { version = "0.29.1", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.29.0", features = ["metrics", "rt-tokio"] }
+opentelemetry-prometheus = "0.29.1"
+prometheus = "0.14.0"
 utoipa = { workspace = true, features = [
     "axum_extras",
     "preserve_order",
