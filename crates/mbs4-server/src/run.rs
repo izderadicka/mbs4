@@ -1,10 +1,9 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::config::ServerConfig;
 use crate::error::Result;
-use crate::observability::{HttpMetrics, HttpMetricsLayer};
-use axum::http::{HeaderMap, StatusCode};
+use crate::observability::Observability;
+use axum::http::StatusCode;
 use axum::{response::IntoResponse, routing::get, Router};
 use mbs4_app::auth::{auth_router, token::TokenLayer};
 use mbs4_app::search::Search;
@@ -54,8 +53,8 @@ pub async fn run_with_state_and_listener(
     listener: tokio::net::TcpListener,
 ) -> Result<()> {
     let shutdown = state.shutdown_signal().clone();
-    let observability = Arc::new(HttpMetrics::new()?);
-    let mut app = main_router(state, observability.clone(), args.metrics_token.clone());
+    let observability = Observability::new(&args)?;
+    let mut app = main_router(state, &observability);
 
     if args.cors {
         app = app.layer(
@@ -119,11 +118,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/users", mbs4_app::user::api_docs())
 }
 
-fn main_router(
-    state: AppState,
-    observability: Arc<HttpMetrics>,
-    metrics_token: Option<String>,
-) -> Router<()> {
+fn main_router(state: AppState, observability: &Observability) -> Router<()> {
     // Not needed now
     // let session_store = tower_sessions::MemoryStore::default();
     // let session_layer = tower_sessions::SessionManagerLayer::new(session_store)
@@ -132,10 +127,6 @@ fn main_router(
     //         time::Duration::seconds(15),
     //     ));
 
-    #[allow(unused_mut)]
-    let metrics_endpoint = observability.clone();
-    let metrics_layer = observability.clone();
-    let metrics_auth = metrics_token.map(Arc::<str>::from);
     let mut router = Router::new()
         .nest("/users", mbs4_app::user::router())
         .nest(
@@ -160,15 +151,9 @@ fn main_router(
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state.clone())
         // static and public resources
-        .route("/health", get(health))
-        .layer(HttpMetricsLayer::new(metrics_layer));
+        .route("/health", get(health));
 
-    if let Some(metrics_token) = metrics_auth {
-        router = router.route(
-            "/metrics",
-            get(move |headers| metrics(headers, metrics_token.clone(), metrics_endpoint.clone())),
-        );
-    }
+    router = observability.apply(router);
 
     if let Some(ref static_path) = state.config().static_dir {
         let static_service =
@@ -188,45 +173,6 @@ fn main_router(
 
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "OK")
-}
-
-async fn metrics(
-    headers: HeaderMap,
-    metrics_token: Arc<str>,
-    observability: Arc<HttpMetrics>,
-) -> impl IntoResponse {
-    let authorized = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|token| token == metrics_token.as_ref());
-
-    if !authorized {
-        return (
-            StatusCode::UNAUTHORIZED,
-            [(
-                axum::http::header::WWW_AUTHENTICATE,
-                "Bearer realm=\"metrics\"",
-            )],
-        )
-            .into_response();
-    }
-
-    match observability.render_prometheus() {
-        Ok(body) => (
-            StatusCode::OK,
-            [(
-                axum::http::header::CONTENT_TYPE,
-                "text/plain; version=0.0.4; charset=utf-8",
-            )],
-            body,
-        )
-            .into_response(),
-        Err(error) => {
-            tracing::error!("Failed to render metrics: {error}");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-    }
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<AppState> {

@@ -90,6 +90,7 @@ pub struct ServerConfig {
     )]
     pub static_dir: Option<PathBuf>,
 
+    #[cfg(feature = "observability")]
     #[arg(
         long,
         env = "MBS4_METRICS_TOKEN",

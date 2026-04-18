@@ -30,10 +30,10 @@ tower-cookies = { workspace = true }
 tower = { workspace = true }
 futures = { workspace = true }
 tower-http = { version = "0.6.8", features = ["cors", "fs"] }
-opentelemetry = { version = "0.29.1", features = ["metrics"] }
-opentelemetry_sdk = { version = "0.29.0", features = ["metrics", "rt-tokio"] }
-opentelemetry-prometheus = "0.29.1"
-prometheus = "0.14.0"
+opentelemetry = { version = "0.29.1", features = ["metrics"], optional = true }
+opentelemetry_sdk = { version = "0.29.0", features = ["metrics", "rt-tokio"], optional = true }
+opentelemetry-prometheus = { version = "0.29.1", optional = true }
+prometheus = { version = "0.14.0", optional = true }
 utoipa = { workspace = true, features = [
     "axum_extras",
     "preserve_order",
@@ -45,7 +45,13 @@ utoipa-swagger-ui = { version = "9.0.2", default-features = false, features = [
 ], optional = true }
 
 [features]
-default = ["openapi"]
+default = ["openapi", "observability"]
+observability = [
+    "opentelemetry",
+    "opentelemetry_sdk",
+    "opentelemetry-prometheus",
+    "prometheus",
+]
 openapi = [
     "utoipa",
     "utoipa-swagger-ui",
