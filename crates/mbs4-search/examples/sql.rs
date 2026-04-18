@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser as _;
 use mbs4_dal;
-use mbs4_search::{SearchItem, SearchTarget, Searcher as _, sql};
+use mbs4_search::{SearchItem, SearchTarget, Searcher as _, noop_indexing_observer, sql};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    let (indexer, searcher) = sql::init(&args.index_db).await?;
+    let (indexer, searcher) = sql::init(&args.index_db, noop_indexing_observer()).await?;
 
     match args.command {
         Command::FillIndex { database_path } => fill_index(indexer, &database_path).await?,

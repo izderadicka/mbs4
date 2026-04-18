@@ -11,7 +11,7 @@ use axum_valid::Garde;
 use garde::Validate;
 use http::StatusCode;
 use mbs4_dal::series::SeriesShort;
-use mbs4_search::{ItemToIndex, SearchResult};
+use mbs4_search::{IndexingObserver, ItemToIndex, SearchResult};
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::info;
@@ -27,10 +27,11 @@ impl Search {
     pub async fn new(
         index_db_path: impl AsRef<std::path::Path>,
         pool: mbs4_dal::Pool,
+        indexing_observer: Arc<dyn IndexingObserver>,
     ) -> Result<Search> {
         let index_db_path = index_db_path.as_ref();
         let need_refill = !tokio::fs::try_exists(index_db_path).await?;
-        let (indexer, searcher) = mbs4_search::sql::init(index_db_path).await?;
+        let (indexer, searcher) = mbs4_search::sql::init(index_db_path, indexing_observer).await?;
         if need_refill {
             info!("Fulltext index does not exist at {index_db_path:?}. Creating it now and filling from database.");
             mbs4_search::sql::initial_index_fill(indexer.clone(), pool).await?;

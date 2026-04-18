@@ -1,4 +1,7 @@
-use crate::{AuthorSummary, EbookDoc, IndexingJob, ItemToIndex, SearchItem, SearchTarget};
+use crate::{
+    AuthorSummary, EbookDoc, IndexBatchCounts, IndexBatchEvent, IndexOperation, IndexingJob,
+    IndexingObserver, ItemToIndex, SearchItem, SearchTarget,
+};
 use crate::{Indexer, IndexerResult, Result, Searcher};
 use anyhow::Context;
 use futures::TryStreamExt as _;
@@ -6,6 +9,7 @@ use mbs4_dal::author::AuthorShort;
 use mbs4_dal::series::SeriesShort;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
+use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
@@ -27,7 +31,10 @@ CREATE VIRTUAL TABLE idx_series USING fts5(title, tokenize="trigram remove_diacr
 CREATE VIRTUAL TABLE idx_author USING fts5(first_name, last_name, tokenize="trigram remove_diacritics 1");
 "#;
 
-pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlIndexer, SqlSearcher)> {
+pub async fn init(
+    index_db_path: impl AsRef<std::path::Path>,
+    indexing_observer: Arc<dyn IndexingObserver>,
+) -> Result<(SqlIndexer, SqlSearcher)> {
     let db_path = index_db_path.as_ref();
     let db_existed = tokio::fs::try_exists(db_path).await?;
     let db_url = db_path
@@ -53,6 +60,7 @@ pub async fn init(index_db_path: impl AsRef<std::path::Path>) -> Result<(SqlInde
     let indexer_runner = SqlIndexerRunner {
         pool: pool.clone(),
         queue: receiver,
+        indexing_observer,
     };
     tokio::spawn(indexer_runner.run());
 
@@ -168,11 +176,50 @@ async fn index_fill_ebook(indexer: &SqlIndexer, pool: mbs4_dal::Pool) -> Result<
 struct SqlIndexerRunner {
     pool: sqlx::Pool<sqlx::Sqlite>,
     queue: tokio::sync::mpsc::Receiver<IndexingJob>,
+    indexing_observer: Arc<dyn IndexingObserver>,
 }
 
 const LIST_SEP: &str = "; ";
 
 impl SqlIndexerRunner {
+    fn observe_index_batch(
+        &self,
+        operation: IndexOperation,
+        counts: IndexBatchCounts,
+        started_at: Instant,
+        success: bool,
+    ) {
+        self.indexing_observer.on_index_batch(&IndexBatchEvent {
+            operation,
+            counts,
+            duration: started_at.elapsed(),
+            success,
+        });
+    }
+
+    fn counts_for_items(items: &[ItemToIndex]) -> IndexBatchCounts {
+        let mut counts = IndexBatchCounts::default();
+        for item in items {
+            match item {
+                ItemToIndex::Ebook(_) => counts.add(SearchTarget::Ebook, 1),
+                ItemToIndex::Series(_) => counts.add(SearchTarget::Series, 1),
+                ItemToIndex::Author(_) => counts.add(SearchTarget::Author, 1),
+            }
+        }
+        counts
+    }
+
+    fn counts_for_delete(items: &[i64], what: SearchTarget) -> IndexBatchCounts {
+        let mut counts = IndexBatchCounts::default();
+        let count = items.len().try_into().unwrap_or(u64::MAX);
+        match what {
+            SearchTarget::Ebook => counts.add(SearchTarget::Ebook, count),
+            SearchTarget::Author => counts.add(SearchTarget::Author, count),
+            SearchTarget::Series => counts.add(SearchTarget::Series, count),
+        }
+        counts
+    }
+
     async fn index_ebook(
         &mut self,
         transaction: &mut sqlx::Transaction<'_, mbs4_dal::ChosenDB>,
@@ -344,28 +391,51 @@ impl SqlIndexerRunner {
                     update,
                     sender,
                 } => {
+                    let counts = Self::counts_for_items(&items);
+                    let started_at = Instant::now();
                     let res = self.index_batch(items, update).await;
                     if let Err(ref e) = res {
                         error!("Indexing failed: {e}");
                     }
+                    self.observe_index_batch(
+                        IndexOperation::Upsert,
+                        counts,
+                        started_at,
+                        res.is_ok(),
+                    );
                     if sender.send(res).is_err() {
                         debug!("Failed to send indexing result"); // no problem, can happen if initiator does not wait for result
                     }
                 }
                 IndexingJob::Delete { ids, sender, what } => {
+                    let counts = Self::counts_for_delete(&ids, what.clone());
+                    let started_at = Instant::now();
                     let res = self.delete_batch(ids, what).await;
                     if let Err(ref e) = res {
                         error!("Deleting from index failed: {e}");
                     }
+                    self.observe_index_batch(
+                        IndexOperation::Delete,
+                        counts,
+                        started_at,
+                        res.is_ok(),
+                    );
                     if sender.send(res).is_err() {
                         debug!("Failed to send deleting from index result");
                     }
                 }
                 IndexingJob::Reset { sender } => {
+                    let started_at = Instant::now();
                     let res = self.reset_index().await;
                     if let Err(ref e) = res {
                         error!("Index reset failed failed: {e}");
                     }
+                    self.observe_index_batch(
+                        IndexOperation::Reset,
+                        IndexBatchCounts::default(),
+                        started_at,
+                        res.is_ok(),
+                    );
                     if sender.send(res).is_err() {
                         debug!("Failed to send index reset result");
                     }

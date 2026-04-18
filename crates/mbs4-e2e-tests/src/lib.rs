@@ -11,6 +11,7 @@ use axum::http::HeaderMap;
 use mbs4_app::state::AppState;
 use mbs4_server::{
     config::{Parser, ServerConfig},
+    observability::Observability,
     run::{build_state, run_with_state_and_listener},
 };
 use mbs4_types::claim::{ApiClaim, Role};
@@ -140,13 +141,14 @@ pub async fn prepare_env(test_name: &str) -> Result<(ServerConfig, ConfigGuard)>
 }
 
 pub async fn spawn_server(args: ServerConfig, guard: &mut ConfigGuard) -> Result<()> {
-    let state = build_state(&args).await?;
-    spawn_server_with_state(args, state, guard).await
+    let (state, observability) = build_state(&args).await?;
+    spawn_server_with_state(args, state, observability, guard).await
 }
 
 pub async fn spawn_server_with_state(
     args: ServerConfig,
     state: AppState,
+    observability: Observability,
     guard: &mut ConfigGuard,
 ) -> Result<()> {
     let port = args.port;
@@ -154,7 +156,7 @@ pub async fn spawn_server_with_state(
     let shutdown = state.shutdown_signal().clone();
     let task = tokio::spawn(async move {
         println!("RUST_LOG is {}", env::var("RUST_LOG").unwrap_or_default());
-        run_with_state_and_listener(args, state, listener).await
+        run_with_state_and_listener(args, state, observability, listener).await
     });
 
     test_port(port).await?;
@@ -249,9 +251,9 @@ pub async fn launch_env(
     user: TestUser,
     guard: &mut ConfigGuard,
 ) -> Result<(Client, AppState)> {
-    let state = build_state(&args).await?;
+    let (state, observability) = build_state(&args).await?;
     let auth_headers = user.auth_header(&state)?;
-    spawn_server_with_state(args, state.clone(), guard).await?;
+    spawn_server_with_state(args, state.clone(), observability, guard).await?;
 
     let client = reqwest::Client::builder()
         .cookie_store(true)

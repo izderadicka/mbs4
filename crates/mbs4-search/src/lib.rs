@@ -1,13 +1,13 @@
 pub mod sql;
 
-use std::{fmt::Display, str::FromStr, task::Poll};
+use std::{fmt::Display, str::FromStr, sync::Arc, task::Poll, time::Duration};
 
 pub use anyhow::Result;
 use mbs4_dal::{author::AuthorShort, ebook::Ebook, series::SeriesShort};
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchTarget {
     Ebook,
     Series,
@@ -99,6 +99,53 @@ impl Future for SearchResult {
 }
 
 pub type IndexerResult = Result<tokio::sync::oneshot::Receiver<Result<()>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexOperation {
+    Upsert,
+    Delete,
+    Reset,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct IndexBatchCounts {
+    pub ebooks: u64,
+    pub authors: u64,
+    pub series: u64,
+}
+
+impl IndexBatchCounts {
+    pub fn add(&mut self, entity: SearchTarget, count: u64) {
+        match entity {
+            SearchTarget::Ebook => self.ebooks += count,
+            SearchTarget::Author => self.authors += count,
+            SearchTarget::Series => self.series += count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexBatchEvent {
+    pub operation: IndexOperation,
+    pub counts: IndexBatchCounts,
+    pub duration: Duration,
+    pub success: bool,
+}
+
+pub trait IndexingObserver: Send + Sync {
+    fn on_index_batch(&self, event: &IndexBatchEvent);
+}
+
+#[derive(Default)]
+pub struct NoopIndexingObserver;
+
+impl IndexingObserver for NoopIndexingObserver {
+    fn on_index_batch(&self, _event: &IndexBatchEvent) {}
+}
+
+pub fn noop_indexing_observer() -> Arc<dyn IndexingObserver> {
+    Arc::new(NoopIndexingObserver)
+}
 
 pub enum ItemToIndex {
     Ebook(Box<Ebook>),

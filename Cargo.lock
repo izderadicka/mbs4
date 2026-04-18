@@ -2741,6 +2741,7 @@ dependencies = [
  "mbs4-app",
  "mbs4-auth",
  "mbs4-dal",
+ "mbs4-search",
  "mbs4-types",
  "opentelemetry",
  "opentelemetry-prometheus",

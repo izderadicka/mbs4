@@ -17,8 +17,9 @@ mod imp {
         Router,
     };
     use futures::future::BoxFuture;
+    use mbs4_search::{IndexBatchEvent, IndexOperation, IndexingObserver, SearchTarget};
     use opentelemetry::{
-        metrics::{Histogram, MeterProvider as _},
+        metrics::{Counter, Histogram, Meter, MeterProvider as _},
         KeyValue,
     };
     use opentelemetry_sdk::{metrics::SdkMeterProvider, Resource};
@@ -37,14 +38,30 @@ mod imp {
 
     struct ObservabilityInner {
         http_metrics: HttpMetrics,
+        search_metrics: SearchMetrics,
         metrics_token: Option<Arc<str>>,
     }
 
     impl Observability {
         pub fn new(config: &ServerConfig) -> anyhow::Result<Self> {
+            let registry = Registry::new();
+            let exporter = opentelemetry_prometheus::exporter()
+                .with_registry(registry.clone())
+                .build()?;
+            let resource = Resource::builder()
+                .with_service_name(env!("CARGO_PKG_NAME"))
+                .build();
+            let meter_provider = Arc::new(
+                SdkMeterProvider::builder()
+                    .with_resource(resource)
+                    .with_reader(exporter)
+                    .build(),
+            );
+            let meter = meter_provider.meter("mbs4-server");
             Ok(Self {
                 state: Arc::new(ObservabilityInner {
-                    http_metrics: HttpMetrics::new()?,
+                    http_metrics: HttpMetrics::new(registry, meter_provider, &meter),
+                    search_metrics: SearchMetrics::new(&meter),
                     metrics_token: config.metrics_token.as_deref().map(Arc::<str>::from),
                 }),
             })
@@ -81,6 +98,20 @@ mod imp {
         fn render_prometheus(&self) -> anyhow::Result<String> {
             self.state.http_metrics.render_prometheus()
         }
+
+        pub fn indexing_observer(&self) -> Arc<dyn IndexingObserver> {
+            Arc::new(self.clone())
+        }
+    }
+
+    impl IndexingObserver for Observability {
+        fn on_index_batch(&self, event: &IndexBatchEvent) {
+            if event.operation != IndexOperation::Upsert {
+                return;
+            }
+
+            self.state.search_metrics.record_batch(event);
+        }
     }
 
     #[derive(Clone)]
@@ -90,22 +121,48 @@ mod imp {
         request_duration: Histogram<f64>,
     }
 
-    impl HttpMetrics {
-        fn new() -> anyhow::Result<Self> {
-            let registry = Registry::new();
-            let exporter = opentelemetry_prometheus::exporter()
-                .with_registry(registry.clone())
-                .build()?;
-            let resource = Resource::builder()
-                .with_service_name(env!("CARGO_PKG_NAME"))
-                .build();
-            let meter_provider = Arc::new(
-                SdkMeterProvider::builder()
-                    .with_resource(resource)
-                    .with_reader(exporter)
+    #[derive(Clone)]
+    struct SearchMetrics {
+        indexed_items: Counter<u64>,
+        indexing_errors: Counter<u64>,
+    }
+
+    impl SearchMetrics {
+        fn new(meter: &Meter) -> Self {
+            Self {
+                indexed_items: meter
+                    .u64_counter("mbs4_fts_indexed_items_total")
+                    .with_description("Number of full text index items successfully committed")
                     .build(),
-            );
-            let meter = meter_provider.meter("mbs4-server");
+                indexing_errors: meter
+                    .u64_counter("mbs4_fts_index_errors_total")
+                    .with_description("Number of full text index items that failed to be indexed")
+                    .build(),
+            }
+        }
+
+        fn record_batch(&self, event: &IndexBatchEvent) {
+            self.record_entity(SearchTarget::Ebook, event.counts.ebooks, event.success);
+            self.record_entity(SearchTarget::Author, event.counts.authors, event.success);
+            self.record_entity(SearchTarget::Series, event.counts.series, event.success);
+        }
+
+        fn record_entity(&self, entity: SearchTarget, count: u64, success: bool) {
+            if count == 0 {
+                return;
+            }
+
+            let attrs = [KeyValue::new("entity", entity.to_string())];
+            if success {
+                self.indexed_items.add(count, &attrs);
+            } else {
+                self.indexing_errors.add(count, &attrs);
+            }
+        }
+    }
+
+    impl HttpMetrics {
+        fn new(registry: Registry, meter_provider: Arc<SdkMeterProvider>, meter: &Meter) -> Self {
             let request_duration = meter
                 .f64_histogram("http.server.request.duration")
                 .with_unit("s")
@@ -113,11 +170,11 @@ mod imp {
                 .with_description("HTTP request duration in seconds")
                 .build();
 
-            Ok(Self {
+            Self {
                 registry,
                 _meter_provider: meter_provider,
                 request_duration,
-            })
+            }
         }
 
         fn render_prometheus(&self) -> anyhow::Result<String> {
@@ -261,6 +318,8 @@ mod imp {
 mod imp {
     use crate::config::ServerConfig;
     use axum::Router;
+    use mbs4_search::{noop_indexing_observer, IndexingObserver};
+    use std::sync::Arc;
 
     #[derive(Clone, Default)]
     pub struct Observability;
@@ -272,6 +331,10 @@ mod imp {
 
         pub fn apply(&self, router: Router<()>) -> Router<()> {
             router
+        }
+
+        pub fn indexing_observer(&self) -> Arc<dyn IndexingObserver> {
+            noop_indexing_observer()
         }
     }
 }

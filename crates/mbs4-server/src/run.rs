@@ -14,8 +14,8 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
-    let state = build_state(&args).await?;
-    run_with_state(args, state).await
+    let (state, observability) = build_state(&args).await?;
+    run_with_state(args, state, observability).await
 }
 
 fn shutdown() -> tokio_util::sync::CancellationToken {
@@ -40,20 +40,24 @@ fn shutdown() -> tokio_util::sync::CancellationToken {
     token
 }
 
-pub async fn run_with_state(args: ServerConfig, state: AppState) -> Result<()> {
+pub async fn run_with_state(
+    args: ServerConfig,
+    state: AppState,
+    observability: Observability,
+) -> Result<()> {
     let ip: std::net::IpAddr = args.listen_address.parse()?;
     let addr = std::net::SocketAddr::from((ip, args.port));
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    run_with_state_and_listener(args, state, listener).await
+    run_with_state_and_listener(args, state, observability, listener).await
 }
 
 pub async fn run_with_state_and_listener(
     args: ServerConfig,
     state: AppState,
+    observability: Observability,
     listener: tokio::net::TcpListener,
 ) -> Result<()> {
     let shutdown = state.shutdown_signal().clone();
-    let observability = Observability::new(&args)?;
     let mut app = main_router(state, &observability);
 
     if args.cors {
@@ -175,7 +179,8 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, "OK")
 }
 
-pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
+pub async fn build_state(config: &ServerConfig) -> Result<(AppState, Observability)> {
+    let observability = Observability::new(config)?;
     let data_dir = config.data_dir();
     let oidc_config_file = config.oidc_config.clone().or_else(|| {
         let path = data_dir.join("oidc-config.toml");
@@ -206,8 +211,14 @@ pub async fn build_state(config: &ServerConfig) -> Result<AppState> {
     assert!(secret.len() == 64);
     let tokens =
         mbs4_auth::token::TokenManager::new(&secret[0..32], &secret[32..], config.token_validity);
-    let search = Search::new(&config.index_path(), pool.clone()).await?;
-    AppState::new(shutdown(), oidc_config, app_config, pool, tokens, search).await
+    let search = Search::new(
+        &config.index_path(),
+        pool.clone(),
+        observability.indexing_observer(),
+    )
+    .await?;
+    let state = AppState::new(shutdown(), oidc_config, app_config, pool, tokens, search).await?;
+    Ok((state, observability))
 }
 
 async fn read_secret(data_dir: &Path) -> Result<Vec<u8>, std::io::Error> {

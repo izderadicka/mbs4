@@ -24,6 +24,7 @@ anyhow = { workspace = true }
 mbs4-types = { path = "../mbs4-types" }
 mbs4-app = { path = "../mbs4-app" }
 mbs4-dal = { path = "../mbs4-dal" }
+mbs4-search = { path = "../mbs4-search" }
 url = { workspace = true }
 rand = { workspace = true }
 humantime = "2.3.0"
