@@ -21,7 +21,8 @@ async fn test_health() {
 #[tokio::test]
 #[traced_test]
 async fn test_metrics_endpoint() {
-    let (args, mut _config_guard) = prepare_env("test_metrics_endpoint").await.unwrap();
+    let (mut args, mut _config_guard) = prepare_env("test_metrics_endpoint").await.unwrap();
+    args.metrics_token = Some("test-metrics-token".to_string());
     let base_url = args.base_url.clone();
 
     spawn_server(args, &mut _config_guard).await.unwrap();
@@ -33,7 +34,18 @@ async fn test_metrics_endpoint() {
     assert!(health_response.status().is_success());
 
     let metrics_url = base_url.join("metrics").unwrap();
-    let metrics_response = client.get(metrics_url).send().await.unwrap();
+    let unauthorized_response = client.get(metrics_url.clone()).send().await.unwrap();
+    assert_eq!(
+        unauthorized_response.status(),
+        reqwest::StatusCode::UNAUTHORIZED
+    );
+
+    let metrics_response = client
+        .get(metrics_url)
+        .header("Authorization", "Bearer test-metrics-token")
+        .send()
+        .await
+        .unwrap();
     assert!(metrics_response.status().is_success());
 
     let metrics_body = metrics_response.text().await.unwrap();

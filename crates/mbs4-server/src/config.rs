@@ -89,6 +89,13 @@ pub struct ServerConfig {
         help = "Path to static client files, if provided will be served by server"
     )]
     pub static_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
+        env = "MBS4_METRICS_TOKEN",
+        help = "Bearer token required to access /metrics; if not set, the metrics endpoint is disabled"
+    )]
+    pub metrics_token: Option<String>,
 }
 
 impl ServerConfig {
