@@ -21,7 +21,7 @@ mod imp {
         metrics::{Histogram, MeterProvider as _},
         KeyValue,
     };
-    use opentelemetry_sdk::metrics::SdkMeterProvider;
+    use opentelemetry_sdk::{metrics::SdkMeterProvider, Resource};
     use prometheus::{Encoder, Registry, TextEncoder};
     use tower::{Layer, Service};
 
@@ -96,8 +96,15 @@ mod imp {
             let exporter = opentelemetry_prometheus::exporter()
                 .with_registry(registry.clone())
                 .build()?;
-            let meter_provider =
-                Arc::new(SdkMeterProvider::builder().with_reader(exporter).build());
+            let resource = Resource::builder()
+                .with_service_name(env!("CARGO_PKG_NAME"))
+                .build();
+            let meter_provider = Arc::new(
+                SdkMeterProvider::builder()
+                    .with_resource(resource)
+                    .with_reader(exporter)
+                    .build(),
+            );
             let meter = meter_provider.meter("mbs4-server");
             let request_duration = meter
                 .f64_histogram("http.server.request.duration")
