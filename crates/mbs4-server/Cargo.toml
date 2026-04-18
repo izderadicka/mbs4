@@ -2,6 +2,7 @@
 name = "mbs4-server"
 version = "0.1.0"
 edition = "2021"
+default-run = "mbs4-server"
 
 [[bin]]
 name = "mbs4-server"
