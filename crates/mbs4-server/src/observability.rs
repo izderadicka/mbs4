@@ -132,15 +132,29 @@ mod imp {
 
     impl SearchMetrics {
         fn new(meter: &Meter) -> Self {
+            let indexed_items = meter
+                .u64_counter("mbs4_fts_indexed_items_total")
+                .with_description("Number of full text index items successfully committed")
+                .build();
+            let indexing_errors = meter
+                .u64_counter("mbs4_fts_index_errors_total")
+                .with_description("Number of full text index items that failed to be indexed")
+                .build();
+
+            // Initialize all label combinations so they appear in Prometheus from the start
+            for entity in [
+                SearchTarget::Ebook,
+                SearchTarget::Author,
+                SearchTarget::Series,
+            ] {
+                let attrs = [KeyValue::new("entity", entity.to_string())];
+                indexed_items.add(0, &attrs);
+                indexing_errors.add(0, &attrs);
+            }
+
             Self {
-                indexed_items: meter
-                    .u64_counter("mbs4_fts_indexed_items_total")
-                    .with_description("Number of full text index items successfully committed")
-                    .build(),
-                indexing_errors: meter
-                    .u64_counter("mbs4_fts_index_errors_total")
-                    .with_description("Number of full text index items that failed to be indexed")
-                    .build(),
+                indexed_items,
+                indexing_errors,
             }
         }
 
