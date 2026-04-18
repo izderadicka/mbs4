@@ -40,6 +40,8 @@ mod imp {
         http_metrics: HttpMetrics,
         search_metrics: SearchMetrics,
         metrics_token: Option<Arc<str>>,
+        registry: Registry,
+        _meter_provider: SdkMeterProvider,
     }
 
     impl Observability {
@@ -51,18 +53,18 @@ mod imp {
             let resource = Resource::builder()
                 .with_service_name(env!("CARGO_PKG_NAME"))
                 .build();
-            let meter_provider = Arc::new(
-                SdkMeterProvider::builder()
-                    .with_resource(resource)
-                    .with_reader(exporter)
-                    .build(),
-            );
+            let meter_provider = SdkMeterProvider::builder()
+                .with_resource(resource)
+                .with_reader(exporter)
+                .build();
             let meter = meter_provider.meter("mbs4-server");
             Ok(Self {
                 state: Arc::new(ObservabilityInner {
-                    http_metrics: HttpMetrics::new(registry, meter_provider, &meter),
+                    http_metrics: HttpMetrics::new(&meter),
                     search_metrics: SearchMetrics::new(&meter),
                     metrics_token: config.metrics_token.as_deref().map(Arc::<str>::from),
+                    registry,
+                    _meter_provider: meter_provider,
                 }),
             })
         }
@@ -96,7 +98,10 @@ mod imp {
         }
 
         fn render_prometheus(&self) -> anyhow::Result<String> {
-            self.state.http_metrics.render_prometheus()
+            let metric_families = self.state.registry.gather();
+            let mut encoded = Vec::new();
+            TextEncoder::new().encode(&metric_families, &mut encoded)?;
+            Ok(String::from_utf8(encoded)?)
         }
 
         pub fn indexing_observer(&self) -> Arc<dyn IndexingObserver> {
@@ -116,8 +121,6 @@ mod imp {
 
     #[derive(Clone)]
     struct HttpMetrics {
-        registry: Registry,
-        _meter_provider: Arc<SdkMeterProvider>,
         request_duration: Histogram<f64>,
     }
 
@@ -162,7 +165,7 @@ mod imp {
     }
 
     impl HttpMetrics {
-        fn new(registry: Registry, meter_provider: Arc<SdkMeterProvider>, meter: &Meter) -> Self {
+        fn new(meter: &Meter) -> Self {
             let request_duration = meter
                 .f64_histogram("http.server.request.duration")
                 .with_unit("s")
@@ -170,18 +173,7 @@ mod imp {
                 .with_description("HTTP request duration in seconds")
                 .build();
 
-            Self {
-                registry,
-                _meter_provider: meter_provider,
-                request_duration,
-            }
-        }
-
-        fn render_prometheus(&self) -> anyhow::Result<String> {
-            let metric_families = self.registry.gather();
-            let mut encoded = Vec::new();
-            TextEncoder::new().encode(&metric_families, &mut encoded)?;
-            Ok(String::from_utf8(encoded)?)
+            Self { request_duration }
         }
 
         fn record_request(
