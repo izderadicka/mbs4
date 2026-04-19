@@ -26,6 +26,22 @@ mod imp {
     use prometheus::{Encoder, Registry, TextEncoder};
     use tower::{Layer, Service};
 
+    const FTS_ITEM_DURATION_BUCKETS_SECONDS: [f64; 13] = [
+        0.000_010, // 10µs
+        0.000_025, // 25µs
+        0.000_050, // 50µs
+        0.000_100, // 100µs
+        0.000_250, // 250µs
+        0.000_500, // 500µs
+        0.001_000, // 1ms
+        0.002_500, // 2.5ms
+        0.005_000, // 5ms
+        0.010_000, // 10ms
+        0.025_000, // 25ms
+        0.050_000, // 50ms
+        0.100_000, // 100ms
+    ];
+
     const HTTP_DURATION_BUCKETS_SECONDS: [f64; 16] = [
         0.0, 0.0005, 0.001, 0.002, 0.003, 0.004, 0.005, 0.0075, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5,
         1.0, 2.0,
@@ -128,17 +144,24 @@ mod imp {
     struct SearchMetrics {
         indexed_items: Counter<u64>,
         indexing_errors: Counter<u64>,
+        indexing_duration: Histogram<f64>,
     }
 
     impl SearchMetrics {
         fn new(meter: &Meter) -> Self {
             let indexed_items = meter
-                .u64_counter("mbs4_fts_indexed_items_total")
+                .u64_counter("fts.index.items")
                 .with_description("Number of full text index items successfully committed")
                 .build();
             let indexing_errors = meter
-                .u64_counter("mbs4_fts_index_errors_total")
+                .u64_counter("fts.index.errors")
                 .with_description("Number of full text index items that failed to be indexed")
+                .build();
+            let indexing_duration = meter
+                .f64_histogram("fts.index.duration")
+                .with_unit("s")
+                .with_description("Average indexing duration per item")
+                .with_boundaries(FTS_ITEM_DURATION_BUCKETS_SECONDS.into())
                 .build();
 
             // Initialize all label combinations so they appear in Prometheus from the start
@@ -155,6 +178,7 @@ mod imp {
             Self {
                 indexed_items,
                 indexing_errors,
+                indexing_duration,
             }
         }
 
@@ -162,6 +186,13 @@ mod imp {
             self.record_entity(SearchTarget::Ebook, event.counts.ebooks, event.success);
             self.record_entity(SearchTarget::Author, event.counts.authors, event.success);
             self.record_entity(SearchTarget::Series, event.counts.series, event.success);
+
+            let total = event.counts.ebooks + event.counts.authors + event.counts.series;
+            if total > 0 {
+                let duration_attrs = [KeyValue::new("success", event.success)];
+                self.indexing_duration
+                    .record(event.duration.as_secs_f64() / total as f64, &duration_attrs);
+            }
         }
 
         fn record_entity(&self, entity: SearchTarget, count: u64, success: bool) {
