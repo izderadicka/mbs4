@@ -31,6 +31,10 @@ time = { workspace = true }
 sha2 = { workspace = true }
 base16ct = { workspace = true }
 
+[features]
+default = ["observability"]
+observability = ["mbs4-server/observability"]
+
 [dev-dependencies]
 # tracing-test = { version = "0.2.5", features = [] }
 # For detailed logs use this feature

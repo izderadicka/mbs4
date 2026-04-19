@@ -1,3 +1,4 @@
+mod observability_metrics;
 mod rest_author;
 mod rest_ebook;
 mod rest_language;
