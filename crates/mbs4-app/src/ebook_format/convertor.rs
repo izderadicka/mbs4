@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, LazyLock},
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -12,6 +13,41 @@ use mbs4_dal::conversion::{CreateConversion, EbookConversion};
 use mbs4_store::{file_store::FileStore, upload_path, Store, StorePrefix, ValidPath};
 use mbs4_types::utils::file_ext;
 use tracing::error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversionOperation {
+    Convert,
+    MetaExtract,
+}
+
+impl ConversionOperation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Convert => "convert",
+            Self::MetaExtract => "meta_extract",
+        }
+    }
+}
+
+pub struct ConversionEvent {
+    pub operation: ConversionOperation,
+    pub duration: Duration,
+    pub success: bool,
+}
+
+pub trait ConversionObserver: Send + Sync {
+    fn on_conversion(&self, event: &ConversionEvent);
+}
+
+pub struct NoopConversionObserver;
+
+impl ConversionObserver for NoopConversionObserver {
+    fn on_conversion(&self, _event: &ConversionEvent) {}
+}
+
+pub fn noop_conversion_observer() -> Arc<dyn ConversionObserver> {
+    Arc::new(NoopConversionObserver)
+}
 
 pub struct MetadataRequest {
     pub operation_id: String,
@@ -43,6 +79,7 @@ pub struct ConvertorInner {
     store: FileStore,
     pool: mbs4_dal::Pool,
     calibre: mbs4_calibre::Calibre,
+    observer: Arc<dyn ConversionObserver>,
 }
 
 impl Convertor {
@@ -50,6 +87,7 @@ impl Convertor {
         event_sender: tokio::sync::broadcast::Sender<EventMessage>,
         store: FileStore,
         pool: mbs4_dal::Pool,
+        observer: Arc<dyn ConversionObserver>,
     ) -> anyhow::Result<Self> {
         let (job_sender, job_receiver) = tokio::sync::mpsc::channel(1024);
         let num_cpus = num_cpus::get();
@@ -60,6 +98,7 @@ impl Convertor {
             store,
             pool,
             calibre,
+            observer,
         };
 
         let convertor = Self {
@@ -141,10 +180,17 @@ impl ConvertorInner {
             .local_path(&file_path)
             .expect("Current implementation always provide path");
         //TODO: case to download, if cannot get local path
+        let started = Instant::now();
         let meta_result = self
             .calibre
             .extract_metadata(&local_path, extract_cover)
             .await;
+        let duration = started.elapsed();
+        self.observer.on_conversion(&ConversionEvent {
+            operation: ConversionOperation::MetaExtract,
+            duration,
+            success: meta_result.is_ok(),
+        });
         match meta_result {
             Ok(mut meta) => {
                 if let Some(cover_file) = meta.cover_file.take() {
@@ -197,7 +243,14 @@ impl ConvertorInner {
             .store
             .local_path(&file_path)
             .expect("Current implementation always provides path");
+        let started = Instant::now();
         let meta_result = self.calibre.convert(&local_path, &to_ext).await;
+        let duration = started.elapsed();
+        self.observer.on_conversion(&ConversionEvent {
+            operation: ConversionOperation::Convert,
+            duration,
+            success: meta_result.is_ok(),
+        });
 
         match meta_result {
             Ok(converted_file) => {

@@ -17,6 +17,9 @@ mod imp {
         Router,
     };
     use futures::future::BoxFuture;
+    use mbs4_app::ebook_format::convertor::{
+        ConversionEvent, ConversionObserver, ConversionOperation,
+    };
     use mbs4_search::{IndexBatchEvent, IndexOperation, IndexingObserver, SearchTarget};
     use opentelemetry::{
         metrics::{Counter, Histogram, Meter, MeterProvider as _},
@@ -42,6 +45,9 @@ mod imp {
         0.100_000, // 100ms
     ];
 
+    const CONVERSION_DURATION_BUCKETS_SECONDS: [f64; 10] =
+        [0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0];
+
     const HTTP_DURATION_BUCKETS_SECONDS: [f64; 16] = [
         0.0, 0.0005, 0.001, 0.002, 0.003, 0.004, 0.005, 0.0075, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5,
         1.0, 2.0,
@@ -55,6 +61,7 @@ mod imp {
     struct ObservabilityInner {
         http_metrics: HttpMetrics,
         search_metrics: SearchMetrics,
+        conversion_metrics: ConversionMetrics,
         metrics_token: Option<Arc<str>>,
         registry: Registry,
         _meter_provider: SdkMeterProvider,
@@ -78,6 +85,7 @@ mod imp {
                 state: Arc::new(ObservabilityInner {
                     http_metrics: HttpMetrics::new(&meter),
                     search_metrics: SearchMetrics::new(&meter),
+                    conversion_metrics: ConversionMetrics::new(&meter),
                     metrics_token: config.metrics_token.as_deref().map(Arc::<str>::from),
                     registry,
                     _meter_provider: meter_provider,
@@ -123,6 +131,10 @@ mod imp {
         pub fn indexing_observer(&self) -> Arc<dyn IndexingObserver> {
             Arc::new(self.clone())
         }
+
+        pub fn conversion_observer(&self) -> Arc<dyn ConversionObserver> {
+            Arc::new(self.clone())
+        }
     }
 
     impl IndexingObserver for Observability {
@@ -132,6 +144,57 @@ mod imp {
             }
 
             self.state.search_metrics.record_batch(event);
+        }
+    }
+
+    impl ConversionObserver for Observability {
+        fn on_conversion(&self, event: &ConversionEvent) {
+            let attrs = [
+                KeyValue::new("operation", event.operation.as_str()),
+                KeyValue::new("success", event.success),
+            ];
+            self.state.conversion_metrics.items.add(1, &attrs);
+            self.state
+                .conversion_metrics
+                .duration
+                .record(event.duration.as_secs_f64(), &attrs);
+        }
+    }
+
+    #[derive(Clone)]
+    struct ConversionMetrics {
+        items: Counter<u64>,
+        duration: Histogram<f64>,
+    }
+
+    impl ConversionMetrics {
+        fn new(meter: &Meter) -> Self {
+            let items = meter
+                .u64_counter("conv.items")
+                .with_description("Number of conversion operations")
+                .build();
+            let duration = meter
+                .f64_histogram("conv.duration")
+                .with_unit("s")
+                .with_description("Conversion operation duration")
+                .with_boundaries(CONVERSION_DURATION_BUCKETS_SECONDS.into())
+                .build();
+
+            // Pre-initialize counters for all operation × success combinations
+            for operation in [
+                ConversionOperation::Convert,
+                ConversionOperation::MetaExtract,
+            ] {
+                for success in [true, false] {
+                    let attrs = [
+                        KeyValue::new("operation", operation.as_str()),
+                        KeyValue::new("success", success),
+                    ];
+                    items.add(0, &attrs);
+                }
+            }
+
+            Self { items, duration }
         }
     }
 
@@ -355,6 +418,7 @@ mod imp {
 mod imp {
     use crate::config::ServerConfig;
     use axum::Router;
+    use mbs4_app::ebook_format::convertor::{noop_conversion_observer, ConversionObserver};
     use mbs4_search::{noop_indexing_observer, IndexingObserver};
     use std::sync::Arc;
 
@@ -372,6 +436,10 @@ mod imp {
 
         pub fn indexing_observer(&self) -> Arc<dyn IndexingObserver> {
             noop_indexing_observer()
+        }
+
+        pub fn conversion_observer(&self) -> Arc<dyn ConversionObserver> {
+            noop_conversion_observer()
         }
     }
 }

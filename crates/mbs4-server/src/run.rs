@@ -217,7 +217,16 @@ pub async fn build_state(config: &ServerConfig) -> Result<(AppState, Observabili
         observability.indexing_observer(),
     )
     .await?;
-    let state = AppState::new(shutdown(), oidc_config, app_config, pool, tokens, search).await?;
+    let state = AppState::new(
+        shutdown(),
+        oidc_config,
+        app_config,
+        pool,
+        tokens,
+        search,
+        observability.conversion_observer(),
+    )
+    .await?;
     Ok((state, observability))
 }
 

@@ -4,7 +4,10 @@ use std::{
 };
 
 use crate::{
-    ebook_format::convertor::Convertor, error::Result, events::EventMessage, search::Search,
+    ebook_format::convertor::{ConversionObserver, Convertor},
+    error::Result,
+    events::EventMessage,
+    search::Search,
 };
 use axum::extract::FromRef;
 use futures::Stream;
@@ -29,11 +32,18 @@ impl AppState {
         pool: Pool,
         tokens: TokenManager,
         search: Search,
+        conversion_observer: Arc<dyn ConversionObserver>,
     ) -> anyhow::Result<Self> {
         let state = RwLock::new(AppStateVolatile {});
         let store = FileStore::new(&app_config.file_store_path);
         let events = EventHub::new();
-        let convertor = Convertor::new(events.sender(), store.clone(), pool.clone()).await?;
+        let convertor = Convertor::new(
+            events.sender(),
+            store.clone(),
+            pool.clone(),
+            conversion_observer,
+        )
+        .await?;
         Ok(AppState {
             state: Arc::new(AppStateInner {
                 shutdown,
