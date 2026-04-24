@@ -3,26 +3,28 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    extract::{FromRequest as _, Query, State},
+    extract::{ConnectInfo, FromRequest as _, Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
     Extension, Form, Json,
 };
 use cookie::{Cookie, Expiration};
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 use serde::Deserialize;
+use std::net::{IpAddr, SocketAddr};
 use time::OffsetDateTime;
 use tower_cookies::Cookies;
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
 
+pub mod oidc;
+pub mod rate_limit;
+pub mod token;
+
 const SESSION_COOKIE_NAME: &str = "mbs4";
 const TOKEN_COOKIE_NAME: &str = "mbs4_token";
 const SESSION_USER_KEY: &str = "user";
 const SESSION_EXPIRY_SECS: i64 = 3600;
-
-pub mod oidc;
-pub mod token;
 
 pub async fn logout(
     session: Session,
@@ -86,6 +88,17 @@ pub fn api_docs() -> utoipa::openapi::OpenApi {
     struct ApiDocs;
 
     ApiDocs::openapi()
+}
+
+/// Extracts the real client IP. Prefers the first value in `X-Forwarded-For`
+/// (set by reverse proxies) and falls back to the TCP connection address.
+fn client_ip(headers: &HeaderMap, connect_info: &SocketAddr) -> IpAddr {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or_else(|| connect_info.ip())
 }
 
 #[derive(serde::Deserialize)]
@@ -168,12 +181,19 @@ responses((status = StatusCode::OK, description = "Success", content_type = "tex
 (status = StatusCode::SEE_OTHER, description = "Success andRedirect"))))]
 pub async fn db_login(
     state: State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     user_registry: mbs4_dal::user::UserRepository,
     session: Session,
     cookies: Cookies,
     Query(DbLoginParams { redirect, token }): Query<DbLoginParams>,
     request: axum::extract::Request,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let ip = client_ip(request.headers(), &addr);
+    if !state.login_limiter().check_and_record(ip).await {
+        warn!("Rate limit exceeded for login from {ip}");
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+
     let content_type = request
         .headers()
         .get("content-type")

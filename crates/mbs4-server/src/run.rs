@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{net::SocketAddr, path::Path};
 
 use crate::config::ServerConfig;
 use crate::error::Result;
@@ -63,9 +63,12 @@ pub async fn run_with_state_and_listener(
 
     debug!("Listening on {}", listener.local_addr().unwrap());
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown.cancelled_owned())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown.cancelled_owned())
+    .await?;
 
     Ok(())
 }
