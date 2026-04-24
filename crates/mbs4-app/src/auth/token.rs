@@ -210,7 +210,7 @@ impl FromRequestParts<AppState> for ApiClaim {
                 error!("Cannot get cookies: {}", e.1);
                 ApiError::AuthenticationError("Invalid cookies".into())
             })?;
-            header_token = cookies.get(TOKEN_COOKIE_NAME).map(|t| t.to_string());
+            header_token = cookies.get(TOKEN_COOKIE_NAME).map(|t| t.value().to_string());
         }
 
         match header_token {
