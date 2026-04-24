@@ -114,7 +114,15 @@ where
 
     let redirect_path = redirect_path.as_ref();
 
-    let mut redirect_url = state.build_url(redirect_path).map_err(|e| {
+    // Only allow paths (must start with '/' and must not contain '://' to prevent open redirect)
+    let safe_redirect_path = if redirect_path.starts_with('/') && !redirect_path.contains("://") {
+        redirect_path
+    } else {
+        warn!("Rejecting unsafe redirect path: {redirect_path}");
+        "/"
+    };
+
+    let mut redirect_url = state.build_url(safe_redirect_path).map_err(|e| {
         error!("Failed to build redirect URL: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
