@@ -179,7 +179,7 @@ pub async fn db_login(
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let credentials = if content_type == "application/json" {
+    let credentials = if content_type.starts_with("application/json") {
         let Json(data) = Json::<LoginCredentials>::from_request(request, &())
             .await
             .map_err(|e| {
@@ -187,7 +187,7 @@ pub async fn db_login(
                 StatusCode::BAD_REQUEST
             })?;
         data
-    } else if content_type == "application/x-www-form-urlencoded" {
+    } else if content_type.starts_with("application/x-www-form-urlencoded") {
         let Form(data) = axum::extract::Form::<LoginCredentials>::from_request(request, &())
             .await
             .map_err(|e| {
