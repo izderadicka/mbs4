@@ -242,6 +242,13 @@ mod tests {
         assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
     }
 
+    // X-Forwarded-For: 192.0.2.43, 2001:db8:cafe::17
+    #[test]
+    fn xff_ipv4_then_ipv6_uses_first() {
+        let h = headers(&[("x-forwarded-for", "192.0.2.43, 2001:db8:cafe::17")]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 43));
+    }
+
     // ── client_ip: Forwarded takes priority over X-Forwarded-For ────────────
 
     // X-Forwarded-For: 192.0.2.172
