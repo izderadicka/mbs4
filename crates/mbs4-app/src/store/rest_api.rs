@@ -207,6 +207,7 @@ pub async fn upload_form(
 pub async fn upload_direct(
     State(state): State<AppState>,
     repository: FormatRepository,
+    source_repository: SourceRepository,
     request: Request,
 ) -> Result<impl IntoResponse, ApiError> {
     let (parts, body) = request.into_parts();
@@ -229,8 +230,23 @@ pub async fn upload_direct(
     debug!("Uploading file to {:?}, mime {}", path, mime);
     let stream =
         stream.map_err(|e| StoreError::StreamError(format!("Error reading request body: {e}")));
-    let info = state.store().store_stream(&path, stream).await?;
-    let info = UploadInfo::from_store_info(info, None);
+    let store_info = state.store().store_stream(&path, stream).await?;
+
+    if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
+        debug!("File with same hash exists as {}", source.location);
+        state
+            .store()
+            .delete(&store_info.final_path)
+            .await
+            .inspect_err(|e| error!("Error deleting file {e}"))
+            .ok();
+        return Err(ApiError::ResourceAlreadyExists(format!(
+            "File with same hash exists as {}",
+            source.location
+        )));
+    }
+
+    let info = UploadInfo::from_store_info(store_info, None);
 
     Ok((StatusCode::CREATED, Json(info)))
 }
