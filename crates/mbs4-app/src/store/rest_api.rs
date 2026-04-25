@@ -11,6 +11,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use axum_valid::Garde;
 use futures::TryStreamExt as _;
 use mbs4_dal::{ebook::EbookRepository, format::FormatRepository, source::SourceRepository};
 use mbs4_store::{error::StoreError, upload_path, Store, StoreInfo, StorePrefix};
@@ -345,7 +346,7 @@ pub struct RenameResult {
 )]
 pub async fn move_upload(
     State(state): State<AppState>,
-    Json(body): Json<RenameBody>,
+    Garde(Json(body)): Garde<Json<RenameBody>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let from_path = ValidPath::new(body.from_path)?.with_prefix(StorePrefix::Upload);
     let to_path = ValidPath::new(body.to_path)?.with_prefix(StorePrefix::Books);
