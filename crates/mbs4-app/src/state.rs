@@ -4,7 +4,8 @@ use std::{
 };
 
 use crate::{
-    ebook_format::convertor::Convertor, error::Result, events::EventMessage, search::Search,
+    auth::rate_limit::LoginRateLimiter, ebook_format::convertor::Convertor, error::Result,
+    events::EventMessage, search::Search,
 };
 use axum::extract::FromRef;
 use futures::Stream;
@@ -46,8 +47,13 @@ impl AppState {
                 search,
                 events,
                 convertor,
+                login_limiter: LoginRateLimiter::new(),
             }),
         })
+    }
+
+    pub fn login_limiter(&self) -> &LoginRateLimiter {
+        &self.state.login_limiter
     }
     pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_auth::config::OIDCProviderConfig> {
         self.state
@@ -165,6 +171,7 @@ struct AppStateInner {
     events: EventHub,
     convertor: Convertor,
     shutdown: tokio_util::sync::CancellationToken,
+    login_limiter: LoginRateLimiter,
 }
 
 #[derive(Debug)]
