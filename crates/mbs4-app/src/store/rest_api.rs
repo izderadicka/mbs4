@@ -80,6 +80,29 @@ impl UploadInfo {
 
 const ALLOWED_IMAGES: &[&str] = &["png", "jpeg", "webp", "avif"];
 
+/// Returns `Err(ResourceAlreadyExists)` and deletes `store_info.final_path` if a source
+/// with the same hash already exists; returns `Ok(())` otherwise.
+async fn reject_duplicate_hash(
+    store_info: &StoreInfo,
+    source_repository: &SourceRepository,
+    state: &AppState,
+) -> Result<(), ApiError> {
+    if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
+        debug!("File with same hash exists as {}", source.location);
+        state
+            .store()
+            .delete(&store_info.final_path)
+            .await
+            .inspect_err(|e| error!("Error deleting file {e}"))
+            .ok();
+        return Err(ApiError::ResourceAlreadyExists(format!(
+            "File with same hash exists as {}",
+            source.location
+        )));
+    }
+    Ok(())
+}
+
 async fn upload_file(
     kind: UploadKind,
     field: Field<'_>,
@@ -133,21 +156,7 @@ async fn upload_file(
         StoreError::StreamError(format!("Error reading multipart field in request: {e}"))
     });
     let store_info = state.store().store_stream(&dest_path, stream).await?;
-
-    if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
-        debug!("File with same hash exists as {}", source.location);
-        state
-            .store()
-            .delete(&store_info.final_path)
-            .await
-            .inspect_err(|e| error!("Error deleting file {e}"))
-            .ok();
-        return Err(ApiError::ResourceAlreadyExists(format!(
-            "File with same hash exists as {}",
-            source.location
-        )));
-    }
-
+    reject_duplicate_hash(&store_info, &source_repository, state).await?;
     let info = UploadInfo::from_store_info(store_info, Some(file_name));
     Ok(info)
 }
@@ -231,21 +240,7 @@ pub async fn upload_direct(
     let stream =
         stream.map_err(|e| StoreError::StreamError(format!("Error reading request body: {e}")));
     let store_info = state.store().store_stream(&path, stream).await?;
-
-    if let Some(source) = source_repository.find_by_hash(&store_info.hash).await? {
-        debug!("File with same hash exists as {}", source.location);
-        state
-            .store()
-            .delete(&store_info.final_path)
-            .await
-            .inspect_err(|e| error!("Error deleting file {e}"))
-            .ok();
-        return Err(ApiError::ResourceAlreadyExists(format!(
-            "File with same hash exists as {}",
-            source.location
-        )));
-    }
-
+    reject_duplicate_hash(&store_info, &source_repository, &state).await?;
     let info = UploadInfo::from_store_info(store_info, None);
 
     Ok((StatusCode::CREATED, Json(info)))
