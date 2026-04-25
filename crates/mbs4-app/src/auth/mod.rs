@@ -90,15 +90,89 @@ pub fn api_docs() -> utoipa::openapi::OpenApi {
     ApiDocs::openapi()
 }
 
-/// Extracts the real client IP. Prefers the first value in `X-Forwarded-For`
-/// (set by reverse proxies) and falls back to the TCP connection address.
+/// Parses the `for=` directive from a `Forwarded` header value (RFC 7239).
+/// Handles IPv4 (`for=1.2.3.4`), IPv6 (`for="[::1]"`), and quoted forms.
+fn parse_forwarded_ip(value: &str) -> Option<IpAddr> {
+    // A header may carry multiple hops separated by commas; use the first.
+    let first_hop = value.split(',').next()?;
+    for directive in first_hop.split(';') {
+        if let Some((key, val)) = directive.trim().split_once('=') {
+            if key.trim().eq_ignore_ascii_case("for") {
+                let val = val.trim().trim_matches('"');
+                // IPv6 addresses are wrapped in brackets: [2001:db8::1]
+                let val = val
+                    .strip_prefix('[')
+                    .and_then(|s| s.strip_suffix(']'))
+                    .unwrap_or(val);
+                return val.parse().ok();
+            }
+        }
+    }
+    None
+}
+
+/// Extracts the real client IP from request headers and the TCP connection.
+///
+/// Priority:
+///   1. `Forwarded` (RFC 7239, newer standard)
+///   2. `X-Forwarded-For` (de-facto standard)
+///   3. Direct TCP connection address
 fn client_ip(headers: &HeaderMap, connect_info: &SocketAddr) -> IpAddr {
     headers
-        .get("x-forwarded-for")
+        .get("forwarded")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .and_then(|s| s.trim().parse().ok())
+        .and_then(parse_forwarded_ip)
+        .or_else(|| {
+            headers
+                .get("x-forwarded-for")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.split(',').next())
+                .and_then(|s| s.trim().parse().ok())
+        })
         .unwrap_or_else(|| connect_info.ip())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn parse_forwarded_ipv4() {
+        assert_eq!(
+            parse_forwarded_ip("for=192.0.2.60;proto=http"),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 60)))
+        );
+    }
+
+    #[test]
+    fn parse_forwarded_ipv6_brackets() {
+        assert_eq!(
+            parse_forwarded_ip("for=\"[2001:db8::1]\""),
+            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1)))
+        );
+    }
+
+    #[test]
+    fn parse_forwarded_multi_hop_uses_first() {
+        assert_eq!(
+            parse_forwarded_ip("for=1.2.3.4, for=5.6.7.8"),
+            Some(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)))
+        );
+    }
+
+    #[test]
+    fn parse_forwarded_case_insensitive_key() {
+        assert_eq!(
+            parse_forwarded_ip("For=10.0.0.1"),
+            Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)))
+        );
+    }
+
+    #[test]
+    fn parse_forwarded_unknown_returns_none() {
+        assert_eq!(parse_forwarded_ip("for=unknown"), None);
+    }
 }
 
 #[derive(serde::Deserialize)]
