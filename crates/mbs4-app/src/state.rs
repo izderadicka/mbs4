@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    auth::rate_limit::LoginRateLimiter,
     ebook_format::convertor::{ConversionObserver, Convertor},
     error::Result,
     events::EventMessage,
@@ -56,8 +57,13 @@ impl AppState {
                 search,
                 events,
                 convertor,
+                login_limiter: LoginRateLimiter::new(),
             }),
         })
+    }
+
+    pub fn login_limiter(&self) -> &LoginRateLimiter {
+        &self.state.login_limiter
     }
     pub fn get_oidc_provider(&self, name: &str) -> Option<mbs4_auth::config::OIDCProviderConfig> {
         self.state
@@ -175,6 +181,7 @@ struct AppStateInner {
     events: EventHub,
     convertor: Convertor,
     shutdown: tokio_util::sync::CancellationToken,
+    login_limiter: LoginRateLimiter,
 }
 
 #[derive(Debug)]
