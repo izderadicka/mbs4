@@ -138,160 +138,6 @@ fn client_ip(headers: &HeaderMap, connect_info: &SocketAddr) -> IpAddr {
         .unwrap_or_else(|| connect_info.ip())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-
-    // ── helpers ──────────────────────────────────────────────────────────────
-
-    fn ipv4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
-    }
-
-    fn ipv6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16) -> IpAddr {
-        IpAddr::V6(Ipv6Addr::new(a, b, c, d, e, f, g, h))
-    }
-
-    /// 127.0.0.1:9999 — used as the fallback ConnectInfo address in client_ip tests.
-    fn loopback() -> SocketAddr {
-        "127.0.0.1:9999".parse().unwrap()
-    }
-
-    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
-        let mut map = HeaderMap::new();
-        for (k, v) in pairs {
-            map.insert(
-                http::header::HeaderName::from_bytes(k.as_bytes()).unwrap(),
-                http::header::HeaderValue::from_str(v).unwrap(),
-            );
-        }
-        map
-    }
-
-    // ── parse_forwarded_ip ───────────────────────────────────────────────────
-
-    // Forwarded: for="_mdn"  — obfuscated identifier, not an IP
-    #[test]
-    fn forwarded_obfuscated_identifier_returns_none() {
-        assert_eq!(parse_forwarded_ip("for=\"_mdn\""), None);
-    }
-
-    // Forwarded: For="[2001:db8:cafe::17]:4711"  — case-insensitive key, IPv6 with port
-    #[test]
-    fn forwarded_ipv6_with_port() {
-        assert_eq!(
-            parse_forwarded_ip("For=\"[2001:db8:cafe::17]:4711\""),
-            Some(ipv6(0x2001, 0x0db8, 0xcafe, 0, 0, 0, 0, 0x17))
-        );
-    }
-
-    // Forwarded: for=192.0.2.60;proto=http;by=203.0.113.43  — semicolon-separated directives
-    #[test]
-    fn forwarded_ipv4_with_extra_directives() {
-        assert_eq!(
-            parse_forwarded_ip("for=192.0.2.60;proto=http;by=203.0.113.43"),
-            Some(ipv4(192, 0, 2, 60))
-        );
-    }
-
-    // Forwarded: for=192.0.2.43, for=198.51.100.17  — multiple hops, use first
-    #[test]
-    fn forwarded_multi_hop_uses_first() {
-        assert_eq!(
-            parse_forwarded_ip("for=192.0.2.43, for=198.51.100.17"),
-            Some(ipv4(192, 0, 2, 43))
-        );
-    }
-
-    // Forwarded: for="[2001:db8:cafe::17]"  — IPv6 in brackets, no port
-    #[test]
-    fn forwarded_ipv6_brackets_no_port() {
-        assert_eq!(
-            parse_forwarded_ip("for=\"[2001:db8:cafe::17]\""),
-            Some(ipv6(0x2001, 0x0db8, 0xcafe, 0, 0, 0, 0, 0x17))
-        );
-    }
-
-    // ── client_ip: X-Forwarded-For only ──────────────────────────────────────
-
-    // X-Forwarded-For: 2001:db8:85a3:8d3:1319:8a2e:370:7348
-    #[test]
-    fn xff_single_ipv6() {
-        let h = headers(&[("x-forwarded-for", "2001:db8:85a3:8d3:1319:8a2e:370:7348")]);
-        assert_eq!(
-            client_ip(&h, &loopback()),
-            ipv6(0x2001, 0x0db8, 0x85a3, 0x08d3, 0x1319, 0x8a2e, 0x0370, 0x7348)
-        );
-    }
-
-    // X-Forwarded-For: 203.0.113.195
-    #[test]
-    fn xff_single_ipv4() {
-        let h = headers(&[("x-forwarded-for", "203.0.113.195")]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
-    }
-
-    // X-Forwarded-For: 203.0.113.195, 2001:db8:85a3:8d3:1319:8a2e:370:7348
-    #[test]
-    fn xff_multi_hop_uses_first() {
-        let h = headers(&[(
-            "x-forwarded-for",
-            "203.0.113.195, 2001:db8:85a3:8d3:1319:8a2e:370:7348",
-        )]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
-    }
-
-    // X-Forwarded-For: 192.0.2.43, 2001:db8:cafe::17
-    #[test]
-    fn xff_ipv4_then_ipv6_uses_first() {
-        let h = headers(&[("x-forwarded-for", "192.0.2.43, 2001:db8:cafe::17")]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 43));
-    }
-
-    // ── client_ip: Forwarded takes priority over X-Forwarded-For ────────────
-
-    // X-Forwarded-For: 192.0.2.172
-    // Forwarded: for=192.0.2.172
-    #[test]
-    fn forwarded_takes_priority_over_xff_same_ip() {
-        let h = headers(&[
-            ("x-forwarded-for", "10.0.0.1"),
-            ("forwarded", "for=192.0.2.172"),
-        ]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 172));
-    }
-
-    // X-Forwarded-For: 192.0.2.43, 2001:db8:cafe::17
-    // Forwarded: for=192.0.2.43, for="[2001:db8:cafe::17]"
-    #[test]
-    fn forwarded_takes_priority_over_xff_multi_hop() {
-        let h = headers(&[
-            ("x-forwarded-for", "10.0.0.99, 10.0.0.100"),
-            ("forwarded", "for=192.0.2.43, for=\"[2001:db8:cafe::17]\""),
-        ]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 43));
-    }
-
-    // ── client_ip: fallback to ConnectInfo ───────────────────────────────────
-
-    #[test]
-    fn no_headers_falls_back_to_connect_info() {
-        let h = HeaderMap::new();
-        assert_eq!(client_ip(&h, &loopback()), ipv4(127, 0, 0, 1));
-    }
-
-    // Forwarded: for="_mdn" — obfuscated, falls through to X-Forwarded-For
-    #[test]
-    fn forwarded_obfuscated_falls_back_to_xff() {
-        let h = headers(&[
-            ("forwarded", "for=\"_mdn\""),
-            ("x-forwarded-for", "203.0.113.195"),
-        ]);
-        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
-    }
-}
-
 #[derive(serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct LoginCredentials {
@@ -429,5 +275,118 @@ pub async fn db_login(
         let redirect =
             after_ok_login(&state, &session, user, redirect.unwrap_or("/".to_string())).await?;
         Ok(LoginResponse::Redirect(redirect))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    fn ipv4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
+    }
+
+    fn ipv6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16) -> IpAddr {
+        IpAddr::V6(Ipv6Addr::new(a, b, c, d, e, f, g, h))
+    }
+
+    fn loopback() -> SocketAddr {
+        "127.0.0.1:9999".parse().unwrap()
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (k, v) in pairs {
+            map.insert(
+                http::header::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                http::header::HeaderValue::from_str(v).unwrap(),
+            );
+        }
+        map
+    }
+
+    #[test]
+    fn test_parse_forwarded_ip() {
+        // Forwarded: for="_mdn" — obfuscated identifier, not an IP
+        assert_eq!(parse_forwarded_ip("for=\"_mdn\""), None);
+
+        // Forwarded: For="[2001:db8:cafe::17]:4711" — case-insensitive key, IPv6 with port
+        assert_eq!(
+            parse_forwarded_ip("For=\"[2001:db8:cafe::17]:4711\""),
+            Some(ipv6(0x2001, 0x0db8, 0xcafe, 0, 0, 0, 0, 0x17))
+        );
+
+        // Forwarded: for="[2001:db8:cafe::17]" — IPv6 in brackets, no port
+        assert_eq!(
+            parse_forwarded_ip("for=\"[2001:db8:cafe::17]\""),
+            Some(ipv6(0x2001, 0x0db8, 0xcafe, 0, 0, 0, 0, 0x17))
+        );
+
+        // Forwarded: for=192.0.2.60;proto=http;by=203.0.113.43 — semicolon-separated directives
+        assert_eq!(
+            parse_forwarded_ip("for=192.0.2.60;proto=http;by=203.0.113.43"),
+            Some(ipv4(192, 0, 2, 60))
+        );
+
+        // Forwarded: for=192.0.2.43, for=198.51.100.17 — multiple hops, use first
+        assert_eq!(
+            parse_forwarded_ip("for=192.0.2.43, for=198.51.100.17"),
+            Some(ipv4(192, 0, 2, 43))
+        );
+    }
+
+    #[test]
+    fn test_client_ip() {
+        // X-Forwarded-For: 2001:db8:85a3:8d3:1319:8a2e:370:7348
+        let h = headers(&[("x-forwarded-for", "2001:db8:85a3:8d3:1319:8a2e:370:7348")]);
+        assert_eq!(
+            client_ip(&h, &loopback()),
+            ipv6(0x2001, 0x0db8, 0x85a3, 0x08d3, 0x1319, 0x8a2e, 0x0370, 0x7348)
+        );
+
+        // X-Forwarded-For: 203.0.113.195
+        let h = headers(&[("x-forwarded-for", "203.0.113.195")]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
+
+        // X-Forwarded-For: 203.0.113.195, 2001:db8:85a3:8d3:1319:8a2e:370:7348
+        let h = headers(&[(
+            "x-forwarded-for",
+            "203.0.113.195, 2001:db8:85a3:8d3:1319:8a2e:370:7348",
+        )]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
+
+        // X-Forwarded-For: 192.0.2.43, 2001:db8:cafe::17
+        let h = headers(&[("x-forwarded-for", "192.0.2.43, 2001:db8:cafe::17")]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 43));
+
+        // Forwarded takes priority: X-Forwarded-For: 10.0.0.1 / Forwarded: for=192.0.2.172
+        let h = headers(&[
+            ("x-forwarded-for", "10.0.0.1"),
+            ("forwarded", "for=192.0.2.172"),
+        ]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 172));
+
+        // Forwarded takes priority (multi-hop):
+        // X-Forwarded-For: 192.0.2.43, 2001:db8:cafe::17
+        // Forwarded: for=192.0.2.43, for="[2001:db8:cafe::17]"
+        let h = headers(&[
+            ("x-forwarded-for", "10.0.0.99, 10.0.0.100"),
+            ("forwarded", "for=192.0.2.43, for=\"[2001:db8:cafe::17]\""),
+        ]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(192, 0, 2, 43));
+
+        // Forwarded: for="_mdn" — obfuscated, falls through to X-Forwarded-For
+        let h = headers(&[
+            ("forwarded", "for=\"_mdn\""),
+            ("x-forwarded-for", "203.0.113.195"),
+        ]);
+        assert_eq!(client_ip(&h, &loopback()), ipv4(203, 0, 113, 195));
+
+        // No headers — falls back to ConnectInfo
+        assert_eq!(
+            client_ip(&HeaderMap::new(), &loopback()),
+            ipv4(127, 0, 0, 1)
+        );
     }
 }
