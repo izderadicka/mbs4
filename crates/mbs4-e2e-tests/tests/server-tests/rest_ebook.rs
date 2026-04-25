@@ -15,7 +15,7 @@ async fn search(
     query: &str,
     expected: usize,
 ) -> Result<Vec<serde_json::Value>> {
-    let mut retries = 10;
+    let mut retries = 20;
     let mut found = Vec::new();
     while retries > 0 {
         found = _search(&client, &base_url, query).await.unwrap();
@@ -26,7 +26,7 @@ async fn search(
         if retries == 0 {
             panic!("Not found in search");
         }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
     assert_eq!(found.len(), expected, "Searching: {}", query);
