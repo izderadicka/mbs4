@@ -97,8 +97,8 @@ async fn reject_duplicate_hash(
             .inspect_err(|e| error!("Error deleting file {e}"))
             .ok();
         return Err(ApiError::ResourceAlreadyExists(format!(
-            "File with same hash exists as {}",
-            source.location
+            "File with this content already exists (sha256: {})",
+            store_info.hash
         )));
     }
     Ok(())
