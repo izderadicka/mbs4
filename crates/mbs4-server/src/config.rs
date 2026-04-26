@@ -85,8 +85,7 @@ pub struct ServerConfig {
     #[arg(
         long,
         env = "MBS4_STATIC_DIR",
-        default_value = "static",
-        help = "Path to static client files, if provided will be served by server"
+        help = "Path to static client files; if not set, no static files are served"
     )]
     pub static_dir: Option<PathBuf>,
 
