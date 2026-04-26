@@ -9,7 +9,7 @@ use mbs4_types::{claim::Role, general::ValidEmail};
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
 use std::sync::OnceLock;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{Error, error::Result};
 
@@ -161,7 +161,11 @@ where
         let users = sqlx::query_as::<_, UserInt>("SELECT id, name, email, roles FROM users")
             .fetch(&self.executor)
             .take(limit)
-            .filter_map(|r| async move { r.ok().map(User::from) })
+            .filter_map(|r| async move {
+                r.inspect_err(|e| error!("Skipping malformed user row: {e}"))
+                    .ok()
+                    .map(User::from)
+            })
             .collect::<Vec<_>>()
             .await;
         Ok(users)
