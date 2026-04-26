@@ -261,8 +261,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        print!("Current dir: {:#?}\n", std::env::current_dir());
-
         let metadata = extract_metadata("../../test-data/samples/Holmes.epub", true)
             .await
             .unwrap();
