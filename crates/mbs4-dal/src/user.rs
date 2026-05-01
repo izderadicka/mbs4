@@ -8,7 +8,8 @@ use garde::Validate;
 use mbs4_types::{claim::Role, general::ValidEmail};
 use serde::{Deserialize, Serialize};
 use sqlx::Pool;
-use tracing::debug;
+use std::sync::OnceLock;
+use tracing::{debug, error};
 
 use crate::{Error, error::Result};
 
@@ -46,6 +47,14 @@ async fn verify_password_async(
     let res =
         tokio::task::spawn_blocking(move || verify_password(&password, &password_hash)).await??;
     Ok(res)
+}
+
+// Computed once; used to equalize timing when an email is not found so that
+// an attacker cannot distinguish "email unknown" from "wrong password".
+static DUMMY_HASH: OnceLock<String> = OnceLock::new();
+
+fn dummy_hash() -> &'static str {
+    DUMMY_HASH.get_or_init(|| hash_password("__dummy__").expect("Argon2 dummy hash failed"))
 }
 
 fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
@@ -158,7 +167,11 @@ where
         let users = sqlx::query_as::<_, UserInt>("SELECT id, name, email, roles FROM users")
             .fetch(&self.executor)
             .take(limit)
-            .filter_map(|r| async move { r.ok().map(User::from) })
+            .filter_map(|r| async move {
+                r.inspect_err(|e| error!("Skipping malformed user row: {e}"))
+                    .ok()
+                    .map(User::from)
+            })
             .collect::<Vec<_>>()
             .await;
         Ok(users)
@@ -208,15 +221,21 @@ where
         if password.is_empty() {
             return Err(Error::InvalidCredentials);
         }
-        let (id, hashed_password): (i64, Option<String>) =
+        let row: std::result::Result<(i64, Option<String>), _> =
             sqlx::query_as("SELECT id, password FROM users WHERE email = ?")
                 .bind(email)
                 .fetch_one(&self.executor)
-                .await
-                .map_err(|e| {
-                    debug!("User check error: {e}");
-                    Error::InvalidCredentials
-                })?;
+                .await;
+        let (id, hashed_password) = match row {
+            Ok(row) => row,
+            Err(e) => {
+                debug!("User check error: {e}");
+                // Always verify against a dummy hash so timing does not reveal
+                // whether the email exists.
+                verify_password_async(password, dummy_hash()).await.ok();
+                return Err(Error::InvalidCredentials);
+            }
+        };
         if let Some(hashed_password) = hashed_password
             && verify_password_async(password, hashed_password)
                 .await

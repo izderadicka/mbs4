@@ -44,7 +44,7 @@ pub struct ServerConfig {
 
     #[arg(
         long,
-        env = "MBS4_BASE_URL",
+        env = "MBS4_BASE_BACKEND_URL",
         help = "Base URL of server, if different from base_url, defaults to base_url"
     )]
     pub base_backend_url: Option<Url>,
@@ -85,8 +85,7 @@ pub struct ServerConfig {
     #[arg(
         long,
         env = "MBS4_STATIC_DIR",
-        default_value = "static",
-        help = "Path to static client files, if provided will be served by server"
+        help = "Path to static client files; if not set, no static files are served"
     )]
     pub static_dir: Option<PathBuf>,
 
