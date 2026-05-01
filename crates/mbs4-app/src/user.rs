@@ -1,6 +1,6 @@
 use crate::{auth::token::RequiredRolesLayer, error::ApiResult, repository_from_request};
 use axum_valid::Garde;
-use mbs4_dal::user::{CreateUser, UserRepository};
+use mbs4_dal::user::{CreateUser, UpdateUser, UserRepository};
 
 use axum::{
     extract::Path,
@@ -17,7 +17,7 @@ repository_from_request!(UserRepository);
 
 #[cfg(feature = "openapi")]
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(create_user, list_users, delete_user))]
+#[openapi(paths(create_user, list_users, delete_user, edit_user))]
 struct ModuleDocs;
 
 #[cfg(feature = "openapi")]
@@ -55,9 +55,21 @@ async fn delete_user(
     Ok((StatusCode::NO_CONTENT, ()))
 }
 
+#[cfg_attr(feature = "openapi", utoipa::path(put, path = "/{id}", tag = "Users", operation_id = "editUser",
+    params(("id" = i64, Path, description = "User id")),
+    responses((status = StatusCode::OK, description = "Updated User", body = mbs4_dal::user::User))))]
+async fn edit_user(
+    Path(id): Path<i64>,
+    user_registry: UserRepository,
+    Garde(Json(payload)): Garde<Json<UpdateUser>>,
+) -> ApiResult<impl IntoResponse> {
+    let user = user_registry.update(id, payload).await?;
+    Ok((StatusCode::OK, Json(user)))
+}
+
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/", post(create_user).get(list_users))
-        .route("/{id}", delete(delete_user))
+        .route("/{id}", delete(delete_user).put(edit_user))
         .layer(RequiredRolesLayer::new([Role::Admin]))
 }

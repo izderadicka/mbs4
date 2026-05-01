@@ -52,12 +52,21 @@ fn is_valid_role(role: &str, _ctx: &()) -> garde::Result {
     role.parse::<Role>().map_err(garde::Error::new).map(|_| ())
 }
 
-#[cfg(feature = "openapi")]
-#[derive(Debug, Serialize, Deserialize, Clone, Validate, utoipa::ToSchema)]
-#[cfg_attr(feature = "openapi", derive())]
+fn validate_password_update(password: &str, _ctx: &()) -> garde::Result {
+    if password.is_empty() || (8..=255).contains(&password.len()) {
+        Ok(())
+    } else {
+        Err(garde::Error::new(
+            "password must be empty (to remove) or between 8 and 255 characters",
+        ))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateUser {
     #[garde(dive)]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub email: ValidEmail,
     #[garde(length(min = 3, max = 255))]
     pub name: String,
@@ -67,15 +76,12 @@ pub struct CreateUser {
     pub roles: Option<Vec<String>>,
 }
 
-#[cfg(not(feature = "openapi"))]
 #[derive(Debug, Serialize, Deserialize, Clone, Validate)]
-#[cfg_attr(feature = "openapi", derive())]
-pub struct CreateUser {
-    #[garde(dive)]
-    pub email: ValidEmail,
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateUser {
     #[garde(length(min = 3, max = 255))]
     pub name: String,
-    #[garde(length(min = 8, max = 255))]
+    #[garde(inner(custom(validate_password_update)))]
     pub password: Option<String>,
     #[garde(inner(inner(custom(is_valid_role))))]
     pub roles: Option<Vec<String>>,
@@ -219,6 +225,38 @@ where
             return self.get(id).await;
         }
         Err(Error::InvalidCredentials)
+    }
+
+    pub async fn update(&self, id: i64, payload: UpdateUser) -> Result<User> {
+        // Verify user exists before updating
+        self.get(id).await?;
+
+        let roles = payload.roles.map(|roles| roles.join(","));
+        sqlx::query("UPDATE users SET name = ?, roles = ? WHERE id = ?")
+            .bind(payload.name)
+            .bind(roles)
+            .bind(id)
+            .execute(&self.executor)
+            .await?;
+
+        if let Some(password) = payload.password {
+            if password.is_empty() {
+                tracing::info!("Removing password for user {id}");
+                sqlx::query("UPDATE users SET password = NULL WHERE id = ?")
+                    .bind(id)
+                    .execute(&self.executor)
+                    .await?;
+            } else {
+                let hashed_password = hash_password_async(password).await?;
+                sqlx::query("UPDATE users SET password = ? WHERE id = ?")
+                    .bind(hashed_password)
+                    .bind(id)
+                    .execute(&self.executor)
+                    .await?;
+            }
+        }
+
+        self.get(id).await
     }
 
     pub async fn change_password(&self, email: &str, password: &str) -> Result<()> {
