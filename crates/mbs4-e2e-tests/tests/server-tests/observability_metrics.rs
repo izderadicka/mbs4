@@ -175,6 +175,7 @@ mod tests {
 
     #[tokio::test]
     #[traced_test]
+    #[ignore = "requires Calibre CLI tools (ebook-meta)"]
     async fn test_conversion_metrics() {
         let (mut args, mut config_guard) = prepare_env("test_conversion_metrics").await.unwrap();
         args.metrics_token = Some("test-metrics-token".to_string());
