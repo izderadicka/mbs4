@@ -1,0 +1,7 @@
+# mbs4-calibre and mbs4-e2e-tests are excluded from mutation testing:
+# - mbs4-calibre tests require Calibre CLI tools which are not always installed
+# - mbs4-e2e-tests contains only integration test code, not application logic
+exclude_globs = [
+    "crates/mbs4-calibre/**/*.rs",
+    "crates/mbs4-e2e-tests/**/*.rs"
+]

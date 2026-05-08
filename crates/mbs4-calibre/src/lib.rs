@@ -260,6 +260,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires Calibre CLI tools (ebook-meta)"]
     async fn test_extract_metadata() {
         print!("Current dir: {:#?}\n", std::env::current_dir());
 
@@ -286,6 +287,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Calibre CLI tools (ebook-convert)"]
     async fn test_convert() {
         let path = "../../test-data/samples/Holmes.epub";
         let converted = convert(path, "mobi").await.unwrap();
