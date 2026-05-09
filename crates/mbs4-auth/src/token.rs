@@ -68,21 +68,12 @@ impl TokenManager {
 
     #[cfg(test)]
     pub fn create_expired_tr_token(&self) -> Result<String> {
-        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
-            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let past_validity = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
             .as_secs()
             .saturating_sub(1);
-        let mut msg = [0u8; 8 + 32 + 32];
-        msg[0..8].copy_from_slice(&past_validity.to_be_bytes());
-        let mut rng = rng();
-        rng.fill_bytes(&mut msg[8..40]);
-        mac.update(&msg[0..40]);
-        let sig = mac.finalize().into_bytes();
-        msg[40..].copy_from_slice(&sig);
-        Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(msg))
+        self.create_tr_token_with_validity(past_validity)
     }
 
     pub fn validate<T>(&self, token: &str) -> Result<T>
@@ -98,13 +89,16 @@ impl TokenManager {
     }
 
     pub fn create_tr_token(&self) -> Result<String> {
-        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
-            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
             .as_secs();
-        let validity = timestamp + Self::RETRIEVAL_TOKEN_VALIDITY_SECS;
+        self.create_tr_token_with_validity(timestamp + Self::RETRIEVAL_TOKEN_VALIDITY_SECS)
+    }
+
+    fn create_tr_token_with_validity(&self, validity: u64) -> Result<String> {
+        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
+            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let mut msg = [0u8; 8 + 32 + 32];
         msg[0..8].copy_from_slice(&validity.to_be_bytes());
         let mut rng = rng();
