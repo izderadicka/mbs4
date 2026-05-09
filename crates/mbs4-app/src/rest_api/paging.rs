@@ -74,3 +74,77 @@ where
         // As we control the batch, this should never fail
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paging(page: u32, page_size: u32) -> Paging {
+        Paging {
+            page: Some(page),
+            page_size: Some(page_size),
+            sort: None,
+            filter: None,
+        }
+    }
+
+    fn batch(offset: i64, total: u64) -> Batch<()> {
+        Batch {
+            offset,
+            limit: 0,
+            total,
+            rows: vec![],
+        }
+    }
+
+    #[test]
+    fn test_page1_offset_is_zero() {
+        let p = paging(1, 20).into_listing_params(20).unwrap();
+        assert_eq!(p.offset, 0);
+        assert_eq!(p.limit, 20);
+    }
+
+    #[test]
+    fn test_page2_offset_equals_page_size() {
+        let p = paging(2, 20).into_listing_params(20).unwrap();
+        assert_eq!(p.offset, 20);
+        assert_eq!(p.limit, 20);
+    }
+
+    #[test]
+    fn test_page3_with_small_page_size() {
+        let p = paging(3, 10).into_listing_params(10).unwrap();
+        assert_eq!(p.offset, 20);
+        assert_eq!(p.limit, 10);
+    }
+
+    #[test]
+    fn test_default_page_size_used_when_unset() {
+        let p = Paging {
+            page: None,
+            page_size: None,
+            sort: None,
+            filter: None,
+        }
+        .into_listing_params(15)
+        .unwrap();
+        assert_eq!(p.offset, 0);
+        assert_eq!(p.limit, 15);
+    }
+
+    #[test]
+    fn test_page_number_from_batch_offset() {
+        assert_eq!(Page::<()>::from_batch(batch(0, 50), 20).page, 1);
+        assert_eq!(Page::<()>::from_batch(batch(20, 50), 20).page, 2);
+        assert_eq!(Page::<()>::from_batch(batch(40, 50), 20).page, 3);
+    }
+
+    #[test]
+    fn test_total_pages_div_ceil() {
+        assert_eq!(Page::<()>::from_batch(batch(0, 50), 20).total_pages, 3);
+        assert_eq!(Page::<()>::from_batch(batch(0, 40), 20).total_pages, 2); // exact fit
+        assert_eq!(Page::<()>::from_batch(batch(0, 41), 20).total_pages, 3); // one item over
+        assert_eq!(Page::<()>::from_batch(batch(0, 1), 20).total_pages, 1);
+        assert_eq!(Page::<()>::from_batch(batch(0, 0), 20).total_pages, 0);
+    }
+}

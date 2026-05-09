@@ -155,6 +155,74 @@ fn safe_file_name(name: &str) -> String {
 mod tests {
     use super::*;
 
+    fn mk_author(last: &'static str, first: Option<&'static str>) -> Author<'static> {
+        Author {
+            last_name: last,
+            first_name: first,
+        }
+    }
+
+    fn ebook_with_authors(authors: Vec<Author<'_>>) -> Ebook<'_> {
+        Ebook {
+            title: "T",
+            authors,
+            language_code: "en",
+            series_name: None,
+            series_index: None,
+        }
+    }
+
+    #[test]
+    fn test_authors_str_no_authors() {
+        assert_eq!(ebook_with_authors(vec![]).authors_str(), "No Authors");
+    }
+
+    #[test]
+    fn test_authors_str_single_with_first_name() {
+        let book = ebook_with_authors(vec![mk_author("Doyle", Some("Arthur"))]);
+        assert_eq!(book.authors_str(), "Doyle Arthur");
+    }
+
+    #[test]
+    fn test_authors_str_single_without_first_name() {
+        let book = ebook_with_authors(vec![mk_author("Voltaire", None)]);
+        assert_eq!(book.authors_str(), "Voltaire");
+    }
+
+    #[test]
+    fn test_authors_str_three_authors_no_truncation() {
+        let book = ebook_with_authors(vec![
+            mk_author("Smith", Some("Alice")),
+            mk_author("Jones", Some("Bob")),
+            mk_author("Brown", Some("Carol")),
+        ]);
+        let s = book.authors_str();
+        assert!(
+            !s.contains("and others"),
+            "3 authors should not get 'and others': {s}"
+        );
+        assert!(
+            s.contains("Smith") && s.contains("Jones") && s.contains("Brown"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn test_authors_str_four_authors_truncated() {
+        let book = ebook_with_authors(vec![
+            mk_author("Smith", Some("Alice")),
+            mk_author("Jones", Some("Bob")),
+            mk_author("Brown", Some("Carol")),
+            mk_author("White", Some("Dave")),
+        ]);
+        let s = book.authors_str();
+        assert!(
+            s.contains("and others"),
+            "4 authors should append 'and others': {s}"
+        );
+        assert!(!s.contains("White"), "4th author should not appear: {s}");
+    }
+
     #[test]
     fn test_remove_diacritics() {
         assert_eq!(remove_diacritics("Æ"), "AE");

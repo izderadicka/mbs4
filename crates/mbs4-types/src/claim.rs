@@ -133,27 +133,67 @@ impl TimeLimited for ApiClaim {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_role() {
-        let role_admin = Role::Admin;
-        let role_trusted = Role::Trusted;
-        let role_test = Role::JustForTest;
-        assert_eq!(role_admin.to_string(), "admin");
-        assert_eq!(role_trusted.to_string(), "trusted");
-        let claim = ApiClaim {
+    fn admin_trusted_claim() -> ApiClaim {
+        ApiClaim {
             sub: "123".to_string(),
             iat: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            exp: 1,
-            roles: HashSet::from([role_admin, Role::Trusted]),
-        };
-        assert!(claim.has_role(role_admin));
-        assert!(claim.has_role(role_trusted));
-        assert!(!claim.has_role(role_test));
+            exp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600,
+            roles: HashSet::from([Role::Admin, Role::Trusted]),
+        }
+    }
+
+    #[test]
+    fn test_role() {
+        let claim = admin_trusted_claim();
+        assert_eq!(Role::Admin.to_string(), "admin");
+        assert_eq!(Role::Trusted.to_string(), "trusted");
+        assert!(claim.has_role(Role::Admin));
+        assert!(claim.has_role(Role::Trusted));
+        assert!(!claim.has_role(Role::JustForTest));
         assert!(claim.has_any_role([Role::Admin, Role::JustForTest]));
         assert!(claim.has_any_role(vec![Role::Trusted, Role::JustForTest]));
         assert!(claim.has_all_roles([Role::Admin, Role::Trusted]));
+    }
+
+    #[test]
+    fn test_has_any_role_false_when_no_matching_role() {
+        let claim = admin_trusted_claim();
+        assert!(!claim.has_any_role([Role::JustForTest]));
+        assert!(!claim.has_any_role(vec![] as Vec<Role>));
+    }
+
+    #[test]
+    fn test_has_any_role_ref() {
+        let claim = admin_trusted_claim();
+        assert!(claim.has_any_role_ref(&[Role::Admin]));
+        assert!(claim.has_any_role_ref(&[Role::Trusted, Role::JustForTest]));
+        assert!(!claim.has_any_role_ref(&[Role::JustForTest]));
+        assert!(!claim.has_any_role_ref(&[] as &[Role]));
+    }
+
+    #[test]
+    fn test_has_all_roles_false_when_missing_role() {
+        let claim = admin_trusted_claim();
+        assert!(!claim.has_all_roles([Role::Admin, Role::JustForTest]));
+        assert!(!claim.has_all_roles([Role::JustForTest]));
+    }
+
+    #[test]
+    fn test_check_validity_fresh_claim_is_valid() {
+        let claim = admin_trusted_claim();
+        assert!(claim.check_validity());
+    }
+
+    #[test]
+    fn test_check_validity_expired_claim_is_invalid() {
+        let claim = ApiClaim::new_expired("user", [Role::Admin]);
+        assert!(!claim.check_validity());
     }
 }
