@@ -83,7 +83,6 @@ fn catch_event(
 
 #[tokio::test]
 #[traced_test]
-#[ignore = "requires Calibre CLI tools (ebook-meta)"]
 async fn test_upload() {
     let (args, mut _config_guard) = prepare_env("test_upload").await.unwrap();
     let base_url = args.base_url.clone();
