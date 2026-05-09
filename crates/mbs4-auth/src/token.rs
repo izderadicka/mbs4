@@ -66,6 +66,25 @@ impl TokenManager {
         Ok(token)
     }
 
+    #[cfg(test)]
+    pub fn create_expired_tr_token(&self) -> Result<String> {
+        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
+            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
+        let past_validity = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
+            .as_secs()
+            .saturating_sub(1);
+        let mut msg = [0u8; 8 + 32 + 32];
+        msg[0..8].copy_from_slice(&past_validity.to_be_bytes());
+        let mut rng = rng();
+        rng.fill_bytes(&mut msg[8..40]);
+        mac.update(&msg[0..40]);
+        let sig = mac.finalize().into_bytes();
+        msg[40..].copy_from_slice(&sig);
+        Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(msg))
+    }
+
     pub fn validate<T>(&self, token: &str) -> Result<T>
     where
         T: DeserializeOwned,
@@ -199,22 +218,8 @@ mod tests {
 
     #[test]
     fn test_tr_token_expired_is_rejected() {
-        use hmac::Mac;
         let manager = TokenManager::new("secret", "secret2", std::time::Duration::from_secs(3600));
-        // Build a token whose validity timestamp is in the past (1 second ago).
-        let past_ts: u64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .saturating_sub(1);
-        let mut msg = [0u8; 8 + 32 + 32];
-        msg[0..8].copy_from_slice(&past_ts.to_be_bytes());
-        // Leave nonce as zeros; sign with the manager's secret.
-        let mut mac = super::HmacSha256::new_from_slice(&manager.token_retrieval_secret).unwrap();
-        mac.update(&msg[0..40]);
-        let sig = mac.finalize().into_bytes();
-        msg[40..].copy_from_slice(&sig);
-        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(msg);
+        let token = manager.create_expired_tr_token().unwrap();
         assert!(manager.validate_tr_token(&token).is_err());
     }
 }
