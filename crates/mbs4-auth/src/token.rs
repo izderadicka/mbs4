@@ -66,6 +66,16 @@ impl TokenManager {
         Ok(token)
     }
 
+    #[cfg(test)]
+    pub fn create_expired_tr_token(&self) -> Result<String> {
+        let past_validity = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
+            .as_secs()
+            .saturating_sub(1);
+        self.create_tr_token_with_validity(past_validity)
+    }
+
     pub fn validate<T>(&self, token: &str) -> Result<T>
     where
         T: DeserializeOwned,
@@ -79,13 +89,16 @@ impl TokenManager {
     }
 
     pub fn create_tr_token(&self) -> Result<String> {
-        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
-            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::tr_token_error("Invalid system timestamp", e))?
             .as_secs();
-        let validity = timestamp + Self::RETRIEVAL_TOKEN_VALIDITY_SECS;
+        self.create_tr_token_with_validity(timestamp + Self::RETRIEVAL_TOKEN_VALIDITY_SECS)
+    }
+
+    fn create_tr_token_with_validity(&self, validity: u64) -> Result<String> {
+        let mut mac = HmacSha256::new_from_slice(&self.token_retrieval_secret)
+            .map_err(|e| Error::tr_token_error("Error HMAC creation", e))?;
         let mut msg = [0u8; 8 + 32 + 32];
         msg[0..8].copy_from_slice(&validity.to_be_bytes());
         let mut rng = rng();
@@ -175,5 +188,32 @@ mod tests {
         let manager = TokenManager::new("secret", "secret2", std::time::Duration::from_secs(3600));
         let token = manager.create_tr_token().unwrap();
         manager.validate_tr_token(&token).unwrap();
+    }
+
+    #[test]
+    fn test_tr_token_tampered_hmac_is_rejected() {
+        let manager = TokenManager::new("secret", "secret2", std::time::Duration::from_secs(3600));
+        let token = manager.create_tr_token().unwrap();
+        let mut raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(token.as_bytes())
+            .unwrap();
+        // flip a byte in the HMAC portion (bytes 40..72)
+        raw[45] ^= 0xFF;
+        let tampered = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&raw);
+        assert!(manager.validate_tr_token(&tampered).is_err());
+    }
+
+    #[test]
+    fn test_tr_token_wrong_length_is_rejected() {
+        let manager = TokenManager::new("secret", "secret2", std::time::Duration::from_secs(3600));
+        assert!(manager.validate_tr_token("tooshort").is_err());
+        assert!(manager.validate_tr_token("").is_err());
+    }
+
+    #[test]
+    fn test_tr_token_expired_is_rejected() {
+        let manager = TokenManager::new("secret", "secret2", std::time::Duration::from_secs(3600));
+        let token = manager.create_expired_tr_token().unwrap();
+        assert!(manager.validate_tr_token(&token).is_err());
     }
 }

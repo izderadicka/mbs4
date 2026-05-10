@@ -1,7 +1,13 @@
 use std::path::Path;
 
-use mbs4_app::store::rest_api::{RenameResult, UploadInfo};
-use mbs4_e2e_tests::{TestUser, launch_env, prepare_env, random_text_file};
+use mbs4_app::{
+    rest_api::ebook::EbookFileInfo,
+    store::rest_api::{RenameResult, UploadInfo},
+};
+use mbs4_e2e_tests::{
+    TestUser, launch_env, prepare_env, random_text_file,
+    rest::{create_ebook, create_format as rest_create_format, create_language},
+};
 use reqwest::{
     Body,
     header::CONTENT_TYPE,
@@ -126,4 +132,106 @@ async fn test_store() {
         let body = response.bytes().await.unwrap();
         assert_eq!(body, original);
     }
+}
+
+#[tokio::test]
+#[traced_test]
+async fn test_duplicate_upload_rejected() {
+    let (args, mut config_guard) = prepare_env("test_duplicate_upload").await.unwrap();
+    let base_url = args.base_url.clone();
+    let tmp_dir = config_guard.path().to_path_buf();
+    const FILE_SIZE: u64 = 8 * 1024;
+
+    let test_file_path = tmp_dir.join("dedup_test.txt");
+    random_text_file(&test_file_path, FILE_SIZE).await.unwrap();
+
+    let (client, _) = launch_env(args, TestUser::Admin, &mut config_guard)
+        .await
+        .unwrap();
+
+    // Register a text format and create an ebook so we can register a source.
+    let fmt = rest_create_format(&client, &base_url, "text", "text/plain", "txt")
+        .await
+        .unwrap();
+    let lang = create_language(&client, &base_url, "English", "en")
+        .await
+        .unwrap();
+    let ebook = create_ebook(
+        &client,
+        &base_url,
+        &serde_json::json!({"title": "Dedup Test Book", "language_id": lang.id}),
+    )
+    .await
+    .unwrap();
+
+    // First upload: store the file in the upload area.
+    let upload_info: UploadInfo = {
+        let file = File::open(&test_file_path).await.unwrap();
+        let stream = ReaderStream::new(file);
+        let form = Form::new().part("kind", Part::text("Ebook")).part(
+            "file",
+            Part::stream(Body::wrap_stream(stream)).file_name("dedup_test.txt"),
+        );
+        let url = base_url.join("files/upload/form").unwrap();
+        let res = client.post(url).multipart(form).send().await.unwrap();
+        assert_eq!(res.status().as_u16(), 201, "first upload should succeed");
+        res.json().await.unwrap()
+    };
+
+    // Register the upload as an ebook source — this records the hash in the DB
+    // and moves the file from the upload area to the books area.
+    let source_url = base_url
+        .join(&format!("api/ebook/{}/source", ebook.id))
+        .unwrap();
+    let file_info = EbookFileInfo {
+        uploaded_file: upload_info.final_path.clone(),
+        size: upload_info.size,
+        hash: upload_info.hash.clone(),
+        quality: None,
+    };
+    let res = client
+        .post(source_url)
+        .json(&file_info)
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        res.status().is_success(),
+        "source creation should succeed: {}",
+        res.status()
+    );
+
+    // Second upload of the same file content → must be rejected because the hash is now in the
+    // source table.
+    let file = File::open(&test_file_path).await.unwrap();
+    let stream = ReaderStream::new(file);
+    let form = Form::new().part("kind", Part::text("Ebook")).part(
+        "file",
+        Part::stream(Body::wrap_stream(stream)).file_name("dedup_test.txt"),
+    );
+    let url = base_url.join("files/upload/form").unwrap();
+    let res = client.post(url).multipart(form).send().await.unwrap();
+    assert_eq!(
+        res.status().as_u16(),
+        409,
+        "duplicate upload should return 409 Conflict"
+    );
+
+    // Verify a different file still uploads fine (dedup is hash-based, not name-based).
+    let other_path = tmp_dir.join("other.txt");
+    random_text_file(&other_path, FILE_SIZE).await.unwrap();
+    let file = File::open(&other_path).await.unwrap();
+    let stream = ReaderStream::new(file);
+    let form = Form::new().part("kind", Part::text("Ebook")).part(
+        "file",
+        Part::stream(Body::wrap_stream(stream)).file_name("dedup_test.txt"),
+    );
+    let url = base_url.join("files/upload/form").unwrap();
+    let res = client.post(url).multipart(form).send().await.unwrap();
+    assert_eq!(
+        res.status().as_u16(),
+        201,
+        "different file should still upload: {}",
+        res.status()
+    );
 }
