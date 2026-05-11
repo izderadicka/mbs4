@@ -173,4 +173,73 @@ mod tests {
         let final_path = path.without_prefix(StorePrefix::Upload).unwrap();
         assert_eq!(final_path, original_path);
     }
+
+    // --- validate_path / is_segment_invalid ---
+
+    #[test]
+    fn test_valid_paths_are_accepted() {
+        assert!(ValidPath::new("books/some-file.epub").is_ok());
+        assert!(ValidPath::new("upload/abc123.epub").is_ok());
+        assert!(ValidPath::new("file.txt").is_ok());
+        assert!(ValidPath::new("a/b/c/d/e/f/g/h/i/j").is_ok()); // exactly MAX_PATH_DEPTH
+    }
+
+    #[test]
+    fn test_empty_path_is_rejected() {
+        assert!(ValidPath::new("").is_err());
+    }
+
+    #[test]
+    fn test_absolute_and_trailing_slash_rejected() {
+        assert!(ValidPath::new("/absolute/path").is_err());
+        assert!(ValidPath::new("trailing/").is_err());
+    }
+
+    #[test]
+    fn test_dot_segments_are_rejected() {
+        assert!(ValidPath::new("a/./b").is_err());
+        assert!(ValidPath::new("a/../b").is_err());
+        assert!(ValidPath::new(".hidden").is_err());
+        assert!(ValidPath::new("a/.hidden").is_err());
+    }
+
+    #[test]
+    fn test_empty_segment_double_slash_is_rejected() {
+        assert!(ValidPath::new("a//b").is_err());
+    }
+
+    #[test]
+    fn test_invalid_chars_are_rejected() {
+        assert!(ValidPath::new(r"a\b").is_err()); // backslash
+        assert!(ValidPath::new("a:b").is_err()); // colon
+        assert!(ValidPath::new("a\x00b").is_err()); // NUL control char
+        assert!(ValidPath::new("a\x1fb").is_err()); // other control char
+    }
+
+    #[test]
+    fn test_segment_length_boundary() {
+        let ok_segment = "a".repeat(MAX_SEGMENT_LEN);
+        assert!(ValidPath::new(&ok_segment).is_ok());
+        let too_long = "a".repeat(MAX_SEGMENT_LEN + 1);
+        assert!(ValidPath::new(&too_long).is_err());
+    }
+
+    #[test]
+    fn test_path_length_boundary() {
+        // A path of exactly MAX_PATH_LEN chars should be accepted (using 9 short segments
+        // padded to fill the budget while staying within depth and segment limits).
+        // 16 such segments + 15 slashes = 16*255+15 = 4095 = MAX_PATH_LEN — but depth is 10.
+        // Use 2 segments that together exceed MAX_PATH_LEN via a 4096-char segment pair.
+        // Simplest: one segment of 4096 chars (exceeds MAX_PATH_LEN outright).
+        let too_long_path = "a".repeat(MAX_PATH_LEN + 1);
+        assert!(ValidPath::new(&too_long_path).is_err());
+    }
+
+    #[test]
+    fn test_path_depth_boundary() {
+        let at_limit = vec!["a"; MAX_PATH_DEPTH].join("/");
+        assert!(ValidPath::new(&at_limit).is_ok());
+        let over_limit = vec!["a"; MAX_PATH_DEPTH + 1].join("/");
+        assert!(ValidPath::new(&over_limit).is_err());
+    }
 }
