@@ -38,18 +38,18 @@ fn default_data_dir() -> String {
         .map(|p| p.join("mbs4"))
         .unwrap_or_else(|| PathBuf::from("mbs4"));
 
-    if !fs::exists(&dir).expect("Failed to check if data directory exists") {
-        fs::create_dir_all(&dir).expect("Failed to create data directory");
-    } else if !dir.is_dir() {
-        panic!("Data directory is not a directory",)
-    }
-
     dir.to_string_lossy().to_string()
 }
 
 impl BackendConfig {
     pub fn data_dir(&self) -> PathBuf {
-        PathBuf::from(&self.data_dir)
+        let dir = PathBuf::from(&self.data_dir);
+        if !fs::exists(&dir).expect("Failed to check if data directory exists") {
+            fs::create_dir_all(&dir).expect("Failed to create data directory");
+        } else if !dir.is_dir() {
+            panic!("Data directory is not a directory",)
+        }
+        dir
     }
 
     pub fn files_dir(&self) -> PathBuf {
@@ -59,9 +59,11 @@ impl BackendConfig {
     }
 
     pub fn database_url(&self) -> String {
-        self.database_url
-            .clone()
-            .unwrap_or_else(|| format!("sqlite://{}/mbs4.db", self.data_dir))
+        self.database_url.clone().unwrap_or_else(|| {
+            let data_dir = self.data_dir();
+            let data_dir = data_dir.to_string_lossy(); // OK as data_dir is UTF-8
+            format!("sqlite://{}/mbs4.db", data_dir)
+        })
     }
 
     pub fn index_path(&self) -> PathBuf {

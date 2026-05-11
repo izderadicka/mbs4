@@ -150,7 +150,7 @@ async fn test_duplicate_upload_rejected() {
         .unwrap();
 
     // Register a text format and create an ebook so we can register a source.
-    let fmt = rest_create_format(&client, &base_url, "text", "text/plain", "txt")
+    let _fmt = rest_create_format(&client, &base_url, "text", "text/plain", "txt")
         .await
         .unwrap();
     let lang = create_language(&client, &base_url, "English", "en")
