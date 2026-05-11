@@ -37,6 +37,8 @@ pub struct UploadCmd {
     book: EbookInfo,
     #[command(flatten)]
     server: ServerConfig,
+    #[arg(long, help = "Prints JSON of created/updated ebook")]
+    json: bool,
 }
 
 fn catch_event(
@@ -103,6 +105,7 @@ macro_rules! check_response {
 
 impl Executor for UploadCmd {
     async fn run(self) -> Result<()> {
+        let print_json = self.json;
         let upload = self.upload().await?;
         let title = upload.title();
 
@@ -185,6 +188,9 @@ impl Executor for UploadCmd {
                 }
             }
             debug!("Source {} added", source.id);
+            if print_json {
+                println!("{}", serde_json::to_string(&ebook)?);
+            }
         } else {
             anyhow::bail!("Missing title");
         }
