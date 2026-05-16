@@ -110,7 +110,13 @@ mod tests {
     #[test]
     fn test_parse_filters_too_long_is_error() {
         let long = "a".repeat(1001);
-        assert!(parse_filters(long).is_err());
+        let err = parse_filters(long).unwrap_err();
+        // With mutation `> → <` the length guard is skipped and parse fails with a
+        // different message — asserting the exact message catches the mutant.
+        assert!(
+            format!("{err:?}").to_lowercase().contains("too long"),
+            "expected length-guard error, got: {err:?}"
+        );
     }
 
     #[test]
