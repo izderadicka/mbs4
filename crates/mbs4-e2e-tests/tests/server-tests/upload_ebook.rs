@@ -83,6 +83,7 @@ fn catch_event(
 
 #[tokio::test]
 #[traced_test]
+#[ignore = "requires calibre ebook-meta binary for metadata extraction"]
 async fn test_upload() {
     let (args, mut _config_guard) = prepare_env("test_upload").await.unwrap();
     let base_url = args.base_url.clone();

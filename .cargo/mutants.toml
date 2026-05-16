@@ -5,3 +5,6 @@ exclude_globs = [
     "crates/mbs4-calibre/**/*.rs",
     "crates/mbs4-e2e-tests/**/*.rs"
 ]
+
+# Run the full workspace test suite when evaluating each mutant
+test_workspace = true
