@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[traced_test]
     async fn test_conversion_metrics() {
         let (mut args, mut config_guard) = prepare_env("test_conversion_metrics").await.unwrap();

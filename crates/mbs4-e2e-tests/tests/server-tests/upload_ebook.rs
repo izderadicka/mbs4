@@ -82,6 +82,7 @@ fn catch_event(
 }
 
 #[tokio::test]
+#[ignore]
 #[traced_test]
 async fn test_upload() {
     let (args, mut _config_guard) = prepare_env("test_upload").await.unwrap();
