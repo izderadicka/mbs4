@@ -1,4 +1,7 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{anyhow, Context as _, Result};
 use clap::{Args, Parser};
@@ -180,7 +183,21 @@ impl Executor for UploadCmd {
             };
 
             let source = upload.add_source_to_ebook(ebook.id).await?;
-            if let Some(ref cover_file) = upload.meta.cover_file {
+
+            // If --cover was supplied, upload it and prefer it over any
+            // cover calibre extracted from the ebook itself. The extracted
+            // upload, if any, is cleaned up so it doesn't linger in upload/.
+            let cover_to_attach = if let Some(local_cover) = upload.book.cover.as_deref() {
+                let info = upload.upload_cover_file(local_cover).await?;
+                if let Some(extracted) = upload.meta.cover_file.as_deref() {
+                    upload.delete_cover(extracted).await?;
+                }
+                Some(info.final_path)
+            } else {
+                upload.meta.cover_file.clone()
+            };
+
+            if let Some(ref cover_file) = cover_to_attach {
                 if ebook.cover.is_none() {
                     upload.add_cover_to_ebook(&ebook, cover_file).await?;
                 } else {
@@ -228,6 +245,25 @@ impl UploadHelper {
         check_response!(res, "Add Cover");
         let _updated_ebook: Ebook = res.json().await.unwrap();
         Ok(())
+    }
+
+    async fn upload_cover_file(&self, local_path: &Path) -> Result<UploadInfo> {
+        let file_name = local_path
+            .file_name()
+            .ok_or_else(|| anyhow!("Missing cover file name"))?
+            .to_string_lossy()
+            .to_string();
+        let file = fs::File::open(local_path)
+            .await
+            .with_context(|| format!("Opening cover file {:?}", local_path))?;
+        let form = multipart::Form::new()
+            .text("kind", "cover")
+            .part("file", multipart::Part::stream(file).file_name(file_name));
+        let upload_url = self.server.url.join("files/upload/form")?;
+        let res = self.client.post(upload_url).multipart(form).send().await?;
+        check_response!(res, "Upload Cover");
+        let info: UploadInfo = res.json().await?;
+        Ok(info)
     }
 
     async fn delete_cover(&self, cover_file: &str) -> Result<()> {
