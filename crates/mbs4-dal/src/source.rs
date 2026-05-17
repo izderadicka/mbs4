@@ -65,4 +65,16 @@ WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
             .await?;
         Ok(res)
     }
+
+    /// Keyset-paginated iteration over all sources, ordered by `id`.
+    /// Pass `after_id = 0` for the first page; subsequent calls use the
+    /// last returned `id`. An empty Vec signals end of iteration.
+    pub async fn list_page(&self, after_id: i64, limit: i64) -> crate::error::Result<Vec<Source>> {
+        let res = sqlx::query_as("SELECT * FROM source WHERE id > ? ORDER BY id LIMIT ?")
+            .bind(after_id)
+            .bind(limit)
+            .fetch_all(&self.executor)
+            .await?;
+        Ok(res)
+    }
 }

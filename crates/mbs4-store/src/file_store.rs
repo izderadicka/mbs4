@@ -317,8 +317,38 @@ impl Store for FileStore {
 
     async fn size(&self, path: &ValidPath) -> StoreResult<u64> {
         let final_path = self.inner.root.join(path.as_ref());
-        let meta = fs::metadata(&final_path).await?;
+        let meta = fs::metadata(&final_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                StoreError::NotFound(path.as_ref().to_string())
+            } else {
+                e.into()
+            }
+        })?;
         Ok(meta.len())
+    }
+
+    async fn hash(&self, path: &ValidPath) -> StoreResult<(u64, String)> {
+        use tokio::io::AsyncReadExt as _;
+        let final_path = self.inner.root.join(path.as_ref());
+        let mut file = fs::File::open(&final_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                StoreError::NotFound(path.as_ref().to_string())
+            } else {
+                e.into()
+            }
+        })?;
+        let mut digester = FileHasher::new();
+        let mut size: u64 = 0;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            digester.update(&buf[..n]);
+            size += n as u64;
+        }
+        Ok((size, hex(&digester.finalize())))
     }
 
     async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath> {

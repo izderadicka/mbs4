@@ -151,6 +151,11 @@ pub trait Store {
         path: &ValidPath,
     ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError>;
     async fn size(&self, path: &ValidPath) -> StoreResult<u64>;
+    /// Streams the file at `path` through the store's content-hashing
+    /// algorithm (SHA256, or SHA1 under the `legacy-file-hash` feature)
+    /// and returns the on-disk size and the lowercase hex digest.
+    /// Returns `StoreError::NotFound` if the file does not exist.
+    async fn hash(&self, path: &ValidPath) -> StoreResult<(u64, String)>;
     async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath>;
     async fn delete(&self, path: &ValidPath) -> StoreResult<()>;
     fn local_path(&self, path: &ValidPath) -> Option<std::path::PathBuf>;
