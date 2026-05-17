@@ -10,7 +10,7 @@ use mbs4_dal::series::SeriesShort;
 use sqlx::Row as _;
 use sqlx::migrate::MigrateDatabase;
 use std::{sync::Arc, time::Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 const INDEXING_CHANNEL_CAPACITY: usize = 10_000;
 
@@ -404,7 +404,7 @@ impl SqlIndexerRunner {
                         res.is_ok(),
                     );
                     if sender.send(res).is_err() {
-                        debug!("Failed to send indexing result"); // no problem, can happen if initiator does not wait for result
+                        trace!("Failed to send indexing result"); // no problem, can happen if initiator does not wait for result
                     }
                 }
                 IndexingJob::Delete { ids, sender, what } => {
@@ -421,7 +421,7 @@ impl SqlIndexerRunner {
                         res.is_ok(),
                     );
                     if sender.send(res).is_err() {
-                        debug!("Failed to send deleting from index result");
+                        trace!("Failed to send deleting from index result");
                     }
                 }
                 IndexingJob::Reset { sender } => {
@@ -437,7 +437,7 @@ impl SqlIndexerRunner {
                         res.is_ok(),
                     );
                     if sender.send(res).is_err() {
-                        debug!("Failed to send index reset result");
+                        trace!("Failed to send index reset result");
                     }
                 }
                 IndexingJob::Stop => break,
