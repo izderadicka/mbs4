@@ -127,7 +127,9 @@ pub struct StoreInfo {
     /// final path were the file is stored, can be different from the requested path
     pub final_path: ValidPath,
     pub size: u64,
-    /// SHA256 hash
+    /// Lowercase hex digest of the file content. SHA256 by default,
+    /// or SHA1 when `mbs4-store` is built with the `legacy-file-hash`
+    /// feature (for compatibility with the legacy database).
     pub hash: String,
 }
 

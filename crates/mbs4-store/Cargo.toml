@@ -11,10 +11,18 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 sha2 = { workspace = true }
+sha1 = { workspace = true, optional = true }
 tokio-util = { workspace = true, features = ["io"] }
 libc = "0.2.180"
 tempfile = { workspace = true }
 base16ct = { workspace = true, features = ["alloc"] }
+
+[features]
+# Use SHA1 instead of SHA256 for file content hashing. Intended for
+# compatibility with a legacy database whose existing hashes are SHA1.
+# See plan: import legacy data with this feature on, then disable and
+# re-hash to SHA256 via `mbs4-cli cleanup --sources --rehash`.
+legacy-file-hash = ["dep:sha1"]
 
 [dev-dependencies]
 tracing-test = { version = "0.2.6", features = ["no-env-filter"] }

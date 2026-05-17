@@ -7,7 +7,10 @@ use std::{
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt as _, TryFutureExt as _, TryStreamExt as _, pin_mut};
-use sha2::{Digest, Sha256};
+#[cfg(feature = "legacy-file-hash")]
+use sha1::{Digest, Sha1 as FileHasher};
+#[cfg(not(feature = "legacy-file-hash"))]
+use sha2::{Digest, Sha256 as FileHasher};
 use tempfile::NamedTempFile;
 use tokio::{fs, io, io::AsyncWriteExt as _, task::spawn_blocking};
 use tokio_util::io::ReaderStream;
@@ -217,7 +220,7 @@ impl Store for FileStore {
             .or_else(|e| cleanup(&final_path, e))
             .await?;
         new_file.flush().await?;
-        let digest = Sha256::digest(data);
+        let digest = FileHasher::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
         let size = data.len() as u64;
         Ok(StoreInfo {
@@ -242,7 +245,7 @@ impl Store for FileStore {
             .await?;
         new_file.flush().await?;
         fs::rename(&tmp_path, &final_path).await?;
-        let digest = Sha256::digest(data);
+        let digest = FileHasher::digest(data);
         let final_path = self.relative_path(&final_path).unwrap(); // this is safe as we used root to create final_path
         let size = data.len() as u64;
         Ok(StoreInfo {
@@ -263,7 +266,7 @@ impl Store for FileStore {
             .inspect_err(|e| error!("Failed to tmp file {tmp_path:?}: {e}"))?;
         let mut size = 0;
         pin_mut!(stream);
-        let mut digester = Sha256::new();
+        let mut digester = FileHasher::new();
         while let Some(chunk) = stream.next().await {
             match chunk.map_err(|e| e.into()) {
                 Ok(chunk) => {

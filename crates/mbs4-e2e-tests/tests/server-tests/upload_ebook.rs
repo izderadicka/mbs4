@@ -14,7 +14,10 @@ use mbs4_e2e_tests::{
 };
 use reqwest::{Url, multipart};
 use serde_json::{Map, Value};
-use sha2::Digest;
+#[cfg(feature = "legacy-file-hash")]
+use sha1::{Digest, Sha1 as FileHasher};
+#[cfg(not(feature = "legacy-file-hash"))]
+use sha2::{Digest, Sha256 as FileHasher};
 use tracing::{debug, info};
 use tracing_test::traced_test;
 
@@ -306,7 +309,7 @@ async fn test_upload() {
     let mut stream = res.bytes_stream();
 
     let mut size = 0;
-    let mut digester = sha2::Sha256::new();
+    let mut digester = FileHasher::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.unwrap();
         size = size + chunk.len() as u64;

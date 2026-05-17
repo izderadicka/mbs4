@@ -31,3 +31,6 @@ serde_json = { workspace = true }
 reqwest-eventsource = "0.6.0"
 futures = { workspace = true }
 sqlx = { workspace = true }
+
+[features]
+legacy-file-hash = ["mbs4-store/legacy-file-hash", "mbs4-app/legacy-file-hash"]

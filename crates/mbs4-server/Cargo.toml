@@ -60,3 +60,4 @@ openapi = [
     "mbs4-dal/openapi",
     "mbs4-app/openapi",
 ]
+legacy-file-hash = ["mbs4-app/legacy-file-hash"]

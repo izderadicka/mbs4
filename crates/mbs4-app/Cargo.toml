@@ -52,6 +52,7 @@ num_cpus = "1.17.0"
 
 [features]
 openapi = ["utoipa", "mbs4-dal/openapi", "mbs4-search/openapi"]
+legacy-file-hash = ["mbs4-store/legacy-file-hash"]
 
 [dev-dependencies]
 rand = { workspace = true }
