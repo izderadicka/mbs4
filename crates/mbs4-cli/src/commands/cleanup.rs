@@ -218,8 +218,8 @@ impl SourceCleaner<'_> {
             self.write_update(source, sz as i64, hash, c).await;
         } else {
             error!(
-                "source id={} CORRUPT: size {} (db) vs {} (disk), hash {} vs {}",
-                source.id, source.size, on_disk, source.hash, hash
+                "source id={} location={:?} CORRUPT: size {} (db) vs {} (disk), hash {} vs {}",
+                source.id, source.location, source.size, on_disk, source.hash, hash
             );
             c.errors += 1;
         }

@@ -39,7 +39,8 @@ impl StorePrefix {
 
 fn is_segment_invalid(s: &str) -> bool {
     s.is_empty()
-        || s.starts_with(".")
+        || s == "."
+        || s == ".."
         || s.len() > MAX_SEGMENT_LEN
         || s.chars()
             .any(|c| PATH_INVALID_CHARS.contains(c) || c.is_ascii_control())
@@ -204,10 +205,20 @@ mod tests {
 
     #[test]
     fn test_dot_segments_are_rejected() {
+        // Only the traversal segments `.` and `..` are rejected.
         assert!(ValidPath::new("a/./b").is_err());
         assert!(ValidPath::new("a/../b").is_err());
-        assert!(ValidPath::new(".hidden").is_err());
-        assert!(ValidPath::new("a/.hidden").is_err());
+        assert!(ValidPath::new(".").is_err());
+        assert!(ValidPath::new("..").is_err());
+    }
+
+    #[test]
+    fn test_leading_dot_segments_are_allowed() {
+        // Names that merely start with a dot are not traversal segments.
+        assert!(ValidPath::new(".hidden").is_ok());
+        assert!(ValidPath::new("a/.hidden").is_ok());
+        assert!(ValidPath::new("...take vencime psy(cs)").is_ok());
+        assert!(ValidPath::new("a/...title/b").is_ok());
     }
 
     #[test]
