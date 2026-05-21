@@ -5,3 +5,4 @@ mbs4.session.sql
 .claude
 mutants.out/
 mutants.out.old/
+mutants-run.log
