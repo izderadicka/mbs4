@@ -66,8 +66,7 @@ WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
         Ok(res)
     }
 
-    /// All source rows referencing `location`. Normally 0 or 1; more than
-    /// one indicates the duplicate-location flaw the cleanup task resolves.
+    /// All source rows at `location`.
     pub async fn find_all_by_location(&self, location: &str) -> crate::error::Result<Vec<Source>> {
         let res = sqlx::query_as("SELECT * FROM source WHERE location = ?")
             .bind(location)

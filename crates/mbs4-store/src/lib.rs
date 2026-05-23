@@ -128,9 +128,7 @@ pub struct StoreInfo {
     /// final path were the file is stored, can be different from the requested path
     pub final_path: ValidPath,
     pub size: u64,
-    /// Lowercase hex digest of the file content. SHA256 by default,
-    /// or SHA1 when `mbs4-store` is built with the `legacy-file-hash`
-    /// feature (for compatibility with the legacy database).
+    /// Lowercase hex content digest (SHA256, or SHA1 with `legacy-file-hash`).
     pub hash: String,
 }
 
@@ -152,16 +150,12 @@ pub trait Store {
         path: &ValidPath,
     ) -> Result<impl Stream<Item = StoreResult<Bytes>> + 'static, StoreError>;
     async fn size(&self, path: &ValidPath) -> StoreResult<u64>;
-    /// Streams the file at `path` through the store's content-hashing
-    /// algorithm (SHA256, or SHA1 under the `legacy-file-hash` feature)
-    /// and returns the on-disk size and the lowercase hex digest.
-    /// Returns `StoreError::NotFound` if the file does not exist.
+    /// Returns the file's size and lowercase hex content digest, or
+    /// `StoreError::NotFound` if it does not exist.
     async fn hash(&self, path: &ValidPath) -> StoreResult<(u64, String)>;
     async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath>;
-    /// Renames `from_path` to exactly `to_path` with no `(N)`-suffix
-    /// fallback. Returns `StoreError::PathConflict` if `to_path` already
-    /// exists. The existence check and the rename run under the store
-    /// lock, so they are atomic against other store operations.
+    /// Renames `from_path` to exactly `to_path`; `StoreError::PathConflict`
+    /// if `to_path` exists. The check and rename are atomic under the store lock.
     async fn rename_exact(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()>;
     async fn delete(&self, path: &ValidPath) -> StoreResult<()>;
     fn local_path(&self, path: &ValidPath) -> Option<std::path::PathBuf>;

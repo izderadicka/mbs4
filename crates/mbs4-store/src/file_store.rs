@@ -51,10 +51,8 @@ fn hex(bytes: &[u8]) -> String {
     base16ct::lower::encode_string(bytes)
 }
 
-/// Inserts `(index)` before the final extension of `name`, e.g.
-/// `a/b - c.doc` with index 1 becomes `a/b - c(1).doc`. If `name` has no
-/// extension the suffix is appended. Mirrors the `(N)` convention used by
-/// [`find_unique_path`] so a DB-aware caller can produce identical names.
+/// Inserts `(index)` before the final extension: `a/b - c.doc` + 1 -> `a/b - c(1).doc`.
+/// Mirrors [`find_unique_path`]'s convention (pinned by `test_indexed_name`).
 pub fn indexed_name(name: &str, index: usize) -> String {
     match name.rsplit_once('.') {
         Some((stem, ext)) => format!("{stem}({index}).{ext}"),

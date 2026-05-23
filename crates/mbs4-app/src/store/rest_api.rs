@@ -56,8 +56,7 @@ pub struct UploadInfo {
     pub final_path: String,
     #[garde(range(min = 1))]
     pub size: u64,
-    /// Lowercase hex digest of file content (SHA256, or SHA1 under the
-    /// `legacy-file-hash` build feature). 40 chars for SHA1, 64 for SHA256.
+    /// Lowercase hex content digest: 40 chars (SHA1) or 64 (SHA256).
     #[garde(length(min = 20, max = 64))]
     pub hash: String,
     #[garde(length(min = 1, max = 255))]

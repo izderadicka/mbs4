@@ -206,10 +206,6 @@ mod crud_api_extra {
         let base = naming_meta.norm_file_name(&ext);
         let from_path = ValidPath::new(file_info.uploaded_file)?.with_prefix(StorePrefix::Upload);
 
-        // Resolve a location claimed by neither a source row nor an
-        // on-disk file, forcing a `(N)` suffix otherwise. This keeps
-        // `source.location` unique even when a stale orphan row points
-        // at a path whose file was deleted out-of-band.
         const MAX_LOCATION_VARIANTS: usize = 100;
         let mut chosen: Option<String> = None;
         for index in 0..MAX_LOCATION_VARIANTS {
@@ -223,7 +219,7 @@ mod crud_api_extra {
                 .await?
                 .is_empty()
             {
-                continue; // a source row already claims this path
+                continue;
             }
             let to_path = ValidPath::new(&candidate)?.with_prefix(StorePrefix::Books);
             match state.store().rename_exact(&from_path, &to_path).await {
@@ -231,7 +227,7 @@ mod crud_api_extra {
                     chosen = Some(candidate);
                     break;
                 }
-                Err(StoreError::PathConflict) => continue, // a file claims this path
+                Err(StoreError::PathConflict) => continue,
                 Err(e) => return Err(e.into()),
             }
         }

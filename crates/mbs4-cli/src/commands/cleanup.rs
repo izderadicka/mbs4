@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    io::{IsTerminal, Write},
+    time::{Duration, Instant},
+};
 
 use clap::{ArgGroup, Args, Parser};
 use mbs4_dal::source::{Source, SourceRepository, UpdateSource};
@@ -137,6 +140,10 @@ impl CleanupCmd {
 
         cleaner.dedup_locations(&mut counters).await?;
 
+        let total = repo.count().await?;
+        let show_progress = std::io::stdout().is_terminal() && total > 0;
+        let mut last_percent: i64 = -1;
+
         loop {
             let page = repo.list_page(last_id, SOURCE_PAGE_SIZE).await?;
             if page.is_empty() {
@@ -147,6 +154,15 @@ impl CleanupCmd {
                 counters.seen += 1;
                 cleaner.process(source, &mut counters).await;
 
+                if show_progress {
+                    let percent = (counters.seen * 100 / total).min(100) as i64;
+                    if percent != last_percent {
+                        print!("\rsources: {percent:>3}% ({} / {})", counters.seen, total);
+                        let _ = std::io::stdout().flush();
+                        last_percent = percent;
+                    }
+                }
+
                 if last_progress.elapsed() >= PROGRESS_INTERVAL {
                     info!("{}sources progress: {}", cleaner.prefix(), counters);
                     last_progress = Instant::now();
@@ -154,6 +170,9 @@ impl CleanupCmd {
             }
         }
 
+        if show_progress {
+            println!();
+        }
         info!("{}sources done: {}", cleaner.prefix(), counters);
         Ok(())
     }
@@ -176,10 +195,7 @@ impl SourceCleaner<'_> {
         }
     }
 
-    /// Resolves rows that share a `location`: keeps the one matching the
-    /// on-disk file, deletes the rest. Runs before the per-row scan so it
-    /// sees clean data. A file that is missing is left for the scan's
-    /// `delete_missing`; a file matching no row is left untouched.
+    /// Per duplicate location, keep the row matching the on-disk file; delete the rest.
     async fn dedup_locations(&self, c: &mut Counters) -> anyhow::Result<()> {
         for location in self.repo.duplicate_locations().await? {
             let rows = self.repo.find_all_by_location(&location).await?;
