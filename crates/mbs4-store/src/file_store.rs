@@ -51,6 +51,17 @@ fn hex(bytes: &[u8]) -> String {
     base16ct::lower::encode_string(bytes)
 }
 
+/// Inserts `(index)` before the final extension of `name`, e.g.
+/// `a/b - c.doc` with index 1 becomes `a/b - c(1).doc`. If `name` has no
+/// extension the suffix is appended. Mirrors the `(N)` convention used by
+/// [`find_unique_path`] so a DB-aware caller can produce identical names.
+pub fn indexed_name(name: &str, index: usize) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, ext)) => format!("{stem}({index}).{ext}"),
+        None => format!("{name}({index})"),
+    }
+}
+
 const MAX_SAME_FILES: usize = 10;
 /// This is legacy algorithm to match existing files
 /// There is also notable problem with it, that there is  possibility of race condition
@@ -369,6 +380,26 @@ impl Store for FileStore {
         Ok(final_path)
     }
 
+    async fn rename_exact(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()> {
+        let full_path = self.inner.root.join(from_path.as_ref());
+        if !fs::metadata(&full_path).await?.is_file() {
+            error!("Path {full_path:?} is not a file");
+            return Err(StoreError::InvalidPath);
+        }
+        let dest_path = self.inner.root.join(to_path.as_ref());
+
+        let _lock = self.inner.lock.lock().await;
+        if fs::try_exists(&dest_path).await? {
+            return Err(StoreError::PathConflict);
+        }
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::rename(&full_path, &dest_path).await?;
+        debug!("Renamed to exact path {dest_path:?}");
+        Ok(())
+    }
+
     async fn import_file(
         &self,
         path: &std::path::Path,
@@ -424,6 +455,16 @@ mod tests {
     use futures::stream::try_unfold;
 
     use super::*;
+
+    #[test]
+    fn test_indexed_name() {
+        assert_eq!(indexed_name("a/b - c.doc", 1), "a/b - c(1).doc");
+        assert_eq!(indexed_name("file.epub", 2), "file(2).epub");
+        assert_eq!(indexed_name("noext", 1), "noext(1)");
+        // Convention must match find_unique_path's `(N).` suffix.
+        let unique = find_unique_path(Path::new("a/b - c.doc")).unwrap();
+        assert_eq!(unique, PathBuf::from(indexed_name("a/b - c.doc", 1)));
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_store() {

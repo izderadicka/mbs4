@@ -66,6 +66,25 @@ WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
         Ok(res)
     }
 
+    /// All source rows referencing `location`. Normally 0 or 1; more than
+    /// one indicates the duplicate-location flaw the cleanup task resolves.
+    pub async fn find_all_by_location(&self, location: &str) -> crate::error::Result<Vec<Source>> {
+        let res = sqlx::query_as("SELECT * FROM source WHERE location = ?")
+            .bind(location)
+            .fetch_all(&self.executor)
+            .await?;
+        Ok(res)
+    }
+
+    /// Locations referenced by more than one source row.
+    pub async fn duplicate_locations(&self) -> crate::error::Result<Vec<String>> {
+        let res =
+            sqlx::query_scalar("SELECT location FROM source GROUP BY location HAVING COUNT(*) > 1")
+                .fetch_all(&self.executor)
+                .await?;
+        Ok(res)
+    }
+
     /// Keyset-paginated iteration over all sources, ordered by `id`.
     /// Pass `after_id = 0` for the first page; subsequent calls use the
     /// last returned `id`. An empty Vec signals end of iteration.

@@ -158,6 +158,11 @@ pub trait Store {
     /// Returns `StoreError::NotFound` if the file does not exist.
     async fn hash(&self, path: &ValidPath) -> StoreResult<(u64, String)>;
     async fn rename(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<ValidPath>;
+    /// Renames `from_path` to exactly `to_path` with no `(N)`-suffix
+    /// fallback. Returns `StoreError::PathConflict` if `to_path` already
+    /// exists. The existence check and the rename run under the store
+    /// lock, so they are atomic against other store operations.
+    async fn rename_exact(&self, from_path: &ValidPath, to_path: &ValidPath) -> StoreResult<()>;
     async fn delete(&self, path: &ValidPath) -> StoreResult<()>;
     fn local_path(&self, path: &ValidPath) -> Option<std::path::PathBuf>;
 }

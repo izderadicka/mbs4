@@ -64,7 +64,9 @@ mod crud_api_extra {
         format,
         source::{self, CreateSource, SourceRepository},
     };
-    use mbs4_store::{Store as _, StorePrefix, ValidPath};
+    use mbs4_store::{
+        error::StoreError, file_store::indexed_name, Store as _, StorePrefix, ValidPath,
+    };
     use mbs4_types::{claim::ApiClaim, utils::file_ext};
     use tracing::debug;
 
@@ -201,14 +203,47 @@ mod crud_api_extra {
             ApiError::UnprocessableRequest(format!("Unsupported extension {ext}, error {e}"))
         })?;
 
-        let to_path = naming_meta.norm_file_name(&ext);
+        let base = naming_meta.norm_file_name(&ext);
         let from_path = ValidPath::new(file_info.uploaded_file)?.with_prefix(StorePrefix::Upload);
-        let to_path = ValidPath::new(to_path)?.with_prefix(StorePrefix::Books);
-        let new_path = state.store().rename(&from_path, &to_path).await?;
-        let source_path = new_path.clone();
+
+        // Resolve a location claimed by neither a source row nor an
+        // on-disk file, forcing a `(N)` suffix otherwise. This keeps
+        // `source.location` unique even when a stale orphan row points
+        // at a path whose file was deleted out-of-band.
+        const MAX_LOCATION_VARIANTS: usize = 100;
+        let mut chosen: Option<String> = None;
+        for index in 0..MAX_LOCATION_VARIANTS {
+            let candidate = if index == 0 {
+                base.clone()
+            } else {
+                indexed_name(&base, index)
+            };
+            if !source_repo
+                .find_all_by_location(&candidate)
+                .await?
+                .is_empty()
+            {
+                continue; // a source row already claims this path
+            }
+            let to_path = ValidPath::new(&candidate)?.with_prefix(StorePrefix::Books);
+            match state.store().rename_exact(&from_path, &to_path).await {
+                Ok(()) => {
+                    chosen = Some(candidate);
+                    break;
+                }
+                Err(StoreError::PathConflict) => continue, // a file claims this path
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let location = chosen.ok_or_else(|| {
+            ApiError::UnprocessableRequest(format!(
+                "No free location for {base} after {MAX_LOCATION_VARIANTS} attempts"
+            ))
+        })?;
+        let source_path = ValidPath::new(&location)?.with_prefix(StorePrefix::Books);
 
         let new_source = CreateSource {
-            location: new_path.without_prefix(StorePrefix::Books).unwrap().into(), // safe as we used this prefix above
+            location,
             ebook_id: id,
             format_id: format.id,
             size: file_info.size.try_into().unwrap(), // safe as we check max size of input

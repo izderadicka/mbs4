@@ -135,6 +135,8 @@ impl CleanupCmd {
         let mut last_progress = Instant::now();
         let mut last_id: i64 = 0;
 
+        cleaner.dedup_locations(&mut counters).await?;
+
         loop {
             let page = repo.list_page(last_id, SOURCE_PAGE_SIZE).await?;
             if page.is_empty() {
@@ -172,6 +174,71 @@ impl SourceCleaner<'_> {
         } else {
             ""
         }
+    }
+
+    /// Resolves rows that share a `location`: keeps the one matching the
+    /// on-disk file, deletes the rest. Runs before the per-row scan so it
+    /// sees clean data. A file that is missing is left for the scan's
+    /// `delete_missing`; a file matching no row is left untouched.
+    async fn dedup_locations(&self, c: &mut Counters) -> anyhow::Result<()> {
+        for location in self.repo.duplicate_locations().await? {
+            let rows = self.repo.find_all_by_location(&location).await?;
+            if rows.len() < 2 {
+                continue; // changed since the query
+            }
+            let vp = match ValidPath::new(location.as_str()) {
+                Ok(v) => v.with_prefix(StorePrefix::Books),
+                Err(e) => {
+                    error!("duplicate location {location:?} invalid: {e}");
+                    c.errors += 1;
+                    continue;
+                }
+            };
+            let (disk_size, disk_hash) = match self.store.hash(&vp).await {
+                Ok(t) => t,
+                Err(StoreError::NotFound(_)) => continue, // scan's delete_missing handles it
+                Err(e) => {
+                    error!("Error processing duplicate location {location:?}: {e}");
+                    c.errors += 1;
+                    continue;
+                }
+            };
+            let keeper = rows
+                .iter()
+                .filter(|s| s.size as u64 == disk_size && s.hash == disk_hash)
+                .min_by_key(|s| s.id);
+            let Some(keeper_id) = keeper.map(|s| s.id) else {
+                warn!(
+                    "duplicate location {location:?}: {} rows, none match the on-disk file; leaving untouched",
+                    rows.len()
+                );
+                continue;
+            };
+            for source in rows.iter().filter(|s| s.id != keeper_id) {
+                if self.dry_run {
+                    info!(
+                        "[dry-run] would delete duplicate source id={} location={location:?} (keeping id={keeper_id})",
+                        source.id
+                    );
+                    c.deleted += 1;
+                    continue;
+                }
+                match self.repo.delete(source.id).await {
+                    Ok(()) => {
+                        info!(
+                            "Deleted duplicate source id={} location={location:?} (keeping id={keeper_id})",
+                            source.id
+                        );
+                        c.deleted += 1;
+                    }
+                    Err(e) => {
+                        error!("Failed to delete duplicate source id={}: {e}", source.id);
+                        c.errors += 1;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn process(&self, source: &Source, c: &mut Counters) {
