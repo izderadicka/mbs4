@@ -19,7 +19,7 @@ use mbs4_dal::{
     series::{CreateSeries, SeriesShort},
     source::Source,
 };
-use mbs4_search::{EbookDoc, FoundDoc, SearchItem};
+use mbs4_search::{FoundDoc, SearchItem};
 use reqwest::{multipart, Url};
 use reqwest_eventsource::Event;
 use serde_json::{Map, Value};
@@ -122,20 +122,20 @@ impl Executor for UploadCmd {
 
             let series = upload.series()?;
 
+            let lang_code = upload
+                .book
+                .language
+                .as_deref()
+                .or(upload.meta.language.as_deref());
+
             let existing_ebook = upload
-                .search_ebook(title, &authors, series.as_ref())
+                .search_ebook(title, &authors, series.as_ref(), lang_code)
                 .await?;
 
             let ebook: Ebook = if let Some(ebook) = existing_ebook {
                 debug!("Found existing ebook: {}:{}", ebook.id, ebook.title);
-                upload.get_ebook(ebook.id).await?
+                ebook
             } else {
-                let lang_code = upload
-                    .book
-                    .language
-                    .as_ref()
-                    .or(upload.meta.language.as_ref());
-
                 let language = if let Some(lang) = lang_code {
                     upload.prepare_language(lang).await?
                 } else {
@@ -371,7 +371,8 @@ impl UploadHelper {
         title: &str,
         authors: &[mbs4_calibre::meta::Author],
         series: Option<&mbs4_calibre::meta::Series>,
-    ) -> Result<Option<EbookDoc>> {
+        lang_code: Option<&str>,
+    ) -> Result<Option<Ebook>> {
         let mut search_url = self.server.url.join("search")?;
         let mut query = title.to_string()
             + " "
@@ -389,21 +390,43 @@ impl UploadHelper {
             .query_pairs_mut()
             .append_pair("what", "ebook")
             .append_pair("num_results", "10")
-            .append_pair("query", title);
+            .append_pair("query", &query);
         let res = self.client.get(search_url).send().await?;
         check_response!(res, "Search Ebook");
         let found_ebooks: Vec<SearchItem> = res.json().await?;
-        let first_item = found_ebooks.into_iter().next();
 
-        if let Some(first_item) = first_item {
-            if let FoundDoc::Ebook(ebook) = first_item.doc {
-                Ok(Some(ebook))
-            } else {
-                anyhow::bail!("Found item is not an ebook");
+        let title_norm = title.trim().to_lowercase();
+        let lang_norm = lang_code.map(|c| c.trim().to_lowercase());
+
+        for item in found_ebooks {
+            let doc = match item.doc {
+                FoundDoc::Ebook(e) => e,
+                _ => continue,
+            };
+            if doc.title.trim().to_lowercase() != title_norm {
+                continue;
             }
-        } else {
-            Ok(None)
+            let ebook = self.get_ebook(doc.id).await?;
+            let author_overlap = ebook
+                .authors
+                .as_ref()
+                .map(|existing| {
+                    existing
+                        .iter()
+                        .any(|a| authors.iter().any(|req| author_matches(a, req)))
+                })
+                .unwrap_or(false);
+            if !author_overlap {
+                continue;
+            }
+            if let Some(ref want) = lang_norm {
+                if ebook.language.code.trim().to_lowercase() != *want {
+                    continue;
+                }
+            }
+            return Ok(Some(ebook));
         }
+        Ok(None)
     }
 
     async fn prepare_authors(
@@ -549,6 +572,33 @@ fn filter_found_series(found: Vec<SearchItem>, series: &str) -> Option<SeriesSho
         })
     })
 }
+fn author_matches(a: &AuthorShort, to: &mbs4_calibre::meta::Author) -> bool {
+    if a.last_name != to.last_name {
+        return false;
+    }
+    if a.first_name == to.first_name {
+        return true;
+    } else if let (Some(n1), Some(n2)) = (&a.first_name, &to.first_name) {
+        let mut names1 = n1.split_whitespace();
+        let mut names2 = n2.split_whitespace();
+
+        return names1
+            .by_ref()
+            .zip(&mut names2)
+            .enumerate()
+            .all(|(i, (n1, n2))| {
+                if i == 0 {
+                    n1 == n2
+                } else {
+                    n1.chars().next() == n2.chars().next()
+                }
+            })
+            && names2.next().is_none()
+            && names1.next().is_none();
+    }
+    false
+}
+
 fn filter_found_authors(
     found: Vec<SearchItem>,
     author: &mbs4_calibre::meta::Author,
@@ -558,33 +608,6 @@ fn filter_found_authors(
             FoundDoc::Author(a) => Some(a),
             _ => None,
         }
-    }
-
-    fn author_matches(a: &AuthorShort, to: &mbs4_calibre::meta::Author) -> bool {
-        if a.last_name != to.last_name {
-            return false;
-        }
-        if a.first_name == to.first_name {
-            return true;
-        } else if let (Some(n1), Some(n2)) = (&a.first_name, &to.first_name) {
-            let mut names1 = n1.split_whitespace();
-            let mut names2 = n2.split_whitespace();
-
-            return names1
-                .by_ref()
-                .zip(&mut names2)
-                .enumerate()
-                .all(|(i, (n1, n2))| {
-                    if i == 0 {
-                        n1 == n2
-                    } else {
-                        n1.chars().next() == n2.chars().next()
-                    }
-                })
-                && names2.next().is_none()
-                && names1.next().is_none();
-        }
-        false
     }
 
     found
