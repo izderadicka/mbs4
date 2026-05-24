@@ -137,10 +137,10 @@ impl Default for EventHub {
 
 impl EventHub {
     pub fn new() -> Self {
-        let (sender, mut receiver) = tokio::sync::broadcast::channel(1024);
+        let (sender, mut _receiver) = tokio::sync::broadcast::channel(1024);
         #[cfg(debug_assertions)]
         tokio::spawn(async move {
-            while let Ok(msg) = receiver.recv().await {
+            while let Ok(msg) = _receiver.recv().await {
                 debug!("Event: {msg:?}");
             }
         });
