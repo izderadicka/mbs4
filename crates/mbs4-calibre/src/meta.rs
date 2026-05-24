@@ -30,9 +30,18 @@ impl FromStr for Author {
         let parts: Vec<&str> = s.split(',').map(|s| s.trim()).collect();
 
         if parts.len() > 1 {
+            if parts[0].is_empty() {
+                anyhow::bail!("Empty last name");
+            }
+            let first_name = parts[1..].join(" ");
+            let first_name = if first_name.trim().is_empty() {
+                None
+            } else {
+                Some(first_name)
+            };
             Ok(Author {
                 last_name: parts[0].to_string(),
-                first_name: Some(parts[1..].join(" ")),
+                first_name,
             })
         } else {
             let words: Vec<&str> = s.split_whitespace().collect();
@@ -227,6 +236,14 @@ mod tests {
                 first_name: Some("John Doe".to_string())
             })
         );
+        assert_eq!(
+            parse_author("kol. autorů,"),
+            Some(Author {
+                last_name: "kol. autorů".to_string(),
+                first_name: None
+            })
+        );
+        assert_eq!(parse_author(", John"), None);
     }
 
     #[test]
