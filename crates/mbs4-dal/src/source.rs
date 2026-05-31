@@ -84,6 +84,15 @@ WHERE ebook_id = ? ORDER BY created DESC LIMIT 1000";
         Ok(res)
     }
 
+    pub async fn move_to_ebook(&self, id: i64, target_ebook_id: i64) -> crate::error::Result<()> {
+        sqlx::query("UPDATE source SET ebook_id = ? WHERE id = ?")
+            .bind(target_ebook_id)
+            .bind(id)
+            .execute(&self.executor)
+            .await?;
+        Ok(())
+    }
+
     /// Keyset-paginated iteration over all sources, ordered by `id`.
     /// Pass `after_id = 0` for the first page; subsequent calls use the
     /// last returned `id`. An empty Vec signals end of iteration.
