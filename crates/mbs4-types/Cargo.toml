@@ -13,6 +13,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 dirs = "6.0.0"
 
 [dev-dependencies]
+serde_json = { workspace = true }
 fake = { version = "4.4.0", features = ["email_address"] }
 quickcheck = "1.0.3"
 quickcheck_macros = "1.1.0"

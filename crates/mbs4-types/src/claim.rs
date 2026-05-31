@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 #[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
 pub enum Role {
     Admin,
     Trusted,
@@ -147,6 +148,19 @@ mod tests {
                 + 3600,
             roles: HashSet::from([Role::Admin, Role::Trusted]),
         }
+    }
+
+    #[test]
+    fn test_role_serde_is_lowercase() {
+        assert_eq!(serde_json::to_string(&Role::Admin).unwrap(), "\"admin\"");
+        assert_eq!(
+            serde_json::to_string(&Role::Trusted).unwrap(),
+            "\"trusted\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Role>("\"trusted\"").unwrap(),
+            Role::Trusted
+        );
     }
 
     #[test]
