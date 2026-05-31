@@ -34,12 +34,17 @@ where
     pub async fn merge(&self, from_id: i64, to_id: i64) -> crate::error::Result<()> {
         let mut tx = self.executor.begin().await?;
 
-        sqlx::query("UPDATE ebook_authors SET author_id = ? WHERE author_id = ?")
-            .bind(to_id)
-            .bind(from_id)
-            .execute(&mut *tx)
-            .await?;
+        // OR IGNORE skips rows where to_id is already an author of that ebook.
+        sqlx::query(
+            "INSERT OR IGNORE INTO ebook_authors (ebook_id, author_id) \
+             SELECT ebook_id, ? FROM ebook_authors WHERE author_id = ?",
+        )
+        .bind(to_id)
+        .bind(from_id)
+        .execute(&mut *tx)
+        .await?;
 
+        // ON DELETE CASCADE removes remaining ebook_authors rows for from_id.
         sqlx::query("DELETE FROM author WHERE id = ?")
             .bind(from_id)
             .execute(&mut *tx)
