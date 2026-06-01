@@ -37,6 +37,15 @@ pub struct EbookMergeRequest {
     ebook_id: i64,
 }
 
+#[derive(serde::Deserialize, Debug, garde::Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RateEbookRequest {
+    #[garde(range(min = 0.0, max = 100.0))]
+    pub rating: f32,
+    #[garde(length(max = 1000))]
+    pub description: Option<String>,
+}
+
 publish_api_docs!(
     crud_api_extra::create,
     crud_api_extra::update,
@@ -45,7 +54,10 @@ publish_api_docs!(
     crud_api_extra::create_source_for_upload,
     crud_api_extra::update_ebook_cover,
     crud_api_extra::ebook_conversions,
-    crud_api_extra::merge
+    crud_api_extra::merge,
+    crud_api_extra::rate_ebook,
+    crud_api_extra::delete_ebook_rating,
+    crud_api_extra::get_my_rating
 );
 crud_api!(Ebook, RO);
 
@@ -61,6 +73,7 @@ mod crud_api_extra {
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
     use mbs4_dal::{
         conversion::{self, ConversionRepository, EbookConversion},
+        ebook_rating::EbookRating,
         format,
         source::{self, CreateSource, SourceRepository},
     };
@@ -344,6 +357,50 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
         }
         Ok((StatusCode::NO_CONTENT, ()))
     }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(post, path = "/{id}/rate", tag = "Ebook",
+        operation_id = "rateEbook", request_body = crate::rest_api::ebook::RateEbookRequest,
+        responses((status = StatusCode::OK, description = "Updated ebook with new avg rating", body = Ebook))))]
+    pub async fn rate_ebook(
+        Path(id): Path<i64>,
+        repository: EbookRepository,
+        api_user: ApiClaim,
+        Garde(Json(payload)): Garde<Json<crate::rest_api::ebook::RateEbookRequest>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let ebook = repository
+            .rate(id, payload.rating, api_user.sub, payload.description)
+            .await?;
+        Ok((StatusCode::OK, Json(ebook)))
+    }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(delete, path = "/{id}/rate", tag = "Ebook",
+        operation_id = "deleteEbookRating",
+        responses((status = StatusCode::OK, description = "Updated ebook after removing rating", body = Ebook))))]
+    pub async fn delete_ebook_rating(
+        Path(id): Path<i64>,
+        repository: EbookRepository,
+        api_user: ApiClaim,
+    ) -> ApiResult<impl IntoResponse> {
+        let ebook = repository.delete_rating(id, api_user.sub).await?;
+        Ok((StatusCode::OK, Json(ebook)))
+    }
+
+    #[cfg_attr(feature = "openapi", utoipa::path(get, path = "/{id}/my-rating", tag = "Ebook",
+        operation_id = "getMyEbookRating",
+        responses(
+            (status = StatusCode::OK, description = "Caller's current rating", body = EbookRating),
+            (status = StatusCode::NOT_FOUND, description = "No rating by this user")
+        )))]
+    pub async fn get_my_rating(
+        Path(id): Path<i64>,
+        repository: EbookRepository,
+        api_user: ApiClaim,
+    ) -> ApiResult<impl IntoResponse> {
+        match repository.get_user_rating(id, &api_user.sub).await? {
+            Some(rating) => Ok((StatusCode::OK, Json(rating)).into_response()),
+            None => Ok(StatusCode::NOT_FOUND.into_response()),
+        }
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
@@ -364,4 +421,9 @@ pub fn router() -> axum::Router<AppState> {
         .route("/{id}", get(crud_api::get))
         .route("/{id}/source", get(crud_api_extra::ebook_sources))
         .route("/{id}/conversion", get(crud_api_extra::ebook_conversions))
+        .route(
+            "/{id}/rate",
+            post(crud_api_extra::rate_ebook).delete(crud_api_extra::delete_ebook_rating),
+        )
+        .route("/{id}/my-rating", get(crud_api_extra::get_my_rating))
 }
