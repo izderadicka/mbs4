@@ -148,6 +148,7 @@ pub struct EbookShort {
     pub language: LanguageShort,
     pub authors: Option<Vec<AuthorShort>>,
     pub rating: Option<f32>,
+    pub rating_count: Option<u32>,
 }
 
 impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
@@ -168,6 +169,7 @@ impl sqlx::FromRow<'_, ChosenRow> for EbookShort {
             language,
             authors: None,
             rating: row.try_get("rating")?,
+            rating_count: row.try_get("rating_count")?,
         })
     }
 }
@@ -192,10 +194,10 @@ impl QueryType {
     const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM (SELECT e.id FROM ebook e ";
     const LIST_IDS_QUERY: &'static str = "SELECT e.id FROM ebook e ";
     const LIST_QUERY: &'static str = r#"
-        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, e.rating,
+        SELECT e.id, e.title, e.cover,  e.series_id, e.series_index, e.language_id, e.rating, e.rating_count,
         l.code as language_code, l.name as language_name,
         s.title as series_title
-        FROM ebook e 
+        FROM ebook e
         LEFT JOIN language l ON e.language_id = l.id
         LEFT JOIN series s ON e.series_id = s.id
     "#;
@@ -371,6 +373,8 @@ const VALID_ORDER_FIELDS: &[&str] = &[
     "e.created",
     "e.modified",
     "e.id",
+    "e.rating",
+    "e.rating_count",
 ];
 
 pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<ChosenDB>>;
@@ -894,6 +898,56 @@ where
         tx.commit().await?;
 
         self.get(id).await
+    }
+
+    pub async fn delete_rating(&self, id: i64, user: String) -> crate::error::Result<Ebook> {
+        let mut tx = self.executor.begin().await?;
+        let ebook_version: i64 = sqlx::query_scalar("SELECT version FROM ebook WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+        let res = sqlx::query("DELETE FROM ebook_rating WHERE ebook_id = ? AND created_by = ?")
+            .bind(id)
+            .bind(user)
+            .execute(&mut *tx)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Err(Error::RecordNotFound("Ebook rating".to_string()));
+        }
+
+        let (new_rating, num_ratings): (Option<f32>, i64) = sqlx::query_as(
+            "SELECT AVG(rating), COUNT(rating) FROM ebook_rating WHERE ebook_id = ?",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        sqlx::query("UPDATE ebook SET rating = ?, rating_count = ?, modified = ?, version = version + 1 WHERE id = ? AND version = ?")
+            .bind(new_rating)
+            .bind(num_ratings)
+            .bind(now())
+            .bind(id)
+            .bind(ebook_version)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        self.get(id).await
+    }
+
+    pub async fn get_user_rating(
+        &self,
+        id: i64,
+        user: &str,
+    ) -> crate::error::Result<Option<crate::ebook_rating::EbookRating>> {
+        let res =
+            sqlx::query_as("SELECT * FROM ebook_rating WHERE ebook_id = ? AND created_by = ?")
+                .bind(id)
+                .bind(user)
+                .fetch_optional(&self.executor)
+                .await?;
+        Ok(res)
     }
 }
 

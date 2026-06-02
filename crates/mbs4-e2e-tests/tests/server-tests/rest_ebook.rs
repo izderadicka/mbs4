@@ -4,7 +4,7 @@ use mbs4_e2e_tests::{
     TestUser, extend_url, launch_env, prepare_env,
     rest::{create_author, create_ebook, create_genre, create_language, create_series},
 };
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use serde_json::{Value, json};
 use tracing::info;
 use tracing_test::traced_test;
@@ -232,4 +232,132 @@ async fn test_ebook() {
     let ebooks: serde_json::Value = response.json().await.unwrap();
     let rows = ebooks["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 0);
+}
+
+#[tokio::test]
+#[traced_test]
+async fn test_ebook_rating() {
+    let (args, mut guard) = prepare_env("test_ebook_rating").await.unwrap();
+    let base_url = args.base_url.clone();
+    // Admin acts as the first rating user (sub = "admin@localhost").
+    let (admin_client, state) = launch_env(args, TestUser::Admin, &mut guard).await.unwrap();
+
+    // A second authenticated user (User role, sub = "user@localhost") rates the same ebook.
+    let user_headers = TestUser::User.auth_header(&state).unwrap();
+    let user_client = reqwest::Client::builder()
+        .default_headers(user_headers)
+        .build()
+        .unwrap();
+
+    let lang = create_language(&admin_client, &base_url, "English", "en")
+        .await
+        .unwrap();
+    let ebook = create_ebook(
+        &admin_client,
+        &base_url,
+        &json!({"title": "Rated Book", "language_id": lang.id}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ebook.rating, None);
+    assert_eq!(ebook.rating_count, None);
+
+    let rate_url = base_url
+        .join(&format!("api/ebook/{}/rate", ebook.id))
+        .unwrap();
+    let my_rating_url = base_url
+        .join(&format!("api/ebook/{}/my-rating", ebook.id))
+        .unwrap();
+
+    async fn rate(client: &reqwest::Client, url: &Url, rating: f32) -> Ebook {
+        let response = client
+            .post(url.clone())
+            .json(&json!({ "rating": rating }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "rate failed");
+        response.json().await.unwrap()
+    }
+
+    // First rating by admin: average == 80, count == 1.
+    let updated = rate(&admin_client, &rate_url, 80.0).await;
+    assert_eq!(updated.rating, Some(80.0));
+    assert_eq!(updated.rating_count, Some(1));
+
+    // Admin re-rates: value replaced, count stays 1.
+    let updated = rate(&admin_client, &rate_url, 40.0).await;
+    assert_eq!(updated.rating, Some(40.0));
+    assert_eq!(updated.rating_count, Some(1));
+
+    // Second user rates 100: average == (40 + 100) / 2 == 70, count == 2.
+    let updated = rate(&user_client, &rate_url, 100.0).await;
+    assert_eq!(updated.rating, Some(70.0));
+    assert_eq!(updated.rating_count, Some(2));
+
+    // Admin can fetch their own current rating (40).
+    let response = admin_client
+        .get(my_rating_url.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let my: Value = response.json().await.unwrap();
+    assert_eq!(my["rating"].as_f64().unwrap(), 40.0);
+
+    // Admin deletes their rating: only the user's 100 remains.
+    let response = admin_client.delete(rate_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Ebook = response.json().await.unwrap();
+    assert_eq!(updated.rating, Some(100.0));
+    assert_eq!(updated.rating_count, Some(1));
+
+    // Admin no longer has a rating.
+    let response = admin_client
+        .get(my_rating_url.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Deleting a non-existent rating (admin already removed) is a 404.
+    let response = admin_client.delete(rate_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // User deletes the last rating: rating and count reset to null/zero.
+    let response = user_client.delete(rate_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Ebook = response.json().await.unwrap();
+    assert_eq!(updated.rating, None);
+    assert_eq!(updated.rating_count, Some(0));
+
+    // Anonymous users cannot rate.
+    let anon = reqwest::Client::new();
+    let response = anon
+        .post(rate_url.clone())
+        .json(&json!({ "rating": 50 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Sorting by rating is accepted; an invalid sort field is rejected.
+    let response = admin_client
+        .get(base_url.join("api/ebook?sort=-e.rating").unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let response = admin_client
+        .get(base_url.join("api/ebook?sort=-e.rating_count").unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let response = admin_client
+        .get(base_url.join("api/ebook?sort=e.bogus").unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
