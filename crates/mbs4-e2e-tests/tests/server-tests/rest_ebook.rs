@@ -361,3 +361,84 @@ async fn test_ebook_rating() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+#[traced_test]
+async fn test_ebook_sort_language_and_author() {
+    let (args, mut guard) = prepare_env("test_ebook_sort_lang_auth").await.unwrap();
+    let base_url = args.base_url.clone();
+    let (client, _state) = launch_env(args, TestUser::Admin, &mut guard).await.unwrap();
+
+    let lang_cs = create_language(&client, &base_url, "Czech", "cs")
+        .await
+        .unwrap();
+    let lang_en = create_language(&client, &base_url, "English", "en")
+        .await
+        .unwrap();
+
+    let author_a = create_author(&client, &base_url, "Anderson", Some("Jane"))
+        .await
+        .unwrap();
+    let author_z = create_author(&client, &base_url, "Zola", Some("Émile"))
+        .await
+        .unwrap();
+
+    let e1 = create_ebook(
+        &client,
+        &base_url,
+        &json!({"title": "Czech Book", "language_id": lang_cs.id, "authors": [author_z.id]}),
+    )
+    .await
+    .unwrap();
+    let e2 = create_ebook(
+        &client,
+        &base_url,
+        &json!({"title": "English Book", "language_id": lang_en.id, "authors": [author_a.id]}),
+    )
+    .await
+    .unwrap();
+
+    async fn row_ids(client: &reqwest::Client, url: reqwest::Url) -> Vec<i64> {
+        let body: Value = client.get(url).send().await.unwrap().json().await.unwrap();
+        body["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_i64().unwrap())
+            .collect()
+    }
+
+    // Sort by language name ascending: "Czech" < "English"
+    let ids = row_ids(&client, base_url.join("api/ebook?sort=l.name").unwrap()).await;
+    assert_eq!(ids, vec![e1.id, e2.id], "language asc order wrong");
+
+    // Sort by language name descending: "English" > "Czech"
+    let ids = row_ids(&client, base_url.join("api/ebook?sort=-l.name").unwrap()).await;
+    assert_eq!(ids, vec![e2.id, e1.id], "language desc order wrong");
+
+    // Sort by author last name ascending: "Anderson" < "Zola"
+    let ids = row_ids(
+        &client,
+        base_url.join("api/ebook?sort=pa.sort_author_last").unwrap(),
+    )
+    .await;
+    assert_eq!(ids, vec![e2.id, e1.id], "author last asc order wrong");
+
+    // Sort by author last name descending: "Zola" > "Anderson"
+    let ids = row_ids(
+        &client,
+        base_url
+            .join("api/ebook?sort=-pa.sort_author_last")
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(ids, vec![e1.id, e2.id], "author last desc order wrong");
+
+    // Invalid sort field is still rejected
+    let response = client
+        .get(base_url.join("api/ebook?sort=e.bogus").unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

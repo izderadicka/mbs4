@@ -200,6 +200,12 @@ impl QueryType {
         FROM ebook e
         LEFT JOIN language l ON e.language_id = l.id
         LEFT JOIN series s ON e.series_id = s.id
+        LEFT JOIN (
+            SELECT eba.ebook_id, MIN(a.last_name) AS sort_author_last, MIN(a.first_name) AS sort_author_first
+            FROM ebook_authors eba
+            JOIN author a ON eba.author_id = a.id
+            GROUP BY eba.ebook_id
+        ) pa ON pa.ebook_id = e.id
     "#;
     fn sql(&self) -> &'static str {
         match self {
@@ -375,6 +381,9 @@ const VALID_ORDER_FIELDS: &[&str] = &[
     "e.id",
     "e.rating",
     "e.rating_count",
+    "l.name",
+    "pa.sort_author_last",
+    "pa.sort_author_first",
 ];
 
 pub type EbookRepository = EbookRepositoryImpl<sqlx::Pool<ChosenDB>>;
