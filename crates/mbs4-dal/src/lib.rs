@@ -4,6 +4,7 @@ pub mod author;
 pub(crate) mod author_utils;
 pub mod bookshelf;
 pub mod conversion;
+pub mod conversion_batch;
 pub mod ebook;
 pub mod ebook_rating;
 pub mod format;
