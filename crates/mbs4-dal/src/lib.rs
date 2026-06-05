@@ -88,8 +88,8 @@ pub enum Order {
 impl Display for Order {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Order::Asc(s) => write!(f, "{}", quote_name(s)),
-            Order::Desc(s) => write!(f, "{} DESC", quote_name(s)),
+            Order::Asc(s) => write!(f, "{} NULLS LAST", quote_name(s)),
+            Order::Desc(s) => write!(f, "{} DESC NULLS LAST", quote_name(s)),
         }
     }
 }

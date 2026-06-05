@@ -360,4 +360,30 @@ async fn test_ebook_rating() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Unrated ebooks sort behind rated ones, even ascending (lowest first).
+    let rated = rate(&admin_client, &rate_url, 10.0).await;
+    assert_eq!(rated.rating, Some(10.0));
+    let unrated = create_ebook(
+        &admin_client,
+        &base_url,
+        &json!({"title": "Unrated Book", "language_id": lang.id}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(unrated.rating, None);
+
+    let response = admin_client
+        .get(base_url.join("api/ebook?sort=e.rating").unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let listing: serde_json::Value = response.json().await.unwrap();
+    let rows = listing["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["id"].as_i64().unwrap(), rated.id);
+    assert!(!rows[0]["rating"].is_null());
+    assert_eq!(rows[1]["id"].as_i64().unwrap(), unrated.id);
+    assert!(rows[1]["rating"].is_null());
 }
