@@ -309,6 +309,7 @@ impl ConvertorInner {
             source_id,
             format_id: format.id,
             batch_id: None,
+            synthetic: false,
             created_by: Some(user),
         };
 
@@ -330,6 +331,7 @@ impl ConvertorInner {
             source_id: conversion.source_id,
             ebook_id: source.ebook_id,
             batch_id: conversion.batch_id,
+            synthetic: conversion.synthetic,
             source_format_name: source_format.name,
             source_format_extension: source_format.extension,
             format_name: format.name,
