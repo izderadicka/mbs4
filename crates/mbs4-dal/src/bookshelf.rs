@@ -437,4 +437,24 @@ limit ? offset ?;"
         }
         Ok(item.id)
     }
+
+    /// All `ebook_id`s belonging to the bookshelf, expanding SERIES items into
+    /// their member ebooks. Result is deduplicated. Used by the batch
+    /// converter to enumerate ebooks for a bookshelf scope.
+    pub async fn list_ebook_ids(&self, bookshelf_id: i64) -> Result<Vec<i64>> {
+        let sql = "
+SELECT ebook_id FROM bookshelf_item
+    WHERE bookshelf_id = ? AND type = 'EBOOK' AND ebook_id IS NOT NULL
+UNION
+SELECT e.id FROM bookshelf_item bi
+    JOIN ebook e ON e.series_id = bi.series_id
+    WHERE bi.bookshelf_id = ? AND bi.type = 'SERIES' AND bi.series_id IS NOT NULL
+ORDER BY 1";
+        let ids: Vec<i64> = sqlx::query_scalar(sql)
+            .bind(bookshelf_id)
+            .bind(bookshelf_id)
+            .fetch_all(&self.executor)
+            .await?;
+        Ok(ids)
+    }
 }
