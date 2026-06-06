@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub mod convertor;
+pub mod source_pick;
 
 #[derive(Debug, serde::Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
