@@ -129,8 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn higher_bucket_wins_within_prefix() {
-        // epub @ 90 (bucket 4) beats epub @ 40 (bucket 2), regardless of recency.
+    fn higher_quality_wins_within_prefix() {
         let sources = vec![
             make_q(1, "epub", Some(40.0), datetime!(2024-06-01 0:00).into()),
             make_q(2, "epub", Some(90.0), datetime!(2024-01-01 0:00).into()),
@@ -139,8 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn same_bucket_recency_decides_within_prefix() {
-        // Both None → bucket 2; same format → recency wins.
+    fn same_penalty_recency_decides_within_prefix() {
         let sources = vec![
             make_q(1, "mobi", None, datetime!(2024-06-01 0:00).into()),
             make_q(2, "mobi", Some(50.0), datetime!(2024-01-01 0:00).into()),
@@ -150,7 +148,6 @@ mod tests {
 
     #[test]
     fn quality_ignored_outside_prefix() {
-        // pdf is not in the prefix; quality is irrelevant, recency decides.
         let sources = vec![
             make_q(1, "pdf", Some(90.0), datetime!(2024-01-01 0:00).into()),
             make_q(2, "pdf", Some(10.0), datetime!(2024-06-01 0:00).into()),
@@ -159,8 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn higher_bucket_beats_format_rank_within_prefix() {
-        // mobi bucket 4 beats epub bucket 0 even though epub ranks higher.
+    fn higher_quality_beats_format_rank_within_prefix() {
         let sources = vec![
             make_q(1, "epub", Some(10.0), datetime!(2024-01-01 0:00).into()),
             make_q(2, "mobi", Some(99.0), datetime!(2024-06-01 0:00).into()),
@@ -179,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn none_beats_low_bucket_within_prefix() {
+    fn none_beats_low_quality_within_prefix() {
         let sources = vec![
             make_q(1, "epub", None, datetime!(2024-01-01 0:00).into()),
             make_q(2, "mobi", Some(10.0), datetime!(2024-06-01 0:00).into()),
@@ -188,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn none_loses_to_high_bucket_within_prefix() {
+    fn none_loses_to_high_quality_within_prefix() {
         let sources = vec![
             make_q(1, "epub", None, datetime!(2024-01-01 0:00).into()),
             make_q(2, "mobi", Some(90.0), datetime!(2024-06-01 0:00).into()),
@@ -197,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn same_bucket_lower_rank_wins_within_prefix() {
+    fn same_penalty_lower_rank_wins_within_prefix() {
         let sources = vec![
             make_q(1, "mobi", None, datetime!(2024-06-01 0:00).into()),
             make_q(2, "epub", None, datetime!(2024-01-01 0:00).into()),
@@ -207,7 +203,6 @@ mod tests {
 
     #[test]
     fn non_prefix_format_rank() {
-        // fb2 outranks pdf inside the non-prefix tier.
         let sources = vec![
             make(1, "pdf", datetime!(2024-06-01 0:00).into()),
             make(2, "fb2", datetime!(2024-01-01 0:00).into()),
@@ -216,8 +211,8 @@ mod tests {
     }
 
     #[test]
-    fn bucket_boundary_at_30() {
-        // q=19 → bucket 0, q=20 → bucket 1.
+    fn quality_penalty_boundary_at_30() {
+        // q <= 30 is penalty 2, q > 30 is penalty 1, so 31 beats 19.
         let sources = vec![
             make_q(1, "epub", Some(19.0), datetime!(2024-06-01 0:00).into()),
             make_q(2, "epub", Some(31.0), datetime!(2024-01-01 0:00).into()),
@@ -226,8 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn top_bucket_clamps_100() {
-        // q=81 and q=100 both land in bucket 4; recency decides.
+    fn equal_high_quality_recency_decides() {
         let sources = vec![
             make_q(1, "epub", Some(81.0), datetime!(2024-06-01 0:00).into()),
             make_q(2, "epub", Some(100.0), datetime!(2024-01-01 0:00).into()),
