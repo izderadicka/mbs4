@@ -9,6 +9,7 @@ use crate::{
     auth::token::RequiredRolesLayer, error::ApiError, state::AppState, store::rest_api::UploadInfo,
 };
 
+pub mod batch;
 pub mod convertor;
 pub mod source_pick;
 
@@ -133,6 +134,7 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/extract_meta", post(get_ebook_meta))
         .route("/convert", post(convert_source))
+        .route("/batch", post(batch::convert_batch))
         .layer(RequiredRolesLayer::new([Role::Trusted, Role::Admin]))
 }
 
@@ -140,7 +142,7 @@ pub fn router() -> axum::Router<AppState> {
 pub fn api_docs() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     #[derive(utoipa::OpenApi)]
-    #[openapi(paths(get_ebook_meta, convert_source))]
+    #[openapi(paths(get_ebook_meta, convert_source, batch::convert_batch))]
     struct ApiDocs;
     ApiDocs::openapi()
 }

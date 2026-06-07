@@ -5,7 +5,11 @@ use std::{
 };
 
 use crate::{
-    ebook_format::{ConversionResult, ErrorResult, MetaResult},
+    ebook_format::{
+        batch::{BatchComplete, BatchItemOutcomeKind, BatchProgress},
+        source_pick::pick_best_source,
+        ConversionResult, ErrorResult, MetaResult,
+    },
     events::EventMessage,
     util::cleanup_file_on_error,
 };
@@ -63,9 +67,21 @@ pub struct ConversionRequest {
     pub user: String,
 }
 
+pub struct BatchJobRequest {
+    pub operation_id: String,
+    pub batch_id: i64,
+    pub target_format_id: i64,
+    pub target_format_extension: String,
+    pub ebook_ids: Vec<i64>,
+    /// Number of ebooks above the batch cap; not processed, only reported.
+    pub dropped: usize,
+    pub user: String,
+}
+
 enum ConversionJob {
     ExtractMetadata(MetadataRequest),
     Convert(ConversionRequest),
+    Batch(BatchJobRequest),
 }
 
 #[derive(Clone)]
@@ -125,6 +141,15 @@ impl Convertor {
             .inspect_err(|_| error!("Convertor queue unexpectedly closed"))
             .ok();
     }
+
+    pub async fn convert_batch(&self, request: BatchJobRequest) {
+        self.inner
+            .job_queue
+            .send(ConversionJob::Batch(request))
+            .await
+            .inspect_err(|_| error!("Convertor queue unexpectedly closed"))
+            .ok();
+    }
 }
 
 static CONVERSION_LIMITS: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| {
@@ -150,6 +175,17 @@ impl Convertor {
                         tokio::spawn(async move {
                             inner.convert(req).await;
                             drop(permit);
+                        });
+                    }
+                    ConversionJob::Batch(req) => {
+                        // A batch can span many items and would unfairly hog
+                        // the conversion pool if it held a permit for the
+                        // whole run. Release the slot up front; each
+                        // per-source conversion inside the batch acquires its
+                        // own permit.
+                        drop(permit);
+                        tokio::spawn(async move {
+                            inner.convert_batch(req).await;
                         });
                     }
                 }
@@ -255,7 +291,7 @@ impl ConvertorInner {
         match meta_result {
             Ok(converted_file) => {
                 match self
-                    .process_converted_file(converted_file, source_id, to_ext, user)
+                    .process_converted_file(converted_file, source_id, to_ext, user, None)
                     .await
                 {
                     Ok(conversion) => {
@@ -280,6 +316,7 @@ impl ConvertorInner {
         source_id: i64,
         to_ext: String,
         user: String,
+        batch_id: Option<i64>,
     ) -> anyhow::Result<mbs4_dal::conversion::EbookConversion> {
         // let mut tr = self.pool.begin().await?;
         let source = mbs4_dal::source::SourceRepository::new(self.pool.clone())
@@ -308,7 +345,7 @@ impl ConvertorInner {
             location: new_path.into(),
             source_id,
             format_id: format.id,
-            batch_id: None,
+            batch_id,
             synthetic: false,
             created_by: Some(user),
         };
@@ -340,4 +377,203 @@ impl ConvertorInner {
             created: conversion.created,
         })
     }
+
+    async fn convert_batch(self: Arc<Self>, request: BatchJobRequest) {
+        let BatchJobRequest {
+            operation_id,
+            batch_id,
+            target_format_id,
+            target_format_extension,
+            ebook_ids,
+            dropped,
+            user,
+        } = request;
+
+        let source_repo = mbs4_dal::source::SourceRepository::new(self.pool.clone());
+        let conv_repo = mbs4_dal::conversion::ConversionRepository::new(self.pool.clone());
+        let ebook_repo = mbs4_dal::ebook::EbookRepository::new(self.pool.clone());
+
+        let total = ebook_ids.len();
+        let mut ok_count = 0usize;
+        let mut reused_count = 0usize;
+        let mut err_count = 0usize;
+
+        for (idx, ebook_id) in ebook_ids.iter().enumerate() {
+            let done = idx + 1;
+            let label = ebook_repo
+                .get(*ebook_id)
+                .await
+                .map(|e| e.title)
+                .unwrap_or_else(|_| format!("ebook#{ebook_id}"));
+
+            let outcome = self
+                .process_batch_item(
+                    *ebook_id,
+                    batch_id,
+                    target_format_id,
+                    &target_format_extension,
+                    &user,
+                    &source_repo,
+                    &conv_repo,
+                )
+                .await;
+            let (kind, error) = match outcome {
+                BatchItemOutcome::Done(k) => (k, None),
+                BatchItemOutcome::Failed(e) => (BatchItemOutcomeKind::Failed, Some(e)),
+            };
+            match kind {
+                BatchItemOutcomeKind::Converted => ok_count += 1,
+                BatchItemOutcomeKind::ReusedSource | BatchItemOutcomeKind::ReusedConversion => {
+                    reused_count += 1
+                }
+                BatchItemOutcomeKind::Failed => err_count += 1,
+            }
+            self.send_batch_progress(BatchProgress {
+                operation_id: operation_id.clone(),
+                batch_id,
+                done,
+                total,
+                ebook_id: *ebook_id,
+                label,
+                outcome: kind,
+                error,
+            });
+        }
+
+        self.send_batch_complete(BatchComplete {
+            operation_id,
+            batch_id,
+            total,
+            ok: ok_count,
+            reused: reused_count,
+            failed: err_count,
+            dropped,
+        });
+    }
+
+    async fn process_batch_item(
+        self: &Arc<Self>,
+        ebook_id: i64,
+        batch_id: i64,
+        target_format_id: i64,
+        target_format_extension: &str,
+        user: &str,
+        source_repo: &mbs4_dal::source::SourceRepository,
+        conv_repo: &mbs4_dal::conversion::ConversionRepository,
+    ) -> BatchItemOutcome {
+        let sources = match source_repo.list_for_ebook(ebook_id).await {
+            Ok(s) if s.is_empty() => return BatchItemOutcome::Failed("no sources".into()),
+            Ok(s) => s,
+            Err(e) => return BatchItemOutcome::Failed(e.to_string()),
+        };
+
+        // (1) A source is already in the target format — record a synthetic
+        //     conversion pointing at the source's file.
+        if let Some(s) = sources.iter().find(|s| {
+            s.format_extension
+                .eq_ignore_ascii_case(target_format_extension)
+        }) {
+            return match conv_repo
+                .create(CreateConversion {
+                    location: s.location.clone(),
+                    source_id: s.id,
+                    format_id: target_format_id,
+                    batch_id: Some(batch_id),
+                    synthetic: true,
+                    created_by: Some(user.to_string()),
+                })
+                .await
+            {
+                Ok(_) => BatchItemOutcome::Done(BatchItemOutcomeKind::ReusedSource),
+                Err(e) => BatchItemOutcome::Failed(e.to_string()),
+            };
+        }
+
+        // (2) A prior non-synthetic conversion at the target format exists —
+        //     point a synthetic row at its file.
+        match conv_repo
+            .find_existing_for_ebook(ebook_id, target_format_id)
+            .await
+        {
+            Ok(Some(c)) => {
+                return match conv_repo
+                    .create(CreateConversion {
+                        location: c.location,
+                        source_id: c.source_id,
+                        format_id: target_format_id,
+                        batch_id: Some(batch_id),
+                        synthetic: true,
+                        created_by: Some(user.to_string()),
+                    })
+                    .await
+                {
+                    Ok(_) => BatchItemOutcome::Done(BatchItemOutcomeKind::ReusedConversion),
+                    Err(e) => BatchItemOutcome::Failed(e.to_string()),
+                };
+            }
+            Ok(None) => {}
+            Err(e) => return BatchItemOutcome::Failed(e.to_string()),
+        }
+
+        // (3) Pick the best source and run a real conversion.
+        let best = match pick_best_source(&sources) {
+            Some(s) => s,
+            None => return BatchItemOutcome::Failed("no convertible source".into()),
+        };
+
+        let file_path = match ValidPath::new(best.location.clone()) {
+            Ok(p) => p.with_prefix(StorePrefix::Books),
+            Err(e) => return BatchItemOutcome::Failed(e.to_string()),
+        };
+        let local_path = match self.store.local_path(&file_path) {
+            Some(p) => p,
+            None => return BatchItemOutcome::Failed("source file not accessible".into()),
+        };
+
+        let permit = CONVERSION_LIMITS.acquire().await.unwrap(); // safe: semaphore is never closed
+        let started = Instant::now();
+        let conv_result = self
+            .calibre
+            .convert(&local_path, target_format_extension)
+            .await;
+        let duration = started.elapsed();
+        drop(permit);
+        self.observer.on_conversion(&ConversionEvent {
+            operation: ConversionOperation::Convert,
+            duration,
+            success: conv_result.is_ok(),
+        });
+
+        match conv_result {
+            Ok(converted_file) => match self
+                .process_converted_file(
+                    converted_file,
+                    best.id,
+                    target_format_extension.to_string(),
+                    user.to_string(),
+                    Some(batch_id),
+                )
+                .await
+            {
+                Ok(_) => BatchItemOutcome::Done(BatchItemOutcomeKind::Converted),
+                Err(e) => BatchItemOutcome::Failed(e.to_string()),
+            },
+            Err(e) => BatchItemOutcome::Failed(e.to_string()),
+        }
+    }
+
+    fn send_batch_progress(&self, progress: BatchProgress) {
+        let event = EventMessage::message("batch_progress", progress);
+        let _ = self.event_sender.send(event);
+    }
+
+    fn send_batch_complete(&self, complete: BatchComplete) {
+        let event = EventMessage::message("batch_complete", complete);
+        let _ = self.event_sender.send(event);
+    }
+}
+
+enum BatchItemOutcome {
+    Done(BatchItemOutcomeKind),
+    Failed(String),
 }
