@@ -55,7 +55,8 @@ pub struct BatchProgress {
     pub error: Option<String>,
 }
 
-/// SSE payload for `batch_complete` emitted once after the per-ebook loop.
+/// SSE payload for `batch_complete` emitted once after the per-ebook loop
+/// (and the ZIP-and-store step).
 #[derive(Debug, serde::Serialize)]
 pub struct BatchComplete {
     pub operation_id: String,
@@ -65,6 +66,13 @@ pub struct BatchComplete {
     pub reused: usize,
     pub failed: usize,
     pub dropped: usize,
+    /// `Conversions`-prefix-relative path of the result ZIP. `None` only when
+    /// ZIP creation itself failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zip_location: Option<String>,
+    /// Set when ZIP creation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zip_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -123,9 +131,13 @@ pub async fn convert_batch(
         }
     };
 
-    let dropped = all_ebook_ids.len().saturating_sub(BATCH_MAX_EBOOKS);
     let mut ebook_ids = all_ebook_ids;
-    ebook_ids.truncate(BATCH_MAX_EBOOKS);
+    let dropped_ebook_ids: Vec<i64> = if ebook_ids.len() > BATCH_MAX_EBOOKS {
+        ebook_ids.split_off(BATCH_MAX_EBOOKS)
+    } else {
+        Vec::new()
+    };
+    let dropped = dropped_ebook_ids.len();
 
     let name = format!(
         "{}-{}-{}",
@@ -152,7 +164,7 @@ pub async fn convert_batch(
             target_format_id: format.id,
             target_format_extension: format.extension,
             ebook_ids,
-            dropped,
+            dropped_ebook_ids,
             user: api_user.sub,
         })
         .await;

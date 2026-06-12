@@ -107,4 +107,16 @@ where
             limit: params.limit,
         })
     }
+
+    /// Set the ZIP archive location for a batch after the run finishes.
+    /// `ConversionBatch` has no version field, so the generated repository
+    /// macro doesn't emit a generic `update`; this is the dedicated path.
+    pub async fn set_zip_location(&self, id: i64, zip_location: &str) -> Result<()> {
+        sqlx::query("UPDATE conversion_batch SET zip_location = ? WHERE id = ?")
+            .bind(zip_location)
+            .bind(id)
+            .execute(&self.executor)
+            .await?;
+        Ok(())
+    }
 }
