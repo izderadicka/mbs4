@@ -41,3 +41,4 @@ legacy-file-hash = ["dep:sha1", "mbs4-server/legacy-file-hash"]
 # tracing-test = { version = "0.2.5", features = [] }
 # For detailed logs use this feature
 tracing-test = { workspace = true, features = ["no-env-filter"] }
+zip = { version = "3", default-features = false, features = ["deflate"] }

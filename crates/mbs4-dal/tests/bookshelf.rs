@@ -241,3 +241,76 @@ async fn test_bookshelf_crud_and_items() {
     repo.delete(created.id).await.unwrap();
     assert_eq!(repo.count().await.unwrap(), 2);
 }
+
+#[tokio::test]
+async fn test_list_ebook_ids_expands_series_and_dedups() {
+    let conn = init_db().await;
+
+    // Seed an extra ebook in the same series 1 (which already contains ebook 1)
+    // so the SERIES item expands to two ebook ids; the EBOOK item references
+    // ebook 1 explicitly, so we exercise the UNION dedup as well.
+    sqlx::query(
+        "INSERT INTO ebook (id, version, created, modified, title, language_id, series_id, series_index, base_dir, created_by) \
+         VALUES (2, 1, datetime(), datetime(), 'Second Book', 1, 1, 2, 'xxx/two', 'ivan')",
+    )
+    .execute(&conn)
+    .await
+    .unwrap();
+
+    let repo = BookshelfRepositoryImpl::new(conn.clone());
+
+    let shelf = repo
+        .create(CreateBookshelf {
+            name: "mixed shelf".to_string(),
+            description: None,
+            public: false,
+            created_by: Some("ivan".to_string()),
+        })
+        .await
+        .unwrap();
+
+    repo.add_item(
+        shelf.id,
+        CreateBookshelfItem {
+            note: None,
+            item_type: "EBOOK".to_string(),
+            ebook_id: Some(1),
+            series_id: None,
+            order: Some(1),
+            created_by: Some("ivan".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+
+    repo.add_item(
+        shelf.id,
+        CreateBookshelfItem {
+            note: None,
+            item_type: "SERIES".to_string(),
+            ebook_id: None,
+            series_id: Some(1),
+            order: Some(2),
+            created_by: Some("ivan".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut ids = repo.list_ebook_ids(shelf.id).await.unwrap();
+    ids.sort();
+    assert_eq!(ids, vec![1, 2]);
+
+    // Empty bookshelf yields an empty list.
+    let empty = repo
+        .create(CreateBookshelf {
+            name: "empty shelf".to_string(),
+            description: None,
+            public: false,
+            created_by: Some("ivan".to_string()),
+        })
+        .await
+        .unwrap();
+    let ids = repo.list_ebook_ids(empty.id).await.unwrap();
+    assert!(ids.is_empty());
+}
