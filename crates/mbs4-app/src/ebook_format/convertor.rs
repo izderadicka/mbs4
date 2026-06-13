@@ -1,4 +1,6 @@
 use std::{
+    collections::{HashMap, HashSet},
+    io::Write as _,
     path::{Path, PathBuf},
     sync::{Arc, LazyLock},
     time::{Duration, Instant},
@@ -16,7 +18,7 @@ use crate::{
 use mbs4_dal::conversion::{CreateConversion, EbookConversion};
 use mbs4_store::{file_store::FileStore, upload_path, Store, StorePrefix, ValidPath};
 use mbs4_types::utils::file_ext;
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversionOperation {
@@ -73,8 +75,8 @@ pub struct BatchJobRequest {
     pub target_format_id: i64,
     pub target_format_extension: String,
     pub ebook_ids: Vec<i64>,
-    /// Number of ebooks above the batch cap; not processed, only reported.
-    pub dropped: usize,
+    /// Ebooks above the batch cap; not processed, listed in the ZIP manifest.
+    pub dropped_ebook_ids: Vec<i64>,
     pub user: String,
 }
 
@@ -385,7 +387,7 @@ impl ConvertorInner {
             target_format_id,
             target_format_extension,
             ebook_ids,
-            dropped,
+            dropped_ebook_ids,
             user,
         } = request;
 
@@ -397,6 +399,7 @@ impl ConvertorInner {
         let mut ok_count = 0usize;
         let mut reused_count = 0usize;
         let mut err_count = 0usize;
+        let mut entries: Vec<ManifestEntry> = Vec::with_capacity(total);
 
         for (idx, ebook_id) in ebook_ids.iter().enumerate() {
             let done = idx + 1;
@@ -428,6 +431,12 @@ impl ConvertorInner {
                 }
                 BatchItemOutcomeKind::Failed => err_count += 1,
             }
+            entries.push(ManifestEntry {
+                ebook_id: *ebook_id,
+                label: label.clone(),
+                outcome: kind,
+                error: error.clone(),
+            });
             self.send_batch_progress(BatchProgress {
                 operation_id: operation_id.clone(),
                 batch_id,
@@ -440,6 +449,17 @@ impl ConvertorInner {
             });
         }
 
+        let (zip_location, zip_error) = match self
+            .build_and_store_batch_zip(batch_id, &entries, &dropped_ebook_ids)
+            .await
+        {
+            Ok(loc) => (Some(loc), None),
+            Err(e) => {
+                error!(batch_id, "batch zip creation failed: {e}");
+                (None, Some(e.to_string()))
+            }
+        };
+
         self.send_batch_complete(BatchComplete {
             operation_id,
             batch_id,
@@ -447,8 +467,115 @@ impl ConvertorInner {
             ok: ok_count,
             reused: reused_count,
             failed: err_count,
-            dropped,
+            dropped: dropped_ebook_ids.len(),
+            zip_location,
+            zip_error,
         });
+    }
+
+    /// Build the result ZIP for `batch_id`: pull every conversion row for the
+    /// batch, copy each referenced file in, append a `manifest.txt`, import
+    /// the archive under `Conversions/batches/...`, and update
+    /// `conversion_batch.zip_location`. Returns the prefix-stripped location.
+    async fn build_and_store_batch_zip(
+        self: &Arc<Self>,
+        batch_id: i64,
+        entries: &[ManifestEntry],
+        dropped_ebook_ids: &[i64],
+    ) -> anyhow::Result<String> {
+        let conv_repo = mbs4_dal::conversion::ConversionRepository::new(self.pool.clone());
+        let ebook_repo = mbs4_dal::ebook::EbookRepository::new(self.pool.clone());
+        let batch_repo =
+            mbs4_dal::conversion_batch::ConversionBatchRepository::new(self.pool.clone());
+
+        let conversions = conv_repo.list_for_batch(batch_id).await?;
+        let by_ebook: HashMap<i64, EbookConversion> =
+            conversions.into_iter().map(|c| (c.ebook_id, c)).collect();
+
+        // Resolve each successful entry to (zip entry name, local file path).
+        // Skip silently when the source can't be located locally — log and
+        // continue so one missing file doesn't abort the whole archive.
+        let mut zip_inputs: Vec<(String, PathBuf)> = Vec::new();
+        let mut used_names: HashSet<String> = HashSet::new();
+        for entry in entries {
+            if matches!(entry.outcome, BatchItemOutcomeKind::Failed) {
+                continue;
+            }
+            let Some(c) = by_ebook.get(&entry.ebook_id) else {
+                continue;
+            };
+            let ebook = ebook_repo.get(c.ebook_id).await?;
+            // A synthetic row whose source already matches the target format
+            // (path 1 in `process_batch_item`) stored the source's
+            // Books-relative location verbatim. All other rows live under
+            // `Conversions`.
+            let prefix = if c.synthetic
+                && c.source_format_extension
+                    .eq_ignore_ascii_case(&c.format_extension)
+            {
+                StorePrefix::Books
+            } else {
+                StorePrefix::Conversions
+            };
+            let path = ValidPath::new(c.location.clone())?.with_prefix(prefix);
+            let Some(local) = self.store.local_path(&path) else {
+                warn!(
+                    ebook_id = c.ebook_id,
+                    "file for batch entry not accessible locally; skipping"
+                );
+                continue;
+            };
+            let base = ebook.naming_meta().norm_file_name(&c.format_extension);
+            let name = unique_zip_name(&mut used_names, &base);
+            zip_inputs.push((name, local));
+        }
+
+        let manifest_body = render_manifest(entries, dropped_ebook_ids);
+
+        // ZipWriter is sync I/O; do the file I/O on the blocking pool.
+        let temp_path = tokio::task::spawn_blocking(move || -> anyhow::Result<PathBuf> {
+            let temp = tempfile::Builder::new()
+                .prefix("mbs4-batch-")
+                .suffix(".zip")
+                .tempfile()?;
+            {
+                let mut writer = zip::ZipWriter::new(temp.as_file());
+                let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated);
+                for (name, local) in zip_inputs {
+                    writer.start_file(&name, opts)?;
+                    let mut f = std::fs::File::open(&local)?;
+                    std::io::copy(&mut f, &mut writer)?;
+                }
+                writer.start_file("manifest.txt", opts)?;
+                writer.write_all(manifest_body.as_bytes())?;
+                writer.finish()?;
+            }
+            // `keep` disables the on-drop cleanup so `import_file` can move
+            // the file. If `import_file` fails after this point, the temp
+            // file is left behind — acceptable given the failure is already
+            // reported via `batch_complete.zip_error`.
+            let (_file, path) = temp.keep()?;
+            Ok(path)
+        })
+        .await??;
+
+        let final_path = ValidPath::new(format!("batches/batch-{batch_id}.zip"))?
+            .with_prefix(StorePrefix::Conversions);
+        let stored = self
+            .store
+            .import_file(&temp_path, &final_path, true)
+            .await?;
+        let stored_relative: String = stored
+            .without_prefix(StorePrefix::Conversions)
+            .expect("import target was prefixed with Conversions above")
+            .into();
+
+        batch_repo
+            .set_zip_location(batch_id, &stored_relative)
+            .await?;
+
+        Ok(stored_relative)
     }
 
     async fn process_batch_item(
@@ -576,4 +703,60 @@ impl ConvertorInner {
 enum BatchItemOutcome {
     Done(BatchItemOutcomeKind),
     Failed(String),
+}
+
+struct ManifestEntry {
+    ebook_id: i64,
+    label: String,
+    outcome: BatchItemOutcomeKind,
+    error: Option<String>,
+}
+
+fn render_manifest(entries: &[ManifestEntry], dropped: &[i64]) -> String {
+    let mut out = String::new();
+    for e in entries {
+        let line = match e.outcome {
+            BatchItemOutcomeKind::Converted => {
+                format!("OK     | {} | id={}\n", e.label, e.ebook_id)
+            }
+            BatchItemOutcomeKind::ReusedSource => {
+                format!("REUSED | source | {} | id={}\n", e.label, e.ebook_id)
+            }
+            BatchItemOutcomeKind::ReusedConversion => format!(
+                "REUSED | prior conversion | {} | id={}\n",
+                e.label, e.ebook_id
+            ),
+            BatchItemOutcomeKind::Failed => format!(
+                "FAIL   | {} | id={} | {}\n",
+                e.label,
+                e.ebook_id,
+                e.error.as_deref().unwrap_or("unknown error"),
+            ),
+        };
+        out.push_str(&line);
+    }
+    for id in dropped {
+        out.push_str(&format!("SKIPPED (batch size limit) | id={id}\n"));
+    }
+    out
+}
+
+/// Append `-2`, `-3`, ... before the extension when the candidate name has
+/// already been used in the archive.
+fn unique_zip_name(used: &mut HashSet<String>, candidate: &str) -> String {
+    if used.insert(candidate.to_string()) {
+        return candidate.to_string();
+    }
+    let (stem, ext) = match candidate.rsplit_once('.') {
+        Some((s, e)) => (s, format!(".{e}")),
+        None => (candidate, String::new()),
+    };
+    for n in 2..u32::MAX {
+        let alt = format!("{stem}-{n}{ext}");
+        if used.insert(alt.clone()) {
+            return alt;
+        }
+    }
+    // Astronomically unlikely; fall back to the original name.
+    candidate.to_string()
 }
