@@ -20,63 +20,6 @@ use serde_json::{Map, Value, json};
 use tracing::info;
 use tracing_test::traced_test;
 
-/// Drains the SSE stream and resolves once an event of `type` matching
-/// `event_type` AND `data.operation_id` matching the supplied id is seen.
-fn await_event(
-    client: reqwest::Client,
-    sse_url: Url,
-    operation_id: String,
-    event_type: &'static str,
-) -> tokio::sync::oneshot::Receiver<Value> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-
-    tokio::spawn(async move {
-        let res = client
-            .get(sse_url)
-            .send()
-            .await
-            .expect("connect to SSE")
-            .error_for_status()
-            .expect("SSE HTTP status");
-
-        let mut stream = res.bytes_stream();
-        let mut buffer = String::new();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.unwrap();
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            while let Some(pos) = buffer.find("\n\n") {
-                let raw = buffer[..pos].to_string();
-                buffer.drain(..pos + 2);
-
-                // SSE frames have lines like `id: ...`, `data: {...}`. We
-                // only care about the JSON body, parsed as
-                // {"type": "...", "data": {...}}.
-                let json_line = raw
-                    .lines()
-                    .find_map(|l| l.strip_prefix("data:").map(|s| s.trim()));
-                let Some(payload) = json_line else {
-                    continue;
-                };
-                let value: Value = match serde_json::from_str(payload) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                if value["type"] != event_type {
-                    continue;
-                }
-                if value["data"]["operation_id"].as_str() == Some(operation_id.as_str()) {
-                    sender.send(value["data"].clone()).ok();
-                    return;
-                }
-            }
-        }
-    });
-
-    receiver
-}
-
 /// Uploads a file, registers an ebook with the supplied title and authors,
 /// attaches the upload as a source, and returns the new ebook + source.
 async fn upload_ebook_with_source(
@@ -219,6 +162,62 @@ async fn test_batch_convert_bookshelf() {
         assert!(res.status().is_success(), "add item: {}", res.status());
     }
 
+    // Subscribe to SSE BEFORE triggering the batch. A batch where every
+    // ebook takes the reuse-only path can complete in milliseconds, well
+    // before a post-POST subscription would attach to the broadcast.
+    // operation_id is server-generated, so we hand it to the listener via a
+    // oneshot after the POST resolves.
+    let sse_url = base_url.join("events").unwrap();
+    let (operation_tx, operation_rx) = tokio::sync::oneshot::channel::<String>();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+    let (complete_tx, complete_rx) = tokio::sync::oneshot::channel::<Value>();
+    let listener_client = client.clone();
+    let listener_url = sse_url.clone();
+    tokio::spawn(async move {
+        let res = listener_client
+            .get(listener_url)
+            .send()
+            .await
+            .expect("SSE connect")
+            .error_for_status()
+            .expect("SSE status");
+        ready_tx.send(()).ok();
+        let mut stream = res.bytes_stream();
+        let mut buffer = String::new();
+        // The transport buffers everything since subscription; once we know
+        // the operation_id we drain whatever has arrived.
+        let operation_id: String = operation_rx.await.expect("operation_id");
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(pos) = buffer.find("\n\n") {
+                let raw = buffer[..pos].to_string();
+                buffer.drain(..pos + 2);
+                let json_line = raw
+                    .lines()
+                    .find_map(|l| l.strip_prefix("data:").map(|s| s.trim()));
+                let Some(payload) = json_line else { continue };
+                let value: Value = match serde_json::from_str(payload) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if value["type"] != "batch_complete" {
+                    continue;
+                }
+                if value["data"]["operation_id"].as_str() == Some(operation_id.as_str()) {
+                    complete_tx.send(value["data"].clone()).ok();
+                    return;
+                }
+            }
+        }
+    });
+
+    // Wait until the SSE response headers have come back — only then is the
+    // server-side broadcast subscription guaranteed to be live, so we won't
+    // miss a fast-finishing batch.
+    ready_rx.await.expect("SSE listener ready");
+
     // Kick off the batch.
     let res = client
         .post(base_url.join("api/convert/batch").unwrap())
@@ -238,15 +237,9 @@ async fn test_batch_convert_bookshelf() {
     assert_eq!(ticket["dropped"].as_u64().unwrap(), 0);
     info!("Batch operation_id={operation_id} batch_id={batch_id}");
 
-    // Listen for batch_complete on the SSE channel.
-    let sse_url = base_url.join("events").unwrap();
-    let receiver = await_event(
-        client.clone(),
-        sse_url,
-        operation_id.clone(),
-        "batch_complete",
-    );
-    let complete = tokio::time::timeout(std::time::Duration::from_secs(120), receiver)
+    // Hand the operation_id to the listener, then wait for batch_complete.
+    operation_tx.send(operation_id.clone()).ok();
+    let complete = tokio::time::timeout(std::time::Duration::from_secs(120), complete_rx)
         .await
         .expect("batch_complete timeout")
         .expect("event channel closed");
