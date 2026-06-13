@@ -194,18 +194,30 @@ async fn test_batch_convert_bookshelf() {
             while let Some(pos) = buffer.find("\n\n") {
                 let raw = buffer[..pos].to_string();
                 buffer.drain(..pos + 2);
-                let json_line = raw
-                    .lines()
-                    .find_map(|l| l.strip_prefix("data:").map(|s| s.trim()));
-                let Some(payload) = json_line else { continue };
-                let value: Value = match serde_json::from_str(payload) {
+
+                // Event kind sits in the SSE `id:` line (the JSON `type`
+                // field is always the EventType enum, e.g. "message").
+                // Payload sits in `data:`.
+                let mut sse_id: Option<String> = None;
+                let mut data_line: Option<String> = None;
+                for line in raw.lines() {
+                    if let Some(rest) = line.strip_prefix("id:") {
+                        sse_id = Some(rest.trim().to_string());
+                    } else if let Some(rest) = line.strip_prefix("data:") {
+                        data_line = Some(rest.trim().to_string());
+                    }
+                }
+                if sse_id.as_deref() != Some("batch_complete") {
+                    continue;
+                }
+                let Some(payload) = data_line else { continue };
+                let envelope: Value = match serde_json::from_str(&payload) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
-                if value["type"] != "batch_complete" {
-                    continue;
-                }
-                complete_tx.send(value["data"].clone()).ok();
+                // {"type":"message","data":{...}} — unwrap one level.
+                let inner = envelope.get("data").cloned().unwrap_or(envelope);
+                complete_tx.send(inner).ok();
                 return;
             }
         }
