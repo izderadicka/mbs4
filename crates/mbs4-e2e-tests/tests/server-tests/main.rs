@@ -1,3 +1,4 @@
+mod batch_convert;
 mod bookshelf;
 mod observability_metrics;
 mod rest_author;
