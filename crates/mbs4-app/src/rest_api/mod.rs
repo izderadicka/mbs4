@@ -3,6 +3,7 @@ pub use paging::{Page, Paging};
 pub mod author;
 pub mod bookshelf;
 pub mod conversion;
+pub mod conversion_batch;
 pub mod ebook;
 pub mod format;
 pub mod genre;

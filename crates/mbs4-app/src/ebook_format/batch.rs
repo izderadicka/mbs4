@@ -11,7 +11,8 @@ use mbs4_dal::{
 
 use crate::{ebook_format::convertor::BatchJobRequest, error::ApiError, state::AppState};
 
-crate::repository_from_request!(ConversionBatchRepository);
+// `ConversionBatchRepository` extractor is registered in
+// `crate::rest_api::conversion_batch`.
 
 /// Maximum number of ebooks accepted into a single batch. Anything above
 /// this is dropped and reported via `dropped` on the response.
@@ -42,6 +43,7 @@ pub struct BatchOperationTicket {
 
 /// SSE payload for `batch_progress` events emitted once per processed ebook.
 #[derive(Debug, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BatchProgress {
     pub operation_id: String,
     pub batch_id: i64,
@@ -58,6 +60,7 @@ pub struct BatchProgress {
 /// SSE payload for `batch_complete` emitted once after the per-ebook loop
 /// (and the ZIP-and-store step).
 #[derive(Debug, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BatchComplete {
     pub operation_id: String,
     pub batch_id: i64,
@@ -76,6 +79,7 @@ pub struct BatchComplete {
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BatchItemOutcomeKind {
     /// Source was actually converted via `ebook-convert`.

@@ -38,9 +38,14 @@ mod extra_crud_api {
     ) -> ApiResult<impl IntoResponse> {
         let conversion = repository.get(id).await?;
         repository.delete(id).await?;
-        let path =
-            ValidPath::new(conversion.location)?.with_prefix(mbs4_store::StorePrefix::Conversions);
-        state.store().delete(&path).await?;
+        // Synthetic rows reference a file owned by another entity (a Source
+        // row, or a non-synthetic Conversion). Deleting the file would corrupt
+        // that owner — only real-conversion rows own their archived file.
+        if !conversion.synthetic {
+            let path = ValidPath::new(conversion.location)?
+                .with_prefix(mbs4_store::StorePrefix::Conversions);
+            state.store().delete(&path).await?;
+        }
 
         Ok((StatusCode::NO_CONTENT, ()))
     }
