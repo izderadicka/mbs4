@@ -164,11 +164,14 @@ async fn test_batch_convert_bookshelf() {
 
     // Subscribe to SSE BEFORE triggering the batch. A batch where every
     // ebook takes the reuse-only path can complete in milliseconds, well
-    // before a post-POST subscription would attach to the broadcast.
-    // operation_id is server-generated, so we hand it to the listener via a
-    // oneshot after the POST resolves.
+    // before a post-POST subscription would attach to the broadcast. The
+    // listener must also actively drain the response body from the moment
+    // the connection is open — reqwest's bytes_stream only advances when
+    // polled, so an `await` between connection and read can stall forever.
+    //
+    // We only fire one batch in this test, so we accept the first
+    // `batch_complete` event and assert the operation_id afterwards.
     let sse_url = base_url.join("events").unwrap();
-    let (operation_tx, operation_rx) = tokio::sync::oneshot::channel::<String>();
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
     let (complete_tx, complete_rx) = tokio::sync::oneshot::channel::<Value>();
     let listener_client = client.clone();
@@ -184,9 +187,6 @@ async fn test_batch_convert_bookshelf() {
         ready_tx.send(()).ok();
         let mut stream = res.bytes_stream();
         let mut buffer = String::new();
-        // The transport buffers everything since subscription; once we know
-        // the operation_id we drain whatever has arrived.
-        let operation_id: String = operation_rx.await.expect("operation_id");
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.unwrap();
@@ -205,10 +205,8 @@ async fn test_batch_convert_bookshelf() {
                 if value["type"] != "batch_complete" {
                     continue;
                 }
-                if value["data"]["operation_id"].as_str() == Some(operation_id.as_str()) {
-                    complete_tx.send(value["data"].clone()).ok();
-                    return;
-                }
+                complete_tx.send(value["data"].clone()).ok();
+                return;
             }
         }
     });
@@ -237,13 +235,15 @@ async fn test_batch_convert_bookshelf() {
     assert_eq!(ticket["dropped"].as_u64().unwrap(), 0);
     info!("Batch operation_id={operation_id} batch_id={batch_id}");
 
-    // Hand the operation_id to the listener, then wait for batch_complete.
-    operation_tx.send(operation_id.clone()).ok();
     let complete = tokio::time::timeout(std::time::Duration::from_secs(120), complete_rx)
         .await
         .expect("batch_complete timeout")
         .expect("event channel closed");
     info!("batch_complete: {complete:#?}");
+    assert_eq!(
+        complete["operation_id"].as_str(),
+        Some(operation_id.as_str())
+    );
 
     assert_eq!(complete["batch_id"].as_i64().unwrap(), batch_id);
     assert_eq!(complete["total"].as_u64().unwrap(), 2);
