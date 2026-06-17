@@ -61,7 +61,7 @@ mod crud_api_extra {
     #[cfg_attr(
         feature = "openapi",
         utoipa::path(
-            get, path = "/", tag = "ConversionBatch",
+            get, path = "", tag = "ConversionBatch",
             operation_id = "listConversionBatches",
             params(Paging),
             responses((status = StatusCode::OK, description = "List paginated",
