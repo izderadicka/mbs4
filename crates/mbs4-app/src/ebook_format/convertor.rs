@@ -525,7 +525,7 @@ impl ConvertorInner {
                 );
                 continue;
             };
-            let base = ebook.naming_meta().norm_file_name(&c.format_extension);
+            let base = ebook.naming_meta().norm_file_name_only(&c.format_extension);
             let name = unique_zip_name(&mut used_names, &base);
             zip_inputs.push((name, local));
         }

@@ -98,6 +98,14 @@ impl<'a> Ebook<'a> {
         name
     }
 
+    pub fn norm_file_name_only(&self, ext: &str) -> String {
+        let full = self.norm_file_name(ext);
+        Path::new(&full)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or(full)
+    }
+
     pub fn ebook_base_dir(&self) -> Option<String> {
         Path::new(&self.norm_file_name(""))
             .parent()
