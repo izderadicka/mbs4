@@ -2,10 +2,12 @@ use axum::{extract::State, response::IntoResponse, Json};
 use axum_valid::Garde;
 use http::StatusCode;
 use mbs4_dal::{
+    author::AuthorRepository,
     bookshelf::BookshelfRepository,
     conversion_batch::{ConversionBatchEntity, ConversionBatchRepository, CreateConversionBatch},
     ebook::EbookRepository,
     format::FormatRepository,
+    series::SeriesRepository,
     ListingParams,
 };
 
@@ -110,6 +112,8 @@ pub async fn convert_batch(
     bookshelf_repo: BookshelfRepository,
     ebook_repo: EbookRepository,
     batch_repo: ConversionBatchRepository,
+    author_repo: AuthorRepository,
+    series_repo: SeriesRepository,
     api_user: mbs4_types::claim::ApiClaim,
     Garde(Json(payload)): Garde<Json<BatchConversionRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -143,9 +147,26 @@ pub async fn convert_batch(
     };
     let dropped = dropped_ebook_ids.len();
 
+    let entity_label = match payload.for_entity {
+        ConversionBatchEntity::Author => {
+            let author = author_repo.get(payload.entity_id).await?;
+            match author.first_name {
+                Some(first) => format!("Author {} {}", first, author.last_name),
+                None => format!("Author {}", author.last_name),
+            }
+        }
+        ConversionBatchEntity::Series => {
+            let series = series_repo.get(payload.entity_id).await?;
+            format!("Series {}", series.title)
+        }
+        ConversionBatchEntity::Bookshelf => {
+            let shelf = bookshelf_repo.get(payload.entity_id).await?;
+            format!("Bookshelf {}", shelf.name)
+        }
+    };
     let name = format!(
-        "{}-{}-{}",
-        payload.for_entity, payload.entity_id, payload.to_format_extension
+        "Books for {} [{}]",
+        entity_label, payload.to_format_extension
     );
     let batch = batch_repo
         .create(CreateConversionBatch {
