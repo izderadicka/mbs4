@@ -48,7 +48,7 @@ tokio-stream = { version = "0.1.18", features = ["sync"] }
 uuid = { workspace = true }
 num_cpus = "1.17.0"
 tempfile = { workspace = true }
-zip = { version = "3", default-features = false, features = ["deflate"] }
+zip = { version = "3", default-features = false, features = ["deflate", "time"] }
 
 
 [features]

@@ -533,6 +533,7 @@ impl ConvertorInner {
         let manifest_body = render_manifest(entries, dropped_ebook_ids);
 
         // ZipWriter is sync I/O; do the file I/O on the blocking pool.
+        let now = time::OffsetDateTime::now_utc();
         let temp_path = tokio::task::spawn_blocking(move || -> anyhow::Result<PathBuf> {
             let temp = tempfile::Builder::new()
                 .prefix("mbs4-batch-")
@@ -540,8 +541,10 @@ impl ConvertorInner {
                 .tempfile()?;
             {
                 let mut writer = zip::ZipWriter::new(temp.as_file());
+                let zip_dt = zip::DateTime::from_time(now).unwrap_or_default();
                 let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated);
+                    .compression_method(zip::CompressionMethod::Deflated)
+                    .last_modified_time(zip_dt);
                 for (name, local) in zip_inputs {
                     writer.start_file(&name, opts)?;
                     let mut f = std::fs::File::open(&local)?;
