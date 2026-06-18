@@ -72,6 +72,7 @@ pub struct ConversionRequest {
 pub struct BatchJobRequest {
     pub operation_id: String,
     pub batch_id: i64,
+    pub batch_name: String,
     pub target_format_id: i64,
     pub target_format_extension: String,
     pub ebook_ids: Vec<i64>,
@@ -384,6 +385,7 @@ impl ConvertorInner {
         let BatchJobRequest {
             operation_id,
             batch_id,
+            batch_name,
             target_format_id,
             target_format_extension,
             ebook_ids,
@@ -440,6 +442,7 @@ impl ConvertorInner {
             self.send_batch_progress(BatchProgress {
                 operation_id: operation_id.clone(),
                 batch_id,
+                batch_name: batch_name.clone(),
                 done,
                 total,
                 ebook_id: *ebook_id,
@@ -463,6 +466,7 @@ impl ConvertorInner {
         self.send_batch_complete(BatchComplete {
             operation_id,
             batch_id,
+            batch_name,
             total,
             ok: ok_count,
             reused: reused_count,

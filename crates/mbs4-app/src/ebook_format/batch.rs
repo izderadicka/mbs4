@@ -49,6 +49,7 @@ pub struct BatchOperationTicket {
 pub struct BatchProgress {
     pub operation_id: String,
     pub batch_id: i64,
+    pub batch_name: String,
     pub done: usize,
     pub total: usize,
     pub ebook_id: i64,
@@ -66,6 +67,7 @@ pub struct BatchProgress {
 pub struct BatchComplete {
     pub operation_id: String,
     pub batch_id: i64,
+    pub batch_name: String,
     pub total: usize,
     pub ok: usize,
     pub reused: usize,
@@ -186,6 +188,7 @@ pub async fn convert_batch(
         .convert_batch(BatchJobRequest {
             operation_id: operation_id.clone(),
             batch_id: batch.id,
+            batch_name: batch.name,
             target_format_id: format.id,
             target_format_extension: format.extension,
             ebook_ids,
