@@ -722,25 +722,18 @@ struct ManifestEntry {
 fn render_manifest(entries: &[ManifestEntry], dropped: &[i64]) -> String {
     let mut out = String::new();
     for e in entries {
-        let line = match e.outcome {
-            BatchItemOutcomeKind::Converted => {
-                format!("OK     | {} | id={}\n", e.label, e.ebook_id)
+        let (status, detail): (&str, &str) = match e.outcome {
+            BatchItemOutcomeKind::Converted => ("OK    ", ""),
+            BatchItemOutcomeKind::ReusedSource => ("REUSED", "source"),
+            BatchItemOutcomeKind::ReusedConversion => ("REUSED", "prior conversion"),
+            BatchItemOutcomeKind::Failed => {
+                ("FAIL  ", e.error.as_deref().unwrap_or("unknown error"))
             }
-            BatchItemOutcomeKind::ReusedSource => {
-                format!("REUSED | source | {} | id={}\n", e.label, e.ebook_id)
-            }
-            BatchItemOutcomeKind::ReusedConversion => format!(
-                "REUSED | prior conversion | {} | id={}\n",
-                e.label, e.ebook_id
-            ),
-            BatchItemOutcomeKind::Failed => format!(
-                "FAIL   | {} | id={} | {}\n",
-                e.label,
-                e.ebook_id,
-                e.error.as_deref().unwrap_or("unknown error"),
-            ),
         };
-        out.push_str(&line);
+        out.push_str(&format!(
+            "{} | {:<16} | {} | id={}\n",
+            status, detail, e.label, e.ebook_id
+        ));
     }
     for id in dropped {
         out.push_str(&format!("SKIPPED (batch size limit) | id={id}\n"));
