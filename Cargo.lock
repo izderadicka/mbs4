@@ -2619,7 +2619,7 @@ dependencies = [
 
 [[package]]
 name = "mbs4-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2690,7 +2690,7 @@ dependencies = [
 
 [[package]]
 name = "mbs4-image"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "fast_image_resize",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "mbs4-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
