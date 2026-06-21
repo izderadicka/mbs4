@@ -82,12 +82,56 @@ async fn upload_ebook_with_source(
     (ebook, source)
 }
 
+/// Connects to an SSE endpoint, signals readiness once the response headers
+/// arrive, then feeds each `\n\n`-delimited event block to `on_event`,
+/// returning the first non-`None` result. Returns `None` if the stream ends.
+async fn drain_sse_until<T>(
+    client: &reqwest::Client,
+    url: Url,
+    ready_tx: tokio::sync::oneshot::Sender<()>,
+    mut on_event: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    let res = client
+        .get(url)
+        .send()
+        .await
+        .expect("SSE connect")
+        .error_for_status()
+        .expect("SSE status");
+    ready_tx.send(()).ok();
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else { break };
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(pos) = buffer.find("\n\n") {
+            let raw = buffer[..pos].to_string();
+            buffer.drain(..pos + 2);
+            if let Some(out) = on_event(&raw) {
+                return Some(out);
+            }
+        }
+    }
+    None
+}
+
 #[tokio::test]
 #[traced_test]
 async fn test_batch_convert_bookshelf() {
     let (args, mut guard) = prepare_env("test_batch_convert").await.unwrap();
     let base_url = args.base_url.clone();
-    let (client, _state) = launch_env(args, TestUser::Admin, &mut guard).await.unwrap();
+    let (client, state) = launch_env(args, TestUser::Admin, &mut guard).await.unwrap();
+
+    // A second, different user. Conversion events are targeted at the
+    // initiating user (admin here), so this user's SSE stream must NOT see
+    // admin's batch_complete.
+    let other_token = mbs4_e2e_tests::trusted_user_token(&state).unwrap();
+    let other_client = reqwest::Client::builder()
+        .cookie_store(true)
+        .default_headers(mbs4_e2e_tests::auth_headers(other_token).unwrap())
+        .build()
+        .unwrap();
 
     // Formats, language, author — minimal scaffolding for two ebooks.
     let _epub_format = create_format(&client, &base_url, "EPUB", "application/epub+zip", "epub")
@@ -177,49 +221,46 @@ async fn test_batch_convert_bookshelf() {
     let listener_client = client.clone();
     let listener_url = sse_url.clone();
     tokio::spawn(async move {
-        let res = listener_client
-            .get(listener_url)
-            .send()
-            .await
-            .expect("SSE connect")
-            .error_for_status()
-            .expect("SSE status");
-        ready_tx.send(()).ok();
-        let mut stream = res.bytes_stream();
-        let mut buffer = String::new();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.unwrap();
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            while let Some(pos) = buffer.find("\n\n") {
-                let raw = buffer[..pos].to_string();
-                buffer.drain(..pos + 2);
-
-                // Event kind sits in the SSE `id:` line (the JSON `type`
-                // field is always the EventType enum, e.g. "message").
-                // Payload sits in `data:`.
-                let mut sse_id: Option<String> = None;
-                let mut data_line: Option<String> = None;
-                for line in raw.lines() {
-                    if let Some(rest) = line.strip_prefix("id:") {
-                        sse_id = Some(rest.trim().to_string());
-                    } else if let Some(rest) = line.strip_prefix("data:") {
-                        data_line = Some(rest.trim().to_string());
-                    }
+        let inner = drain_sse_until(&listener_client, listener_url, ready_tx, |raw| {
+            // Event kind sits in the SSE `id:` line (the JSON `type` field is
+            // always the EventType enum, e.g. "message"). Payload is `data:`.
+            let mut sse_id: Option<String> = None;
+            let mut data_line: Option<String> = None;
+            for line in raw.lines() {
+                if let Some(rest) = line.strip_prefix("id:") {
+                    sse_id = Some(rest.trim().to_string());
+                } else if let Some(rest) = line.strip_prefix("data:") {
+                    data_line = Some(rest.trim().to_string());
                 }
-                if sse_id.as_deref() != Some("batch_complete") {
-                    continue;
-                }
-                let Some(payload) = data_line else { continue };
-                let envelope: Value = match serde_json::from_str(&payload) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                // {"type":"message","data":{...}} — unwrap one level.
-                let inner = envelope.get("data").cloned().unwrap_or(envelope);
-                complete_tx.send(inner).ok();
-                return;
             }
+            if sse_id.as_deref() != Some("batch_complete") {
+                return None;
+            }
+            let payload = data_line?;
+            let envelope: Value = serde_json::from_str(&payload).ok()?;
+            // {"type":"message","data":{...}} — unwrap one level.
+            Some(envelope.get("data").cloned().unwrap_or(envelope))
+        })
+        .await;
+        if let Some(inner) = inner {
+            complete_tx.send(inner).ok();
+        }
+    });
+
+    // Second listener as a different user. It records whether it ever sees a
+    // batch_complete event; it must not, since events target the initiator.
+    let (other_ready_tx, other_ready_rx) = tokio::sync::oneshot::channel::<()>();
+    let (other_seen_tx, mut other_seen_rx) = tokio::sync::oneshot::channel::<()>();
+    let other_listener_url = sse_url.clone();
+    tokio::spawn(async move {
+        let seen = drain_sse_until(&other_client, other_listener_url, other_ready_tx, |raw| {
+            raw.lines()
+                .any(|l| l.strip_prefix("id:").map(str::trim) == Some("batch_complete"))
+                .then_some(())
+        })
+        .await;
+        if seen.is_some() {
+            other_seen_tx.send(()).ok();
         }
     });
 
@@ -227,6 +268,7 @@ async fn test_batch_convert_bookshelf() {
     // server-side broadcast subscription guaranteed to be live, so we won't
     // miss a fast-finishing batch.
     ready_rx.await.expect("SSE listener ready");
+    other_ready_rx.await.expect("other SSE listener ready");
 
     // Kick off the batch.
     let res = client
@@ -255,6 +297,17 @@ async fn test_batch_convert_bookshelf() {
     assert_eq!(
         complete["operation_id"].as_str(),
         Some(operation_id.as_str())
+    );
+
+    // The other user must not have received the admin's batch_complete. Give
+    // the broadcast a grace window after admin's own delivery, then check.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    assert!(
+        matches!(
+            other_seen_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ),
+        "a different user received the initiator's batch_complete event"
     );
 
     assert_eq!(complete["batch_id"].as_i64().unwrap(), batch_id);

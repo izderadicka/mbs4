@@ -59,6 +59,7 @@ pub struct MetadataRequest {
     pub operation_id: String,
     pub file_path: ValidPath,
     pub extract_cover: bool,
+    pub user: String,
 }
 
 pub struct ConversionRequest {
@@ -198,13 +199,18 @@ impl Convertor {
 }
 
 impl ConvertorInner {
-    fn send_error(&self, operation_id: String, error: impl std::fmt::Display) {
+    fn send_error(
+        &self,
+        operation_id: String,
+        target_user: Option<String>,
+        error: impl std::fmt::Display,
+    ) {
         let error_result = ErrorResult {
             operation_id,
             created: time::OffsetDateTime::now_utc(),
             error: error.to_string(),
         };
-        let event = EventMessage::message("extract_meta_error", error_result);
+        let event = EventMessage::message("extract_meta_error", target_user, error_result);
         self.event_sender.send(event).unwrap();
     }
 
@@ -213,6 +219,7 @@ impl ConvertorInner {
             operation_id,
             file_path,
             extract_cover,
+            user,
         } = request;
         let local_path = self
             .store
@@ -263,10 +270,10 @@ impl ConvertorInner {
                     created: time::OffsetDateTime::now_utc(),
                     metadata: meta,
                 };
-                let event = EventMessage::message("extract_meta", result);
+                let event = EventMessage::message("extract_meta", Some(user), result);
                 self.event_sender.send(event).unwrap();
             }
-            Err(e) => self.send_error(operation_id, e),
+            Err(e) => self.send_error(operation_id, Some(user), e),
         }
     }
 
@@ -294,7 +301,7 @@ impl ConvertorInner {
         match meta_result {
             Ok(converted_file) => {
                 match self
-                    .process_converted_file(converted_file, source_id, to_ext, user, None)
+                    .process_converted_file(converted_file, source_id, to_ext, user.clone(), None)
                     .await
                 {
                     Ok(conversion) => {
@@ -303,13 +310,13 @@ impl ConvertorInner {
                             created: time::OffsetDateTime::now_utc(),
                             conversion,
                         };
-                        let event = EventMessage::message("convert", result);
+                        let event = EventMessage::message("convert", Some(user), result);
                         self.event_sender.send(event).unwrap();
                     }
-                    Err(e) => self.send_error(operation_id, e),
+                    Err(e) => self.send_error(operation_id, Some(user), e),
                 }
             }
-            Err(e) => self.send_error(operation_id, e),
+            Err(e) => self.send_error(operation_id, Some(user), e),
         }
     }
 
@@ -439,17 +446,20 @@ impl ConvertorInner {
                 outcome: kind,
                 error: error.clone(),
             });
-            self.send_batch_progress(BatchProgress {
-                operation_id: operation_id.clone(),
-                batch_id,
-                batch_name: batch_name.clone(),
-                done,
-                total,
-                ebook_id: *ebook_id,
-                label,
-                outcome: kind,
-                error,
-            });
+            self.send_batch_progress(
+                Some(user.clone()),
+                BatchProgress {
+                    operation_id: operation_id.clone(),
+                    batch_id,
+                    batch_name: batch_name.clone(),
+                    done,
+                    total,
+                    ebook_id: *ebook_id,
+                    label,
+                    outcome: kind,
+                    error,
+                },
+            );
         }
 
         let (zip_location, zip_error) = match self
@@ -463,18 +473,21 @@ impl ConvertorInner {
             }
         };
 
-        self.send_batch_complete(BatchComplete {
-            operation_id,
-            batch_id,
-            batch_name,
-            total,
-            ok: ok_count,
-            reused: reused_count,
-            failed: err_count,
-            dropped: dropped_ebook_ids.len(),
-            zip_location,
-            zip_error,
-        });
+        self.send_batch_complete(
+            Some(user),
+            BatchComplete {
+                operation_id,
+                batch_id,
+                batch_name,
+                total,
+                ok: ok_count,
+                reused: reused_count,
+                failed: err_count,
+                dropped: dropped_ebook_ids.len(),
+                zip_location,
+                zip_error,
+            },
+        );
     }
 
     /// Build the result ZIP for `batch_id`: pull every conversion row for the
@@ -545,7 +558,7 @@ impl ConvertorInner {
                 .tempfile()?;
             {
                 let mut writer = zip::ZipWriter::new(temp.as_file());
-                let zip_dt = zip::DateTime::from_time(now).unwrap_or_default();
+                let zip_dt = zip::DateTime::try_from(now).unwrap_or_default();
                 let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
                     .compression_method(zip::CompressionMethod::Deflated)
                     .last_modified_time(zip_dt);
@@ -696,13 +709,13 @@ impl ConvertorInner {
         }
     }
 
-    fn send_batch_progress(&self, progress: BatchProgress) {
-        let event = EventMessage::message("batch_progress", progress);
+    fn send_batch_progress(&self, target_user: Option<String>, progress: BatchProgress) {
+        let event = EventMessage::message("batch_progress", target_user, progress);
         let _ = self.event_sender.send(event);
     }
 
-    fn send_batch_complete(&self, complete: BatchComplete) {
-        let event = EventMessage::message("batch_complete", complete);
+    fn send_batch_complete(&self, target_user: Option<String>, complete: BatchComplete) {
+        let event = EventMessage::message("batch_complete", target_user, complete);
         let _ = self.event_sender.send(event);
     }
 }

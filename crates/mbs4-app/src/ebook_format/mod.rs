@@ -62,6 +62,7 @@ pub struct ConversionRequest {
 )]
 pub async fn get_ebook_meta(
     State(state): State<AppState>,
+    api_user: ApiClaim,
     Garde(Json(payload)): Garde<Json<UploadInfo>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let to_path = ValidPath::new(payload.final_path)?.with_prefix(mbs4_store::StorePrefix::Upload);
@@ -72,6 +73,7 @@ pub async fn get_ebook_meta(
             operation_id: operation_id.clone(),
             file_path: to_path,
             extract_cover: true,
+            user: api_user.sub,
         })
         .await;
     Ok((

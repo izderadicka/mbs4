@@ -27,11 +27,12 @@ impl Display for EventType {
 pub struct EventMessage {
     id: String,
     kind: EventType,
+    target_user: Option<String>,
     data: String,
 }
 
 impl EventMessage {
-    pub fn new<T>(id: impl ToString, kind: EventType, data: T) -> Self
+    pub fn new<T>(id: impl ToString, kind: EventType, target_user: Option<String>, data: T) -> Self
     where
         T: serde::Serialize,
     {
@@ -39,25 +40,35 @@ impl EventMessage {
         Self {
             id: id.to_string(),
             kind,
+            target_user,
             data,
         }
     }
 
-    pub fn message<T>(id: impl ToString, data: T) -> Self
+    pub fn message<T>(id: impl ToString, target_user: Option<String>, data: T) -> Self
     where
         T: serde::Serialize,
     {
-        Self::new(id, EventType::Message, data)
+        Self::new(id, EventType::Message, target_user, data)
     }
 }
 
 async fn sse_handler(
     State(state): State<AppState>,
+    api_user: mbs4_types::claim::ApiClaim,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let stream = state.events().receiver_stream().map(|e| {
-        Ok(Event::default()
-            .id(e.id)
-            .data(format!(r#"{{"type":"{}","data":{} }}"#, e.kind, e.data)))
+    let me = api_user.sub;
+    let stream = state.events().receiver_stream().filter_map(move |e| {
+        let deliver = match &e.target_user {
+            None => true,
+            Some(u) => *u == me,
+        };
+        let item = deliver.then(|| {
+            Ok(Event::default()
+                .id(e.id)
+                .data(format!(r#"{{"type":"{}","data":{} }}"#, e.kind, e.data)))
+        });
+        std::future::ready(item)
     });
 
     let cancelable_stream = stream.take_until(state.shutdown_signal().clone().cancelled_owned());
