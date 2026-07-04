@@ -89,6 +89,14 @@ pub struct ServerConfig {
     )]
     pub static_dir: Option<PathBuf>,
 
+    #[arg(
+        long,
+        env = "MBS4_CSP",
+        default_value = "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+        help = "Content-Security-Policy header for HTML/app (static) responses. Set empty to disable."
+    )]
+    pub csp: Option<String>,
+
     #[cfg(feature = "observability")]
     #[arg(
         long,
@@ -134,6 +142,7 @@ impl From<&ServerConfig> for AppConfig {
             default_page_size: config.default_page_size,
             cors: config.cors,
             static_dir: config.static_dir.clone(),
+            csp: config.csp.clone(),
         }
     }
 }

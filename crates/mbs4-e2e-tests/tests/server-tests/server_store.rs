@@ -93,6 +93,27 @@ async fn test_store() {
     assert!(info.final_path.ends_with(".txt"));
     assert!(!info.final_path.contains('/'));
 
+    // Uploaded files are served inline, so they must carry the sandbox CSP + nosniff.
+    let url = base_url
+        .join(&format!("files/download/uploaded/{}", info.final_path))
+        .unwrap();
+    let response = client.get(url).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-security-policy")
+            .map(|v| v.as_bytes()),
+        Some(b"sandbox; default-src 'none'".as_ref())
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("x-content-type-options")
+            .map(|v| v.as_bytes()),
+        Some(b"nosniff".as_ref())
+    );
+
     let url = base_url.join("files/upload/direct").unwrap();
     let file = File::open(&test_file_path).await.unwrap();
     let response = client
@@ -127,6 +148,13 @@ async fn test_store() {
         let url = base_url.join(&path).unwrap();
         let response = client.get(url).send().await.unwrap();
         assert_eq!(response.status().as_u16(), 200);
+        assert_eq!(
+            response
+                .headers()
+                .get("x-content-type-options")
+                .map(|v| v.as_bytes()),
+            Some(b"nosniff".as_ref())
+        );
         let size = response.content_length().unwrap();
         assert_eq!(size, FILE_SIZE);
         let body = response.bytes().await.unwrap();

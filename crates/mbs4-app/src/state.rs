@@ -193,6 +193,7 @@ pub struct AppConfig {
     pub upload_limit_mb: usize,
     pub default_page_size: u32,
     pub cors: bool,
+    pub csp: Option<String>,
 }
 
 pub struct AppStateVolatile {}

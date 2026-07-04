@@ -3,14 +3,16 @@ use std::{net::SocketAddr, path::Path};
 use crate::config::ServerConfig;
 use crate::error::Result;
 use crate::observability::Observability;
-use axum::http::StatusCode;
+use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::{response::IntoResponse, routing::get, Router};
 use mbs4_app::auth::{auth_router, token::TokenLayer};
 use mbs4_app::search::Search;
 use mbs4_app::state::{AppConfig, AppState};
 use mbs4_auth::config::OIDCConfig;
 use tokio::{fs, io::AsyncWriteExt as _, task::spawn_blocking};
+use tower::ServiceBuilder;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info};
 
 pub async fn run(args: ServerConfig) -> Result<()> {
@@ -173,7 +175,28 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
     if let Some(ref static_path) = state.config().static_dir {
         let static_service =
             ServeDir::new(static_path).fallback(ServeFile::new(static_path.join("index.html")));
-        router = router.fallback_service(static_service);
+
+        // CSP is only meaningful on rendered documents, i.e. the static SPA served here.
+        let csp = state
+            .config()
+            .csp
+            .as_deref()
+            .filter(|policy| !policy.is_empty());
+        match csp {
+            Some(policy) => {
+                let csp_layer = SetResponseHeaderLayer::overriding(
+                    axum::http::header::CONTENT_SECURITY_POLICY,
+                    HeaderValue::from_str(policy).expect("invalid CSP header value"),
+                );
+                let static_service = ServiceBuilder::new()
+                    .layer(csp_layer)
+                    .service(static_service);
+                router = router.fallback_service(static_service);
+            }
+            None => {
+                router = router.fallback_service(static_service);
+            }
+        }
     }
 
     #[cfg(feature = "openapi")]
@@ -183,7 +206,11 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
             utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", docs),
         );
     }
-    router
+
+    router.layer(SetResponseHeaderLayer::overriding(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    ))
 }
 
 async fn health() -> impl IntoResponse {

@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 use mbs4_dal::{ebook::EbookRepository, format::FormatRepository};
@@ -9,6 +9,8 @@ use mbs4_types::utils::file_ext;
 use tokio::fs;
 
 use crate::{error::ApiError, state::AppState};
+
+const NOSNIFF_HEADER: HeaderName = HeaderName::from_static("x-content-type-options");
 
 fn icon_path(icon_id: i64) -> StoreResult<ValidPath> {
     Ok(ValidPath::new(format!("{icon_id}.png"))?.with_prefix(StorePrefix::Icons))
@@ -71,6 +73,7 @@ pub async fn get_icon(
     let mut headers = HeaderMap::new();
     let mime = "image/png";
     headers.insert(http::header::CONTENT_TYPE, mime.parse().unwrap());
+    headers.insert(NOSNIFF_HEADER, HeaderValue::from_static("nosniff"));
 
     Ok((StatusCode::OK, headers, body))
 }
@@ -118,6 +121,8 @@ pub async fn download_file(
         size.to_string().parse().unwrap(), // safe - number is ASCII
     );
 
+    headers.insert(NOSNIFF_HEADER, HeaderValue::from_static("nosniff"));
+
     if as_attachment {
         if let Some(file_name) = path
             .as_ref()
@@ -132,6 +137,12 @@ pub async fn download_file(
                     .unwrap(), // should be safe as we check ASCII
             );
         }
+    } else {
+        // Untrusted files served inline: neutralize any active content even if rendered.
+        headers.insert(
+            http::header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("sandbox; default-src 'none'"),
+        );
     }
 
     Ok((StatusCode::OK, headers, body))
