@@ -301,7 +301,7 @@ pub async fn download_conversion(
     path: ValidPath,
     repository: FormatRepository,
 ) -> Result<impl IntoResponse, ApiError> {
-    download_file(state, path, repository, StorePrefix::Conversions, false).await
+    download_file(state, path, repository, StorePrefix::Conversions, true).await
 }
 
 #[cfg_attr(

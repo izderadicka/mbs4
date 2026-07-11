@@ -328,6 +328,13 @@ async fn test_batch_convert_bookshelf() {
         .unwrap();
     let res = client.get(download_url).send().await.unwrap();
     assert!(res.status().is_success(), "download: {}", res.status());
+    let zip_file_name = zip_location.rsplit('/').next().unwrap();
+    assert_eq!(
+        res.headers()
+            .get("content-disposition")
+            .map(|v| v.to_str().unwrap()),
+        Some(format!("attachment; filename=\"{zip_file_name}\"").as_str())
+    );
     let zip_bytes = res.bytes().await.unwrap();
     assert!(zip_bytes.len() > 100, "zip too small to be valid");
 
