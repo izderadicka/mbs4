@@ -1,75 +1,76 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
+    http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
     Router,
 };
 
 use futures::{Stream, StreamExt};
-use std::{convert::Infallible, fmt::Display, time::Duration};
+use std::{convert::Infallible, time::Duration};
 
 use crate::state::AppState;
 
-#[derive(Clone, Debug)]
-pub enum EventType {
-    Message,
-}
-
-impl Display for EventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EventType::Message => write!(f, "message"),
-        }
-    }
-}
+mod hub;
+pub use hub::{EventHub, SequencedEvent};
 
 #[derive(Clone, Debug)]
 pub struct EventMessage {
-    id: String,
-    kind: EventType,
-    target_user: Option<String>,
-    data: String,
+    pub(crate) kind: String,
+    pub(crate) target_user: Option<String>,
+    pub(crate) data: String,
 }
 
 impl EventMessage {
-    pub fn new<T>(id: impl ToString, kind: EventType, target_user: Option<String>, data: T) -> Self
+    pub fn message<T>(kind: impl ToString, target_user: Option<String>, data: T) -> Self
     where
         T: serde::Serialize,
     {
         let data = serde_json::to_string(&data).unwrap();
         Self {
-            id: id.to_string(),
-            kind,
+            kind: kind.to_string(),
             target_user,
             data,
         }
     }
+}
 
-    pub fn message<T>(id: impl ToString, target_user: Option<String>, data: T) -> Self
-    where
-        T: serde::Serialize,
-    {
-        Self::new(id, EventType::Message, target_user, data)
-    }
+#[derive(serde::Deserialize)]
+struct EventsQuery {
+    // case-sensitive, mirrors DOM EventSource.lastEventId
+    #[serde(rename = "lastEventId")]
+    last_event_id: Option<String>,
 }
 
 async fn sse_handler(
     State(state): State<AppState>,
+    Query(query): Query<EventsQuery>,
+    headers: HeaderMap,
     api_user: mbs4_types::claim::ApiClaim,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Header wins: on browser auto-reconnect the query param is stale, the header is fresh
+    let last_event_id = headers
+        .get("last-event-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned)
+        .or(query.last_event_id);
     let me = api_user.sub;
-    let stream = state.events().receiver_stream().filter_map(move |e| {
-        let deliver = match &e.target_user {
-            None => true,
-            Some(u) => *u == me,
-        };
-        let item = deliver.then(|| {
-            Ok(Event::default()
-                .id(e.id)
-                .data(format!(r#"{{"type":"{}","data":{} }}"#, e.kind, e.data)))
+    let stream = state
+        .events()
+        .subscribe_after(last_event_id.as_deref())
+        .filter_map(move |e| {
+            let deliver = match &e.message.target_user {
+                None => true,
+                Some(u) => *u == me,
+            };
+            let item = deliver.then(|| {
+                Ok(Event::default().id(&e.id).data(format!(
+                    r#"{{"type":"{}","data":{}}}"#,
+                    e.message.kind, e.message.data
+                )))
+            });
+            std::future::ready(item)
         });
-        std::future::ready(item)
-    });
 
     let cancelable_stream = stream.take_until(state.shutdown_signal().clone().cancelled_owned());
 

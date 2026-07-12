@@ -12,7 +12,7 @@ use crate::{
         source_pick::pick_best_source,
         ConversionResult, ErrorResult, MetaResult,
     },
-    events::EventMessage,
+    events::{EventHub, EventMessage},
     util::cleanup_file_on_error,
 };
 use mbs4_dal::conversion::{CreateConversion, EbookConversion};
@@ -94,7 +94,7 @@ pub struct Convertor {
 }
 
 pub struct ConvertorInner {
-    event_sender: tokio::sync::broadcast::Sender<EventMessage>,
+    event_sender: EventHub,
     job_queue: tokio::sync::mpsc::Sender<ConversionJob>,
     store: FileStore,
     pool: mbs4_dal::Pool,
@@ -104,7 +104,7 @@ pub struct ConvertorInner {
 
 impl Convertor {
     pub async fn new(
-        event_sender: tokio::sync::broadcast::Sender<EventMessage>,
+        event_sender: EventHub,
         store: FileStore,
         pool: mbs4_dal::Pool,
         observer: Arc<dyn ConversionObserver>,
@@ -211,7 +211,7 @@ impl ConvertorInner {
             error: error.to_string(),
         };
         let event = EventMessage::message("extract_meta_error", target_user, error_result);
-        self.event_sender.send(event).unwrap();
+        self.event_sender.send(event);
     }
 
     async fn extract_meta(self: Arc<Self>, request: MetadataRequest) {
@@ -271,7 +271,7 @@ impl ConvertorInner {
                     metadata: meta,
                 };
                 let event = EventMessage::message("extract_meta", Some(user), result);
-                self.event_sender.send(event).unwrap();
+                self.event_sender.send(event);
             }
             Err(e) => self.send_error(operation_id, Some(user), e),
         }
@@ -311,7 +311,7 @@ impl ConvertorInner {
                             conversion,
                         };
                         let event = EventMessage::message("convert", Some(user), result);
-                        self.event_sender.send(event).unwrap();
+                        self.event_sender.send(event);
                     }
                     Err(e) => self.send_error(operation_id, Some(user), e),
                 }
@@ -711,12 +711,12 @@ impl ConvertorInner {
 
     fn send_batch_progress(&self, target_user: Option<String>, progress: BatchProgress) {
         let event = EventMessage::message("batch_progress", target_user, progress);
-        let _ = self.event_sender.send(event);
+        self.event_sender.send(event);
     }
 
     fn send_batch_complete(&self, target_user: Option<String>, complete: BatchComplete) {
         let event = EventMessage::message("batch_complete", target_user, complete);
-        let _ = self.event_sender.send(event);
+        self.event_sender.send(event);
     }
 }
 

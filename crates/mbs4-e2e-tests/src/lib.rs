@@ -276,3 +276,36 @@ pub fn now() -> time::PrimitiveDateTime {
     let now = time::OffsetDateTime::now_utc();
     time::PrimitiveDateTime::new(now.date(), now.time())
 }
+
+/// Connects to an SSE endpoint, signals readiness once the response headers
+/// arrive, then feeds each `\n\n`-delimited event block to `on_event`,
+/// returning the first non-`None` result. Returns `None` if the stream ends.
+pub async fn drain_sse_until<T>(
+    request: reqwest::RequestBuilder,
+    ready_tx: tokio::sync::oneshot::Sender<()>,
+    mut on_event: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    use futures::StreamExt as _;
+    let res = request
+        .send()
+        .await
+        .expect("SSE connect")
+        .error_for_status()
+        .expect("SSE status");
+    ready_tx.send(()).ok();
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else { break };
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(pos) = buffer.find("\n\n") {
+            let raw = buffer[..pos].to_string();
+            buffer.drain(..pos + 2);
+            if let Some(out) = on_event(&raw) {
+                return Some(out);
+            }
+        }
+    }
+    None
+}

@@ -7,17 +7,14 @@ use crate::{
     auth::rate_limit::LoginRateLimiter,
     ebook_format::convertor::{ConversionObserver, Convertor},
     error::Result,
-    events::EventMessage,
+    events::EventHub,
     search::Search,
 };
 use axum::extract::FromRef;
-use futures::Stream;
 use mbs4_auth::config::OIDCConfig;
 use mbs4_auth::token::TokenManager;
 use mbs4_dal::Pool;
 use mbs4_store::file_store::FileStore;
-use tokio_stream::StreamExt;
-use tracing::{debug, error};
 use url::Url;
 
 #[derive(Clone)]
@@ -39,7 +36,7 @@ impl AppState {
         let store = FileStore::new(&app_config.file_store_path);
         let events = EventHub::new();
         let convertor = Convertor::new(
-            events.sender(),
+            events.clone(),
             store.clone(),
             pool.clone(),
             conversion_observer,
@@ -122,50 +119,6 @@ impl AppState {
 
     pub fn shutdown_signal(&self) -> &tokio_util::sync::CancellationToken {
         &self.state.shutdown
-    }
-}
-
-pub struct EventHub {
-    sender: tokio::sync::broadcast::Sender<EventMessage>,
-}
-
-impl Default for EventHub {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl EventHub {
-    pub fn new() -> Self {
-        let (sender, mut _receiver) = tokio::sync::broadcast::channel(1024);
-        #[cfg(debug_assertions)]
-        tokio::spawn(async move {
-            while let Ok(msg) = _receiver.recv().await {
-                debug!("Event: {msg:?}");
-            }
-        });
-        EventHub { sender }
-    }
-
-    pub fn send(&self, msg: EventMessage) {
-        if let Err(e) = self.sender.send(msg) {
-            debug!("Nowhere send event: {e}");
-        };
-    }
-
-    pub fn sender(&self) -> tokio::sync::broadcast::Sender<EventMessage> {
-        self.sender.clone()
-    }
-
-    pub fn receiver(&self) -> tokio::sync::broadcast::Receiver<EventMessage> {
-        self.sender.subscribe()
-    }
-
-    pub fn receiver_stream(&self) -> impl Stream<Item = EventMessage> {
-        tokio_stream::wrappers::BroadcastStream::new(self.receiver()).filter_map(|r| {
-            r.inspect_err(|e| error!("EventHub receiver lags: {e}"))
-                .ok()
-        })
     }
 }
 

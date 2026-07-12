@@ -8,11 +8,10 @@
 
 use std::io::Read;
 
-use futures::StreamExt;
 use mbs4_app::{rest_api::ebook::EbookFileInfo, store::rest_api::UploadInfo};
 use mbs4_dal::{author::Author, ebook::Ebook, source::Source};
 use mbs4_e2e_tests::{
-    TestUser, launch_env, prepare_env,
+    TestUser, drain_sse_until, launch_env, prepare_env,
     rest::{create_author, create_ebook, create_format, create_language},
 };
 use reqwest::{Url, multipart};
@@ -80,40 +79,6 @@ async fn upload_ebook_with_source(
     );
     let source: Source = res.json().await.unwrap();
     (ebook, source)
-}
-
-/// Connects to an SSE endpoint, signals readiness once the response headers
-/// arrive, then feeds each `\n\n`-delimited event block to `on_event`,
-/// returning the first non-`None` result. Returns `None` if the stream ends.
-async fn drain_sse_until<T>(
-    client: &reqwest::Client,
-    url: Url,
-    ready_tx: tokio::sync::oneshot::Sender<()>,
-    mut on_event: impl FnMut(&str) -> Option<T>,
-) -> Option<T> {
-    let res = client
-        .get(url)
-        .send()
-        .await
-        .expect("SSE connect")
-        .error_for_status()
-        .expect("SSE status");
-    ready_tx.send(()).ok();
-    let mut stream = res.bytes_stream();
-    let mut buffer = String::new();
-
-    while let Some(chunk) = stream.next().await {
-        let Ok(chunk) = chunk else { break };
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buffer.find("\n\n") {
-            let raw = buffer[..pos].to_string();
-            buffer.drain(..pos + 2);
-            if let Some(out) = on_event(&raw) {
-                return Some(out);
-            }
-        }
-    }
-    None
 }
 
 #[tokio::test]
@@ -221,24 +186,14 @@ async fn test_batch_convert_bookshelf() {
     let listener_client = client.clone();
     let listener_url = sse_url.clone();
     tokio::spawn(async move {
-        let inner = drain_sse_until(&listener_client, listener_url, ready_tx, |raw| {
-            // Event kind sits in the SSE `id:` line (the JSON `type` field is
-            // always the EventType enum, e.g. "message"). Payload is `data:`.
-            let mut sse_id: Option<String> = None;
-            let mut data_line: Option<String> = None;
-            for line in raw.lines() {
-                if let Some(rest) = line.strip_prefix("id:") {
-                    sse_id = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data:") {
-                    data_line = Some(rest.trim().to_string());
-                }
-            }
-            if sse_id.as_deref() != Some("batch_complete") {
+        let inner = drain_sse_until(listener_client.get(listener_url), ready_tx, |raw| {
+            // Event kind is in the JSON envelope's `type` field; the SSE `id:`
+            // line carries the replay sequence id. Payload is `data:`.
+            let payload = raw.lines().find_map(|l| l.strip_prefix("data:"))?.trim();
+            let envelope: Value = serde_json::from_str(payload).ok()?;
+            if envelope["type"] != "batch_complete" {
                 return None;
             }
-            let payload = data_line?;
-            let envelope: Value = serde_json::from_str(&payload).ok()?;
-            // {"type":"message","data":{...}} — unwrap one level.
             Some(envelope.get("data").cloned().unwrap_or(envelope))
         })
         .await;
@@ -253,11 +208,15 @@ async fn test_batch_convert_bookshelf() {
     let (other_seen_tx, mut other_seen_rx) = tokio::sync::oneshot::channel::<()>();
     let other_listener_url = sse_url.clone();
     tokio::spawn(async move {
-        let seen = drain_sse_until(&other_client, other_listener_url, other_ready_tx, |raw| {
-            raw.lines()
-                .any(|l| l.strip_prefix("id:").map(str::trim) == Some("batch_complete"))
-                .then_some(())
-        })
+        let seen = drain_sse_until(
+            other_client.get(other_listener_url),
+            other_ready_tx,
+            |raw| {
+                let payload = raw.lines().find_map(|l| l.strip_prefix("data:"))?.trim();
+                let envelope: Value = serde_json::from_str(payload).ok()?;
+                (envelope["type"] == "batch_complete").then_some(())
+            },
+        )
         .await;
         if seen.is_some() {
             other_seen_tx.send(()).ok();

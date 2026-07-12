@@ -1,5 +1,6 @@
 mod batch_convert;
 mod bookshelf;
+mod events_replay;
 mod observability_metrics;
 mod rest_author;
 mod rest_ebook;
