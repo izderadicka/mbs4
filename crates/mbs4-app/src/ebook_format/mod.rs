@@ -1,7 +1,7 @@
 use axum::{extract::State, response::IntoResponse, routing::post, Json};
 use axum_valid::Garde;
 use http::StatusCode;
-use mbs4_dal::{format, source};
+use mbs4_dal::{conversion, format, source};
 use mbs4_store::ValidPath;
 use mbs4_types::claim::{ApiClaim, Role};
 
@@ -102,6 +102,7 @@ pub async fn convert_source(
     State(state): State<AppState>,
     source_repositry: source::SourceRepository,
     format_repositry: format::FormatRepository,
+    conversion_repository: conversion::ConversionRepository,
     api_user: ApiClaim,
     Garde(Json(payload)): Garde<Json<ConversionRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -109,6 +110,22 @@ pub async fn convert_source(
     let to_format = format_repositry
         .get_by_extension(&payload.to_format_extension)
         .await?;
+
+    if source.format_id == to_format.id {
+        return Err(ApiError::UnprocessableRequest(format!(
+            "source {} is already in format {}",
+            source.id, to_format.extension
+        )));
+    }
+    if let Some(existing) = conversion_repository
+        .find_existing_for_source(source.id, to_format.id)
+        .await?
+    {
+        return Err(ApiError::ResourceAlreadyExists(format!(
+            "conversion {} of source {} to format {}",
+            existing.id, source.id, to_format.extension
+        )));
+    }
 
     let file_path = ValidPath::new(source.location)?.with_prefix(mbs4_store::StorePrefix::Books);
 

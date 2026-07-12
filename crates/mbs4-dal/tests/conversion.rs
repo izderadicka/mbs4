@@ -164,6 +164,69 @@ async fn test_find_existing_for_ebook_ignores_synthetic_and_picks_latest() {
 }
 
 #[tokio::test]
+async fn test_find_existing_for_source_matches_source_and_format() {
+    let conn = init_db().await;
+    let repo = ConversionRepositoryImpl::new(conn.clone());
+
+    assert!(repo.find_existing_for_source(1, 2).await.unwrap().is_none());
+
+    // Synthetic row for source 1 -> mobi must not count.
+    let batch_repo = ConversionBatchRepositoryImpl::new(conn.clone());
+    let batch = batch_repo
+        .create(CreateConversionBatch {
+            name: "b".into(),
+            for_entity: Some(ConversionBatchEntity::Author),
+            entity_id: Some(1),
+            format_id: 2,
+            zip_location: None,
+            created_by: Some("ivan".into()),
+        })
+        .await
+        .unwrap();
+    repo.create(CreateConversion {
+        location: "tb/test.mobi".into(),
+        source_id: 1,
+        format_id: 2,
+        batch_id: Some(batch.id),
+        synthetic: true,
+        created_by: Some("ivan".into()),
+    })
+    .await
+    .unwrap();
+    assert!(repo.find_existing_for_source(1, 2).await.unwrap().is_none());
+
+    // Real conversion of another source of the same ebook must not count.
+    repo.create(CreateConversion {
+        location: "tb/other.mobi".into(),
+        source_id: 2,
+        format_id: 2,
+        batch_id: None,
+        synthetic: false,
+        created_by: Some("ivan".into()),
+    })
+    .await
+    .unwrap();
+    assert!(repo.find_existing_for_source(1, 2).await.unwrap().is_none());
+
+    let real = repo
+        .create(CreateConversion {
+            location: "tb/test.mobi".into(),
+            source_id: 1,
+            format_id: 2,
+            batch_id: None,
+            synthetic: false,
+            created_by: Some("ivan".into()),
+        })
+        .await
+        .unwrap();
+    let found = repo.find_existing_for_source(1, 2).await.unwrap().unwrap();
+    assert_eq!(found.id, real.id);
+
+    // Different target format still allowed.
+    assert!(repo.find_existing_for_source(1, 1).await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn test_list_for_batch_includes_synthetic_and_real() {
     let conn = init_db().await;
     let conv_repo = ConversionRepositoryImpl::new(conn.clone());

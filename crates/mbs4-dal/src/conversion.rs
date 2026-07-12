@@ -81,6 +81,24 @@ ORDER BY c.created DESC LIMIT 1";
         Ok(res)
     }
 
+    /// Find the latest non-synthetic conversion of `source_id` to `format_id`.
+    /// Used to reject duplicate conversion requests.
+    pub async fn find_existing_for_source(
+        &self,
+        source_id: i64,
+        format_id: i64,
+    ) -> crate::error::Result<Option<Conversion>> {
+        let sql = "SELECT * FROM conversion
+WHERE source_id = ? AND format_id = ? AND synthetic = 0
+ORDER BY created DESC LIMIT 1";
+        let res = sqlx::query_as(sql)
+            .bind(source_id)
+            .bind(format_id)
+            .fetch_optional(&self.executor)
+            .await?;
+        Ok(res)
+    }
+
     /// All conversion rows that belong to a single batch, joined with format
     /// and source-format metadata.
     pub async fn list_for_batch(
