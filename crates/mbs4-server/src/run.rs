@@ -128,6 +128,7 @@ fn api_docs() -> utoipa::openapi::OpenApi {
         .nest("/auth", mbs4_app::auth::api_docs())
         .nest("/files", mbs4_app::store::rest_api::api_docs())
         .nest("/search", mbs4_app::search::api_docs())
+        .nest("/tts", mbs4_app::tts::api_docs())
         .nest("/users", mbs4_app::user::api_docs())
 }
 
@@ -140,7 +141,7 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
     //         time::Duration::seconds(15),
     //     ));
 
-    let mut router = Router::new()
+    let protected = Router::new()
         .nest("/users", mbs4_app::user::router())
         .nest(
             "/files",
@@ -164,7 +165,17 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
         .nest("/events", mbs4_app::events::router())
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
-        .nest("/auth", auth_router())
+        .nest("/auth", auth_router());
+
+    // Piper TTS voices are public (fetched directly by the browser/ONNX runtime,
+    // which does not attach the auth token) and only mounted when configured.
+    let public = if state.config().voices_dir.is_some() {
+        protected.nest("/tts", mbs4_app::tts::router())
+    } else {
+        protected
+    };
+
+    let mut router = public
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state.clone())
         // static and public resources
@@ -177,26 +188,48 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
             ServeDir::new(static_path).fallback(ServeFile::new(static_path.join("index.html")));
 
         // CSP is only meaningful on rendered documents, i.e. the static SPA served here.
-        let csp = state
+        let csp_layer = state
             .config()
             .csp
             .as_deref()
-            .filter(|policy| !policy.is_empty());
-        match csp {
-            Some(policy) => {
-                let csp_layer = SetResponseHeaderLayer::overriding(
+            .filter(|policy| !policy.is_empty())
+            .map(|policy| {
+                SetResponseHeaderLayer::overriding(
                     axum::http::header::CONTENT_SECURITY_POLICY,
                     HeaderValue::from_str(policy).expect("invalid CSP header value"),
-                );
-                let static_service = ServiceBuilder::new()
-                    .layer(csp_layer)
-                    .service(static_service);
-                router = router.fallback_service(static_service);
-            }
-            None => {
-                router = router.fallback_service(static_service);
-            }
-        }
+                )
+            });
+
+        // Cross-origin isolation on the app HTML and its assets: COOP/COEP make
+        // the document crossOriginIsolated (=> SharedArrayBuffer, multithreaded
+        // ONNX), CORP lets same-origin assets be embedded under COEP.
+        let isolation = state.config().cross_origin_isolation;
+        let coop_layer = isolation.then(|| {
+            SetResponseHeaderLayer::overriding(
+                HeaderName::from_static("cross-origin-opener-policy"),
+                HeaderValue::from_static("same-origin"),
+            )
+        });
+        let coep_layer = isolation.then(|| {
+            SetResponseHeaderLayer::overriding(
+                HeaderName::from_static("cross-origin-embedder-policy"),
+                coep_header_value(&state.config().coep_mode),
+            )
+        });
+        let corp_layer = isolation.then(|| {
+            SetResponseHeaderLayer::overriding(
+                HeaderName::from_static("cross-origin-resource-policy"),
+                HeaderValue::from_static("same-origin"),
+            )
+        });
+
+        let static_service = ServiceBuilder::new()
+            .option_layer(csp_layer)
+            .option_layer(coop_layer)
+            .option_layer(coep_layer)
+            .option_layer(corp_layer)
+            .service(static_service);
+        router = router.fallback_service(static_service);
     }
 
     #[cfg(feature = "openapi")]
@@ -215,6 +248,13 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
 
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "OK")
+}
+
+fn coep_header_value(mode: &str) -> HeaderValue {
+    match mode {
+        "credentialless" => HeaderValue::from_static("credentialless"),
+        _ => HeaderValue::from_static("require-corp"),
+    }
 }
 
 pub async fn build_state(config: &ServerConfig) -> Result<(AppState, Observability)> {

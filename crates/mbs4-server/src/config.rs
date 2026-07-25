@@ -97,6 +97,29 @@ pub struct ServerConfig {
     )]
     pub csp: Option<String>,
 
+    #[arg(
+        long,
+        env = "MBS4_VOICES_DIR",
+        help = "Directory with Piper TTS voices ({id}.onnx and {id}.onnx.json); if not set, TTS voice endpoints report not found"
+    )]
+    pub voices_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
+        env = "MBS4_CROSS_ORIGIN_ISOLATION",
+        default_value = "true",
+        help = "Send COOP/COEP/CORP headers on the app HTML and served assets to enable cross-origin isolation (crossOriginIsolated => SharedArrayBuffer), needed for multithreaded ONNX in the browser"
+    )]
+    pub cross_origin_isolation: bool,
+
+    #[arg(
+        long,
+        env = "MBS4_COEP_MODE",
+        default_value = "require-corp",
+        help = "Cross-Origin-Embedder-Policy value: 'require-corp' or 'credentialless'"
+    )]
+    pub coep_mode: String,
+
     #[cfg(feature = "observability")]
     #[arg(
         long,
@@ -143,6 +166,9 @@ impl From<&ServerConfig> for AppConfig {
             cors: config.cors,
             static_dir: config.static_dir.clone(),
             csp: config.csp.clone(),
+            voices_dir: config.voices_dir.clone(),
+            cross_origin_isolation: config.cross_origin_isolation,
+            coep_mode: config.coep_mode.clone(),
         }
     }
 }

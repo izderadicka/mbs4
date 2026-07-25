@@ -10,4 +10,5 @@ mod server_authz;
 mod server_health;
 mod server_store;
 mod server_users;
+mod tts;
 mod upload_ebook;
