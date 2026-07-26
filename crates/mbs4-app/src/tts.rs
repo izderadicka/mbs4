@@ -324,11 +324,8 @@ async fn serve_voice_file(
     }
 
     // ServeFile handles content streaming, Range and conditional (Last-Modified)
-    // requests; its error type is `Infallible`.
-    let response = match ServeFile::new(&full_path).oneshot(req).await {
-        Ok(response) => response,
-        Err(never) => match never {},
-    };
+    // requests.
+    let Ok(response) = ServeFile::new(&full_path).oneshot(req).await;
     let (mut parts, body) = response.into_parts();
     // Only assert our content type on a real body response.
     let mime = matches!(parts.status, StatusCode::OK | StatusCode::PARTIAL_CONTENT).then_some(mime);
