@@ -6,6 +6,7 @@ pub mod rest_api;
 pub mod search;
 pub mod state;
 pub mod store;
+pub mod tts;
 pub mod user;
 pub(crate) mod util;
 

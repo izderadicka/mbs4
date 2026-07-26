@@ -147,6 +147,14 @@ pub struct AppConfig {
     pub default_page_size: u32,
     pub cors: bool,
     pub csp: Option<String>,
+    /// Directory holding Piper TTS voices (`{id}.onnx` + `{id}.onnx.json`). When
+    /// unset the `/tts/piper/...` endpoints report the voices as not found.
+    pub voices_dir: Option<PathBuf>,
+    /// Send COOP/COEP/CORP headers so the SPA (and served assets) are cross
+    /// origin isolated, enabling `SharedArrayBuffer` and multithreaded ONNX.
+    pub cross_origin_isolation: bool,
+    /// `Cross-Origin-Embedder-Policy` value: `require-corp` or `credentialless`.
+    pub coep_mode: String,
 }
 
 pub struct AppStateVolatile {}
