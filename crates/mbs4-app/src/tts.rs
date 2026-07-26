@@ -28,6 +28,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
+use tracing::{error, warn};
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -195,6 +196,10 @@ pub async fn list_voices(
     {
         let file_name = entry.file_name();
         let Some(file_name) = file_name.to_str() else {
+            error!(
+                "Voices directory contains non UTF-8 file name {:?}; ignoring",
+                entry.file_name()
+            );
             continue;
         };
         // Listing a language = scanning `*.onnx.json`.
@@ -202,6 +207,7 @@ pub async fn list_voices(
             continue;
         };
         if !is_valid_voice_id(id) {
+            error!("Voice config {file_name} has invalid voice id; ignoring");
             continue;
         }
         if let Some(ref subtag) = filter {
@@ -211,16 +217,24 @@ pub async fn list_voices(
         }
         // A voice is only usable if the model file exists too.
         let model = dir.join(format!("{id}.onnx"));
-        if !tokio::fs::try_exists(&model).await.unwrap_or(false) {
-            continue;
+        match tokio::fs::try_exists(&model).await {
+            Ok(true) => {}
+            Ok(false) => {
+                error!("Voice {id} has config but no model file; ignoring");
+                continue;
+            }
+            Err(e) => {
+                error!("Cannot check model file for voice {id}: {e}; ignoring");
+                continue;
+            }
         }
 
         match tokio::fs::read(entry.path()).await {
             Ok(bytes) => match serde_json::from_slice::<PiperConfig>(&bytes) {
                 Ok(cfg) => voices.push(build_voice_info(id, cfg)),
-                Err(e) => tracing::warn!("Ignoring invalid Piper config {file_name}: {e}"),
+                Err(e) => warn!("Ignoring invalid Piper config {file_name}: {e}"),
             },
-            Err(e) => tracing::warn!("Cannot read Piper config {file_name}: {e}"),
+            Err(e) => warn!("Cannot read Piper config {file_name}: {e}"),
         }
     }
 
@@ -228,6 +242,10 @@ pub async fn list_voices(
     Ok(Json(voices))
 }
 
+// `get_model` and `get_config` are not routed handlers - they are called from
+// `get_voice_file` below. They stay separate items because each documented
+// OpenAPI path needs its own `utoipa::path` anchor, and `get_voice_file` serves
+// both.
 #[cfg_attr(
     feature = "openapi",
     utoipa::path(get, path = "/piper/voices/{id}.onnx", tag = "TTS", operation_id = "getPiperVoiceModel",

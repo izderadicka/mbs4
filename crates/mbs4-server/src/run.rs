@@ -141,7 +141,7 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
     //         time::Duration::seconds(15),
     //     ));
 
-    let protected = Router::new()
+    let mut protected = Router::new()
         .nest("/users", mbs4_app::user::router())
         .nest(
             "/files",
@@ -162,20 +162,21 @@ fn main_router(state: AppState, observability: &Observability) -> Router<()> {
         )
         .nest("/api/bookshelf", mbs4_app::rest_api::bookshelf::router())
         .nest("/search", mbs4_app::search::router())
-        .nest("/events", mbs4_app::events::router())
+        .nest("/events", mbs4_app::events::router());
+
+    // Piper TTS voices are only mounted when configured. The browser/ONNX runtime
+    // fetches them without an Authorization header, so they authenticate via the
+    // token cookie that `TokenLayer` falls back to.
+    if state.config().voices_dir.is_some() {
+        protected = protected.nest("/tts", mbs4_app::tts::router());
+    }
+
+    let protected = protected
         // All above routes are protected
         .layer(TokenLayer::new(state.clone()))
         .nest("/auth", auth_router());
 
-    // Piper TTS voices are public (fetched directly by the browser/ONNX runtime,
-    // which does not attach the auth token) and only mounted when configured.
-    let public = if state.config().voices_dir.is_some() {
-        protected.nest("/tts", mbs4_app::tts::router())
-    } else {
-        protected
-    };
-
-    let mut router = public
+    let mut router = protected
         .layer(tower_cookies::CookieManagerLayer::new())
         .with_state(state.clone())
         // static and public resources

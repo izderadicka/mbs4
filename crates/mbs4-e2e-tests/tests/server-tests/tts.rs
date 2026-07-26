@@ -1,4 +1,4 @@
-use mbs4_e2e_tests::{prepare_env, spawn_server};
+use mbs4_e2e_tests::{TestUser, launch_env, prepare_env};
 use serde_json::Value;
 use tracing::info;
 use tracing_test::traced_test;
@@ -54,9 +54,22 @@ async fn test_piper_voices() {
     assert!(args.cross_origin_isolation, "isolation on by default");
 
     let base_url = args.base_url.clone();
-    spawn_server(args, &mut guard).await.unwrap();
-    // Voice endpoints are public - no auth header.
-    let client = reqwest::Client::new();
+    let (client, _state) = launch_env(args, TestUser::User, &mut guard).await.unwrap();
+
+    // --- voice endpoints require authentication ---
+    let anonymous = reqwest::Client::new();
+    for path in [
+        "tts/piper/voices",
+        "tts/piper/voices/en_US-amy-medium.onnx",
+        "tts/piper/voices/en_US-amy-medium.onnx.json",
+    ] {
+        let response = anonymous
+            .get(base_url.join(path).unwrap())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 401, "{path} must require auth");
+    }
 
     // --- listing (all) ---
     let url = base_url.join("tts/piper/voices").unwrap();
