@@ -6,6 +6,8 @@ use crate::{auth::token::RequiredRolesLayer, crud_api, publish_api_docs, state::
 #[allow(unused_imports)]
 use axum::routing::{delete, get, post, put};
 
+crate::repository_from_request!(mbs4_dal::ebook_rating::EbookRatingRepository);
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, garde::Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EbookFileInfo {
@@ -57,13 +59,14 @@ publish_api_docs!(
     crud_api_extra::merge,
     crud_api_extra::rate_ebook,
     crud_api_extra::delete_ebook_rating,
-    crud_api_extra::get_my_rating
+    crud_api_extra::get_my_rating,
+    crud_api_extra::list_ratings
 );
 crud_api!(Ebook, RO);
 
 mod crud_api_extra {
     use axum::{
-        extract::{Path, State},
+        extract::{Path, Query, State},
         response::IntoResponse,
         Json,
     };
@@ -73,7 +76,7 @@ mod crud_api_extra {
     use mbs4_dal::ebook::{CreateEbook, Ebook, EbookRepository, UpdateEbook};
     use mbs4_dal::{
         conversion::{self, ConversionRepository, EbookConversion},
-        ebook_rating::EbookRating,
+        ebook_rating::{EbookRating, EbookRatingRepository},
         format,
         source::{self, CreateSource, SourceRepository},
     };
@@ -85,7 +88,10 @@ mod crud_api_extra {
 
     use crate::{
         error::{ApiError, ApiResult},
-        rest_api::ebook::{EbookCoverInfo, EbookFileInfo, EbookMergeRequest},
+        rest_api::{
+            ebook::{EbookCoverInfo, EbookFileInfo, EbookMergeRequest},
+            Paging,
+        },
         state::AppState,
         util::cleanup_file_on_error,
     };
@@ -401,6 +407,25 @@ responses((status = StatusCode::OK, description = "List Ebook Conversions", body
             None => Ok(StatusCode::NOT_FOUND.into_response()),
         }
     }
+
+    #[cfg_attr(feature = "openapi",  utoipa::path(get, path = "/{id}/ratings", tag = "Ebook", operation_id = "listEbookRatings",
+        params(Paging), responses((status = StatusCode::OK, description = "List of Ebook Ratings paginated", body = crate::rest_api::Page<EbookRating>))))]
+    pub async fn list_ratings(
+        Path(id): Path<i64>,
+        repository: EbookRatingRepository,
+        State(state): State<AppState>,
+        _api_user: ApiClaim,
+        Garde(Query(paging)): Garde<Query<Paging>>,
+    ) -> ApiResult<impl IntoResponse> {
+        let default_page_size: u32 = state.config().default_page_size;
+        let page_size = paging.page_size(default_page_size);
+        let listing_params = paging.into_listing_params(default_page_size)?;
+        let batch = repository.list_for_ebook(id, listing_params).await?;
+        Ok((
+            StatusCode::OK,
+            Json(crate::rest_api::Page::from_batch(batch, page_size)),
+        ))
+    }
 }
 
 pub fn router() -> axum::Router<AppState> {
@@ -426,4 +451,5 @@ pub fn router() -> axum::Router<AppState> {
             post(crud_api_extra::rate_ebook).delete(crud_api_extra::delete_ebook_rating),
         )
         .route("/{id}/my-rating", get(crud_api_extra::get_my_rating))
+        .route("/{id}/ratings", get(crud_api_extra::list_ratings))
 }
