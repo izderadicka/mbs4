@@ -299,11 +299,7 @@ async fn test_ebook_rating() {
     let ratings_url = base_url
         .join(&format!("api/ebook/{}/ratings", ebook.id))
         .unwrap();
-    let response = admin_client
-        .get(ratings_url.clone())
-        .send()
-        .await
-        .unwrap();
+    let response = admin_client.get(ratings_url.clone()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let page: Value = response.json().await.unwrap();
     assert_eq!(page["total"].as_u64().unwrap(), 2);
@@ -317,11 +313,7 @@ async fn test_ebook_rating() {
 
     // Anonymous users cannot list ratings.
     let anon_probe = reqwest::Client::new();
-    let response = anon_probe
-        .get(ratings_url.clone())
-        .send()
-        .await
-        .unwrap();
+    let response = anon_probe.get(ratings_url.clone()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Admin can fetch their own current rating (40).
